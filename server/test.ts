@@ -1,0 +1,1 @@
+import { PrismaClient } from '@prisma/client'; const prisma = new PrismaClient(); async function main() { try { await prisma.user.create({ data: { name: 'Test Guard', phone: '912345678912', role: 'ADMIN', password: 'pwd', locationId: null } }); console.log('Success'); } catch (e: any) { console.error('FAILED:', e.message); } finally { await prisma.$disconnect(); } } main();

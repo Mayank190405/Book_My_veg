@@ -1,0 +1,10 @@
+﻿src/services/analyticsService.ts(55,37): error TS2353: Object literal may only specify known properties, and 'total' does not exist in type 'OrderItemSumAggregateInputType'.
+src/services/analyticsService.ts(56,32): error TS2322: Type '{ _sum: { total: string; }; }' is not assignable to type 'OrderItemOrderByWithAggregationInput | OrderItemOrderByWithAggregationInput[] | undefined'.
+  Types of property '_sum' are incompatible.
+    Object literal may only specify known properties, and 'total' does not exist in type 'OrderItemSumOrderByAggregateInput'.
+src/services/deliveryService.ts(142,55): error TS2353: Object literal may only specify known properties, and 'paymentMethod' does not exist in type 'OrderSelect<DefaultArgs>'.
+src/services/deliveryService.ts(147,20): error TS2551: Property 'order' does not exist on type '{ id: string; status: string; orderId: string; clusterZone: string | null; assignedAt: Date; deliveredAt: Date | null; driverId: string; }'. Did you mean 'orderId'?
+src/services/deliveryService.ts(148,40): error TS2551: Property 'order' does not exist on type '{ id: string; status: string; orderId: string; clusterZone: string | null; assignedAt: Date; deliveredAt: Date | null; driverId: string; }'. Did you mean 'orderId'?
+src/services/deliveryService.ts(176,25): error TS2353: Object literal may only specify known properties, and 'address' does not exist in type 'OrderInclude<DefaultArgs>'.
+src/services/deliveryService.ts(188,26): error TS2551: Property 'order' does not exist on type '{ id: string; status: string; orderId: string; clusterZone: string | null; assignedAt: Date; deliveredAt: Date | null; driverId: string; }'. Did you mean 'orderId'?
+src/services/deliveryService.ts(189,25): error TS2551: Property 'order' does not exist on type '{ id: string; status: string; orderId: string; clusterZone: string | null; assignedAt: Date; deliveredAt: Date | null; driverId: string; }'. Did you mean 'orderId'?

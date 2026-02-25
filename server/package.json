@@ -1,0 +1,63 @@
+{
+  "name": "server",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "nodemon src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "debug:db": "ts-node debug-db.ts"
+  },
+  "prisma": {
+    "seed": "ts-node prisma/seed.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@prisma/adapter-pg": "^7.4.1",
+    "@prisma/client": "^7.4.0",
+    "@socket.io/redis-adapter": "^8.2.1",
+    "@types/bull": "^3.15.9",
+    "@types/multer": "^2.0.0",
+    "@types/qs": "^6.14.0",
+    "axios": "^1.13.5",
+    "bcryptjs": "^3.0.3",
+    "bull": "^4.16.5",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.6",
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.3",
+    "morgan": "^1.10.1",
+    "multer": "^2.0.2",
+    "pg": "^8.18.0",
+    "prisma": "^7.4.0",
+    "qs": "^6.15.0",
+    "razorpay": "^2.9.6",
+    "redis": "^5.11.0",
+    "socket.io": "^4.7.4",
+    "winston": "^3.11.0",
+    "xlsx": "^0.18.5",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/cookie-parser": "^1.4.10",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/morgan": "^1.9.10",
+    "@types/node": "^25.3.0",
+    "@types/pg": "^8.16.0",
+    "@types/uuid": "^10.0.0",
+    "dotenv-cli": "^11.0.0",
+    "nodemon": "^3.1.11",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  }
+}

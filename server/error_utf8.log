@@ -1,0 +1,136 @@
+﻿[dotenv@17.3.1] injecting env (18) from .env -- tip: ΓÜÖ∩╕Å  load multiple .env files with { path: ['.env.local', '.env'] }
+[dotenv@17.3.1] injecting env (0) from .env -- tip: ΓÜÖ∩╕Å  load multiple .env files with { path: ['.env.local', '.env'] }
+[dotenv@17.3.1] injecting env (0) from .env -- tip: ΓÜÖ∩╕Å  enable debug logging with { debug: true }
+[dotenv@17.3.1] injecting env (0) from .env -- tip: ≡ƒñû agentic secret storage: https://dotenvx.com/as2
+[dotenv@17.3.1] injecting env (0) from .env -- tip: ΓÜÖ∩╕Å  enable debug logging with { debug: true }
+node.exe : C:\Users\MA
+YANK\OneDrive\Desktop\
+bmv_new\server\node_mo
+dules\ts-node\src\inde
+x.ts:859
+At line:1 char:1
++ & "C:\Program Files\
+nodejs/node.exe" 
+"C:\Program 
+Files\nodejs/node_mo 
+...
++ ~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~
+~~~~~
+    + CategoryInfo    
+      : NotSpecified: 
+(C:\Users\MAYANK...rc\
+index.ts:859:String) 
+[], RemoteException
+    + 
+FullyQualifiedErrorId 
+: NativeCommandError
+ 
+    return new TSError
+(diagnosticText, 
+diagnosticCodes, 
+diagnostics);
+           ^
+TSError: Γ¿» Unable 
+to compile TypeScript:
+src/controllers/review
+Controller.ts(15,26): 
+error TS2322: Type 
+'string | string[]' 
+is not assignable to 
+type 'string | StringF
+ilter<"Review"> | 
+undefined'.
+  Type 'string[]' is 
+not assignable to 
+type 'string | StringF
+ilter<"Review"> | 
+undefined'.
+src/controllers/review
+Controller.ts(21,44): 
+error TS2322: Type 
+'string | string[]' 
+is not assignable to 
+type 'string | StringF
+ilter<"Review"> | 
+undefined'.
+  Type 'string[]' is 
+not assignable to 
+type 'string | StringF
+ilter<"Review"> | 
+undefined'.
+src/controllers/review
+Controller.ts(68,66): 
+error TS2322: Type 
+'string | string[]' 
+is not assignable to 
+type 'string | 
+undefined'.
+  Type 'string[]' is 
+not assignable to 
+type 'string'.
+src/controllers/review
+Controller.ts(75,47): 
+error TS2322: Type 
+'string | string[]' 
+is not assignable to 
+type 'string | 
+undefined'.
+  Type 'string[]' is 
+not assignable to 
+type 'string'.
+
+    at createTSError (
+C:\Users\MAYANK\OneDri
+ve\Desktop\bmv_new\ser
+ver\node_modules\ts-no
+de\src\index.ts:859:12
+)
+    at reportTSError (
+C:\Users\MAYANK\OneDri
+ve\Desktop\bmv_new\ser
+ver\node_modules\ts-no
+de\src\index.ts:863:19
+)
+    at getOutput (C:\U
+sers\MAYANK\OneDrive\D
+esktop\bmv_new\server\
+node_modules\ts-node\s
+rc\index.ts:1077:36)
+    at Object.compile 
+(C:\Users\MAYANK\OneDr
+ive\Desktop\bmv_new\se
+rver\node_modules\ts-n
+ode\src\index.ts:1433:
+41)
+    at 
+Module.m._compile (C:\
+Users\MAYANK\OneDrive\
+Desktop\bmv_new\server
+\node_modules\ts-node\
+src\index.ts:1617:30)
+    at node:internal/m
+odules/cjs/loader:1824
+:10
+    at Object.require.
+extensions.<computed> 
+[as .ts] (C:\Users\MAY
+ANK\OneDrive\Desktop\b
+mv_new\server\node_mod
+ules\ts-node\src\index
+.ts:1621:12)
+    at Module.load (no
+de:internal/modules/cj
+s/loader:1427:32)
+    at Module._load (n
+ode:internal/modules/c
+js/loader:1250:12)
+    at TracingChannel.
+traceSync (node:diagno
+stics_channel:322:14) 
+{
+  diagnosticCodes: [ 
+2322, 2322, 2322, 
+2322 ]
+}

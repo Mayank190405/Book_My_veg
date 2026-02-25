@@ -1,0 +1,183 @@
+﻿[dotenv@17.3.1] injecting env (19) from .env -- tip: ΓÜí∩╕Å secrets for agents: https://dotenvx.com/as2
+Starting Isolated Service Layer Verification (Run: 609615)...
+node.exe : (node:10848) 
+Warning: SECURITY 
+WARNING: The SSL modes 
+'prefer', 'require', and 
+'verify-ca' are treated 
+as aliases for 
+'verify-full'.
+At line:1 char:1
++ & "C:\Program 
+Files\nodejs/node.exe" 
+"C:\Program 
+Files\nodejs/node_mo ...
++ ~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo       
+       : NotSpecified:   
+  ((node:10848) Wa...    
+ 'verify-full'.:Strin    
+g) [], RemoteExcepti    
+on
+    + FullyQualifiedErro 
+   rId : NativeCommandE  
+  rror
+ 
+In the next major 
+version 
+(pg-connection-string 
+v3.0.0 and pg v9.0.0), 
+these modes will adopt 
+standard libpq 
+semantics, which have 
+weaker security 
+guarantees.
+
+To prepare for this 
+change:
+- If you want the 
+current behavior, 
+explicitly use 
+'sslmode=verify-full'
+- If you want libpq 
+compatibility now, use 'u
+selibpqcompat=true&sslmod
+e=require'
+
+See https://www.postgresq
+l.org/docs/current/libpq-
+ssl.html for libpq SSL 
+mode definitions.
+(Use `node 
+--trace-warnings ...` to 
+show where the warning 
+was created)
+Verification failed: Pris
+maClientKnownRequestError
+: 
+Invalid `prisma.location.
+upsert()` invocation in
+C:\Users\MAYANK\OneDrive\
+Desktop\bmv_new\server\ve
+rify-services.ts:13:48
+
+  10 
+  11 try {
+  12     // 1. Setup 
+Mock Location & Accounts
+ΓåÆ 13     const 
+location = await 
+prisma.location.upsert(
+Error opening a TLS 
+connection: self-signed 
+certificate in 
+certificate chain
+    at 
+zr.handleRequestError (C:
+\Users\MAYANK\OneDrive\De
+sktop\bmv_new\server\node
+_modules\@prisma\client\s
+rc\runtime\RequestHandler
+.ts:228:13)
+    at zr.handleAndLogReq
+uestError (C:\Users\MAYAN
+K\OneDrive\Desktop\bmv_ne
+w\server\node_modules\@pr
+isma\client\src\runtime\R
+equestHandler.ts:174:12)
+    at zr.request (C:\Use
+rs\MAYANK\OneDrive\Deskto
+p\bmv_new\server\node_mod
+ules\@prisma\client\src\r
+untime\RequestHandler.ts:
+143:12)
+    at processTicksAndRej
+ections (node:internal/pr
+ocess/task_queues:105:5)
+    at async a (C:\Users\
+MAYANK\OneDrive\Desktop\b
+mv_new\server\node_module
+s\@prisma\client\src\runt
+ime\getPrismaClient.ts:80
+7:24) {
+  code: 'P1011',
+  meta: {
+    modelName: 
+'Location',
+    driverAdapterError: 
+DriverAdapterError: 
+TlsConnectionError
+        at 
+PrismaPgAdapter.onError (
+C:\Users\MAYANK\OneDrive\
+Desktop\bmv_new\server\no
+de_modules\@prisma\adapte
+r-pg\dist\index.js:687:11
+)
+        at C:\Users\MAYAN
+K\OneDrive\Desktop\bmv_ne
+w\server\node_modules\@pr
+isma\adapter-pg\dist\inde
+x.js:720:68
+        at processTicksAn
+dRejections (node:interna
+l/process/task_queues:105
+:5)
+        at async PrismaPg
+Adapter.startTransaction 
+(C:\Users\MAYANK\OneDrive
+\Desktop\bmv_new\server\n
+ode_modules\@prisma\adapt
+er-pg\dist\index.js:720:1
+8)
+        at async $t.#r (C
+:\Users\MAYANK\OneDrive\D
+esktop\bmv_new\server\nod
+e_modules\@prisma\client-
+engine-runtime\src\transa
+ction-manager\transaction
+-manager.ts:125:31)
+        at async $t.start
+InternalTransaction (C:\U
+sers\MAYANK\OneDrive\Desk
+top\bmv_new\server\node_m
+odules\@prisma\client-eng
+ine-runtime\src\transacti
+on-manager\transaction-ma
+nager.ts:92:12)
+        at async 
+e.interpretNode (C:\Users
+\MAYANK\OneDrive\Desktop\
+bmv_new\server\node_modul
+es\@prisma\client-engine-
+runtime\src\interpreter\q
+uery-interpreter.ts:255:3
+3)
+        at async e.run (C
+:\Users\MAYANK\OneDrive\D
+esktop\bmv_new\server\nod
+e_modules\@prisma\client-
+engine-runtime\src\interp
+reter\query-interpreter.t
+s:93:23)
+        at async execute 
+(C:\Users\MAYANK\OneDrive
+\Desktop\bmv_new\server\n
+ode_modules\@prisma\clien
+t\src\runtime\core\engine
+s\client\LocalExecutor.ts
+:81:12)
+        at async 
+qt.request (C:\Users\MAYA
+NK\OneDrive\Desktop\bmv_n
+ew\server\node_modules\@p
+risma\client\src\runtime\
+core\engines\client\Clien
+tEngine.ts:492:22) {
+      cause: [Object]
+    }
+  },
+  clientVersion: '7.4.0'
+}

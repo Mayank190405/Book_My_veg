@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Funding Platform Architecture Overview</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 40px;
+      background: #f5f7fa;
+      color: #1a1a1a;
+    }
+    h1, h2, h3 {
+      color: #1f3c88;
+    }
+    .section {
+      background: white;
+      padding: 30px;
+      margin-bottom: 30px;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    }
+    .flow {
+      background: #eef2f7;
+      padding: 20px;
+      border-radius: 6px;
+      font-family: monospace;
+      white-space: pre-line;
+    }
+    ul {
+      line-height: 1.6;
+    }
+    .highlight {
+      font-weight: bold;
+      color: #0a7cff;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Invoice Funding Platform – System Architecture</h1>
+  <p>
+    This system consists of two independent applications:
+    <span class="highlight">Sandbox Infrastructure Platform</span> and
+    <span class="highlight">Service Provider Funding Platform</span>.
+  </p>
+
+  <!-- SANDBOX APP -->
+  <div class="section">
+    <h2>1️⃣ Sandbox Infrastructure Platform</h2>
+    <p>
+      The Sandbox simulates real government and financial infrastructure systems.
+      It behaves like external authorities such as UIDAI, GSTN, Credit Bureau, and Core Banking.
+    </p>
+
+    <h3>Purpose</h3>
+    <ul>
+      <li>Simulate identity verification (Aadhaar)</li>
+      <li>Simulate PAN & credit bureau scoring</li>
+      <li>Simulate GST registry and invoice data</li>
+      <li>Simulate banking system with ledger & transfers</li>
+      <li>Expose secure, government-style APIs</li>
+    </ul>
+
+    <h3>Core Components</h3>
+    <ul>
+      <li><strong>Identity Registry</strong> – Stores Aadhaar & PAN mappings</li>
+      <li><strong>Credit Bureau Module</strong> – Returns credit scores</li>
+      <li><strong>GST Registry</strong> – Stores GSTIN & invoice history</li>
+      <li><strong>Core Banking System</strong> – Handles accounts & transfers</li>
+      <li><strong>NACH Module</strong> – Mandate creation & approval</li>
+      <li><strong>API Gateway</strong> – Authentication, request tracking, structured responses</li>
+    </ul>
+
+    <h3>What It Does NOT Do</h3>
+    <ul>
+      <li>Does not calculate loan eligibility</li>
+      <li>Does not approve funding</li>
+      <li>Does not manage loan lifecycle</li>
+      <li>Does not own risk engine</li>
+    </ul>
+
+    <div class="flow">
+User → Service Provider App → Sandbox APIs  
+Sandbox verifies identity, credit, GST & processes fund transfers.
+    </div>
+  </div>
+
+  <!-- SERVICE PROVIDER APP -->
+  <div class="section">
+    <h2>2️⃣ Service Provider Funding Platform</h2>
+    <p>
+      This is the actual fintech application that provides invoice funding to MSMEs.
+      It owns all business logic and loan decision-making.
+    </p>
+
+    <h3>Purpose</h3>
+    <ul>
+      <li>User registration & authentication</li>
+      <li>Business onboarding</li>
+      <li>Invoice discovery (from Sandbox GST)</li>
+      <li>Risk scoring & eligibility calculation</li>
+      <li>Offer generation</li>
+      <li>Loan lifecycle management</li>
+      <li>Trust score & exposure tracking</li>
+    </ul>
+
+    <h3>Core Modules</h3>
+    <ul>
+      <li><strong>User Management</strong> – Register/Login</li>
+      <li><strong>Business Profile</strong> – GST & Bank linking</li>
+      <li><strong>Invoice Engine</strong> – Fetch unpaid invoices</li>
+      <li><strong>Risk Engine</strong> – Calculate funding percentage</li>
+      <li><strong>Offer Engine</strong> – Generate funding offer</li>
+      <li><strong>Loan State Machine</strong> – Track loan lifecycle</li>
+      <li><strong>Trust Score System</strong> – Adjust funding eligibility</li>
+    </ul>
+
+    <h3>Loan Lifecycle</h3>
+    <div class="flow">
+CREATED  
+→ UNDER_REVIEW  
+→ APPROVED  
+→ DISBURSED  
+→ ACTIVE  
+→ CLOSED / DEFAULTED
+    </div>
+
+    <h3>Interaction with Sandbox</h3>
+    <ul>
+      <li>Calls Aadhaar verification API</li>
+      <li>Calls Credit Bureau API for score</li>
+      <li>Calls GST API to fetch invoices</li>
+      <li>Calls Banking API for fund transfer</li>
+      <li>Calls Banking API for repayment processing</li>
+    </ul>
+  </div>
+
+  <!-- ARCHITECTURE FLOW -->
+  <div class="section">
+    <h2>3️⃣ End-to-End System Flow</h2>
+
+    <div class="flow">
+User
+  ↓
+Service Provider (Risk + Loan Logic)
+  ↓
+Sandbox Infrastructure (Verification + Banking)
+    </div>
+
+    <h3>Responsibility Separation</h3>
+    <ul>
+      <li><strong>Sandbox</strong> = Authority + Financial Infrastructure</li>
+      <li><strong>Service Provider</strong> = Fintech Brain + Loan Decision Engine</li>
+    </ul>
+
+    <p>
+      The Service Provider never directly modifies sandbox data.
+      All communication happens via secured APIs.
+    </p>
+  </div>
+
+  <div class="section">
+    <h2>4️⃣ Architectural Advantage</h2>
+    <ul>
+      <li>Clear separation of responsibilities</li>
+      <li>Replaceable sandbox with real government APIs in future</li>
+      <li>Scalable microservice-friendly design</li>
+      <li>Production-grade simulation environment</li>
+    </ul>
+  </div>
+
+</body>
+</html>
