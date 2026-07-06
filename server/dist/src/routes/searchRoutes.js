@@ -1,0 +1,11 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const auth_1 = require("../middleware/auth");
+const searchController_1 = require("../controllers/searchController");
+const router = (0, express_1.Router)();
+router.get("/history", auth_1.authenticate, searchController_1.getSearchHistory);
+router.post("/history", auth_1.authenticate, searchController_1.recordSearch);
+router.delete("/history", auth_1.authenticate, searchController_1.clearSearchHistory);
+router.get("/popular", searchController_1.getPopularSearches);
+exports.default = router;

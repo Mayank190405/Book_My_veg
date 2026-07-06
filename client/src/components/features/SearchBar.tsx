@@ -3,7 +3,12 @@
 import { useState } from "react";
 import SearchInput from "@/components/ui/SearchInput";
 
-export default function SearchBar() {
+interface SearchBarProps {
+    focused?: boolean;
+    onFocusChange?: (val: boolean) => void;
+}
+
+export default function SearchBar({ focused, onFocusChange }: SearchBarProps) {
     const [query, setQuery] = useState("");
 
     return (
@@ -13,6 +18,8 @@ export default function SearchBar() {
                 onChange={setQuery}
                 placeholder="SEARCH FOR FRESH PRODUCE..."
                 className="w-full"
+                focused={focused}
+                onFocusChange={onFocusChange}
             />
         </div>
     );

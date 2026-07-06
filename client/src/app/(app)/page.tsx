@@ -1,57 +1,112 @@
 "use client";
 
+import { useState, useEffect, useRef } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { cn } from "@/lib/utils";
 import BannerCarousel from "@/components/widgets/BannerCarousel";
+import CategoryCircles from "@/components/widgets/CategoryCircles";
 import TrendingCategories from "@/components/widgets/TrendingCategories";
 import TrendingSection from "@/components/widgets/TrendingSection";
+import PromoStrip from "@/components/widgets/PromoStrip";
 import BuyAgain from "@/components/widgets/BuyAgain";
-import ShopByInterest from "@/components/widgets/ShopByInterest";
-import CategoryGrid from "@/components/widgets/CategoryGrid";
 import AllProductsSection from "@/components/widgets/AllProductsSection";
-import Link from "next/link";
 
 export default function Home() {
-  return (
-    <div className="relative pb-32">
-      <main className="space-y-12 pt-28">
-        {/* ── 1. Premium Promotions ── */}
-        <section className="px-6">
-          <BannerCarousel />
-        </section>
+    const queryClient = useQueryClient();
+    const [refreshing, setRefreshing] = useState(false);
+    const [pullDistance, setPullDistance] = useState(0);
 
-        {/* ── 2. Trending Selection ── */}
-        <div className="space-y-10">
-          <section>
-            <TrendingCategories />
-          </section>
+    const pullDistanceRef = useRef(0);
 
-          <section className="px-5">
-            <TrendingSection />
-          </section>
+    useEffect(() => {
+        const container = document.getElementById("main-scroll-container");
+        if (!container) return;
+
+        let startY = 0;
+        let isPulling = false;
+
+        const handleTouchStart = (e: TouchEvent) => {
+            if (container.scrollTop === 0) {
+                startY = e.touches[0].clientY;
+                isPulling = true;
+            }
+        };
+
+        const handleTouchMove = (e: TouchEvent) => {
+            if (!isPulling) return;
+            const currentY = e.touches[0].clientY;
+            const diff = currentY - startY;
+            if (diff > 0) {
+                const dist = Math.min(80, diff * 0.4);
+                pullDistanceRef.current = dist;
+                setPullDistance(dist);
+                if (diff > 10) {
+                    e.preventDefault();
+                }
+            } else {
+                isPulling = false;
+                pullDistanceRef.current = 0;
+                setPullDistance(0);
+            }
+        };
+
+        const handleTouchEnd = async () => {
+            if (!isPulling) return;
+            isPulling = false;
+
+            const dist = pullDistanceRef.current;
+            pullDistanceRef.current = 0;
+            setPullDistance(0);
+
+            if (dist >= 60) {
+                setRefreshing(true);
+                await queryClient.refetchQueries();
+                setRefreshing(false);
+            }
+        };
+
+        container.addEventListener("touchstart", handleTouchStart, { passive: true });
+        container.addEventListener("touchmove", handleTouchMove, { passive: false });
+        container.addEventListener("touchend", handleTouchEnd, { passive: true });
+
+        return () => {
+            container.removeEventListener("touchstart", handleTouchStart);
+            container.removeEventListener("touchmove", handleTouchMove);
+            container.removeEventListener("touchend", handleTouchEnd);
+        };
+    }, [queryClient]);
+
+
+    return (
+        <div className="relative pb-32 select-none">
+            {/* Pull to refresh indicator */}
+            <div 
+                className="flex items-center justify-center transition-all duration-300 overflow-hidden bg-emerald-500/5 text-emerald-800"
+                style={{ 
+                    height: refreshing ? "50px" : `${pullDistance}px`,
+                    opacity: refreshing || pullDistance > 0 ? 1 : 0
+                }}
+            >
+                <div className="flex items-center gap-2 py-2">
+                    <div className={cn("w-4 h-4 border-2 border-emerald-600 border-t-transparent rounded-full", (refreshing || pullDistance >= 60) && "animate-spin")} />
+                    <span className="text-[10px] font-black uppercase tracking-wider">
+                        {refreshing ? "Refreshing Freshness..." : pullDistance >= 60 ? "Release to Refresh" : "Pull Down to Refresh"}
+                    </span>
+                </div>
+            </div>
+
+            <div className="space-y-6">
+                <BannerCarousel />
+                <CategoryCircles />
+                <TrendingCategories />
+                
+                <div className="px-5 space-y-8">
+                    <TrendingSection />
+                    <PromoStrip />
+                    <BuyAgain />
+                    <AllProductsSection />
+                </div>
+            </div>
         </div>
-
-        {/* ── 3. Personalized ── */}
-        <section className="px-5">
-          <BuyAgain />
-        </section>
-
-        {/* ── 4. Quick-Scan Categories ── */}
-        <section className="px-5">
-          <div className="px-1 mb-4">
-            <h2 className="text-xl font-black text-emerald-950 tracking-tight uppercase tracking-widest leading-none">Browse All</h2>
-          </div>
-          <CategoryGrid />
-        </section>
-
-        {/* ── 5. Interest Based ── */}
-        <section className="px-5">
-          <ShopByInterest />
-        </section>
-
-        {/* ── 6. All Products ── */}
-        <section className="px-5">
-          <AllProductsSection />
-        </section>
-      </main>
-    </div>
-  );
+    );
 }

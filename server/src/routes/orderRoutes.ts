@@ -3,12 +3,17 @@ import {
     createOrder,
     getOrders,
     getOrderById,
+    cancelOrder,
     getAllOrders,
     updateOrderStatus,
-    cancelOrder,
-    processWebOrder,
-    getAssignedOrdersForPacker,
-    submitPackedOrder,
+    updateOrderPaymentStatus,
+    getAssignedOrders,
+    getOrdersForPacking,
+    getPackedOrdersCount,
+    updatePackingDetails,
+    sendDeliveryOtp,
+    assignPacker,
+    assignDriver,
 } from "../controllers/orderController";
 import { authenticate, authorize } from "../middleware/auth";
 import { validate } from "../middleware/validate";
@@ -20,18 +25,25 @@ const router = Router();
 router.use(authenticate);
 
 // ── Customer ─────────────────────────────────────────────────────────────────
-router.post("/", rateLimiter, validate(createOrderSchema), createOrder);
+router.post("/", rateLimiter(50, 3600), validate(createOrderSchema), createOrder);
 router.get("/", getOrders);           // cursor: ?cursor=xxx&limit=10
 router.get("/:id", getOrderById);
 router.post("/:id/cancel", cancelOrder);         // state-machine guarded
-router.post("/:id/process-web-order", processWebOrder);
 
-// ── Packer ────────────────────────────────────────────────────────────────────
-router.get("/packer/assigned", authorize(["STAFF", "ADMIN"]), getAssignedOrdersForPacker);
-router.post("/packer/:id/pack", authorize(["STAFF", "ADMIN"]), submitPackedOrder);
+// ── Admin (Role-specific Assignments & Management) ──────────────────────────
+router.get("/admin/all", authorize(["ADMIN", "STORE_ADMIN"]), getAllOrders);
+router.patch("/:id/status", authorize(["ADMIN", "STORE_ADMIN", "DELIVERY_PARTNER", "PACKING"]), updateOrderStatus);
+router.patch("/:id/payment", authorize(["ADMIN", "STORE_ADMIN", "DELIVERY_PARTNER"]), updateOrderPaymentStatus);
+router.patch("/:id/assign-packer", authorize(["ADMIN", "STORE_ADMIN"]), assignPacker);
+router.patch("/:id/assign-driver", authorize(["ADMIN", "STORE_ADMIN"]), assignDriver);
 
-// ── Admin ─────────────────────────────────────────────────────────────────────
-router.get("/admin/all", authorize(["ADMIN", "STAFF"]), getAllOrders);      // cursor: ?cursor=xxx&limit=20&status=PENDING
-router.put("/:id/status", authorize(["ADMIN", "STAFF"]), updateOrderStatus); // state-machine guarded
+// ── Packer ───────────────────────────────────────────────────────────────────
+router.get("/packing/assignments", authorize(["PACKING"]), getOrdersForPacking);
+router.get("/packing/count", authorize(["PACKING"]), getPackedOrdersCount);
+router.patch("/packing/:id/details", authorize(["PACKING"]), updatePackingDetails);
+
+// ── Driver ───────────────────────────────────────────────────────────────────
+router.get("/driver/assigned", authorize(["DELIVERY_PARTNER"]), getAssignedOrders);
+router.post("/driver/:id/otp", authorize(["DELIVERY_PARTNER"]), sendDeliveryOtp);
 
 export default router;

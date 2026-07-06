@@ -47,7 +47,7 @@ autoCancelQueue.process(async (job) => {
 
     const order = await prisma.order.findUnique({
         where: { id: orderId },
-        include: { items: true },
+        include: { items: true, payments: true },
     });
 
     if (!order) {
@@ -61,6 +61,12 @@ autoCancelQueue.process(async (job) => {
             orderId,
             paymentStatus: order.paymentStatus,
         });
+        return;
+    }
+
+    const isCod = order.payments.some((p: any) => p.method === "COD");
+    if (isCod) {
+        logger.info("Auto-cancel skipped — COD order", { orderId });
         return;
     }
 

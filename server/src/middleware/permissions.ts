@@ -24,18 +24,16 @@ export type Permission =
  * Role-to-Permission Mapping
  */
 export const RolePermissions: Record<string, Permission[]> = {
-    SUPER_ADMIN: [
-        "manage_all_stores", "view_global_analytics", "manage_users_global",
-        "manage_store_inventory", "manage_store_users", "view_store_finance",
-        "create_order", "manage_customer", "inventory:read", "inventory:write", "pos:operate"
-    ],
     ADMIN: [
         "manage_all_stores", "view_global_analytics", "manage_users_global",
-        "inventory:read", "inventory:write", "pos:operate"
+        "manage_store_inventory", "manage_store_users", "view_store_finance",
+        "create_order", "manage_customer", "inventory:read", "inventory:write", "pos:operate",
+        "assign_packer", "update_order_packing", "update_delivery_status"
     ],
     STORE_ADMIN: [
         "manage_store_inventory", "manage_store_users", "view_store_finance",
-        "inventory:read", "inventory:write", "pos:operate"
+        "inventory:read", "inventory:write", "pos:operate", "assign_packer",
+        "update_order_packing", "update_delivery_status"
     ],
     POS_OPERATOR: [
         "create_order", "manage_customer", "assign_packer", "view_store_finance",

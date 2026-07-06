@@ -16,7 +16,7 @@ export default function AllProductsSection() {
         isFetchingNextPage
     } = useInfiniteQuery({
         queryKey: ["all-products-infinite"],
-        queryFn: ({ pageParam }) => getProducts(pageParam, 10),
+        queryFn: ({ pageParam }) => getProducts(pageParam, 50),
         getNextPageParam: (lastPage) => lastPage.nextCursor || undefined,
         initialPageParam: undefined,
     });
@@ -43,7 +43,7 @@ export default function AllProductsSection() {
             <div className="space-y-8">
                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
                     {[...Array(10)].map((_, i) => (
-                        <Skeleton key={i} className="h-64 rounded-[2.25rem] bg-white/5" />
+                        <Skeleton key={i} className="h-64 rounded-3xl bg-secondary" />
                     ))}
                 </div>
             </div>
@@ -57,14 +57,14 @@ export default function AllProductsSection() {
     return (
         <div className="space-y-8">
             <div className="px-1">
-                <h2 className="text-xl font-black text-emerald-950 tracking-tight uppercase tracking-widest leading-none mb-2">All Products 📦</h2>
-                <p className="text-[10px] font-bold text-emerald-950/40 uppercase tracking-widest">Freshly picked from our entire catalog</p>
+                <h2 className="text-xl font-black text-foreground tracking-tight uppercase tracking-widest leading-none mb-2">All Products 📦</h2>
+                <p className="text-[10px] font-bold text-foreground/40 uppercase tracking-widest">Freshly picked from our entire catalog</p>
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
                 {allProducts.map((product: any, idx: number) => (
                     <div
-                        key={`${product.id}-${idx}`}
+                        key={product.id}
                         className="animate-fade-in"
                         style={{ animationDelay: `${(idx % 10) * 30}ms` }}
                     >
@@ -73,10 +73,11 @@ export default function AllProductsSection() {
                             name={product.name}
                             images={product.images}
                             basePrice={Number(product.basePrice)}
+                            weight={product.weight}
                             weightUnit={product.weightUnit}
                             inventory={product.inventory}
                             pricing={product.pricing}
-                            variant="transparent"
+                            variants={product.variants}
                         />
                     </div>
                 ))}
@@ -87,14 +88,14 @@ export default function AllProductsSection() {
                 {isFetchingNextPage ? (
                     <div className="flex flex-col items-center gap-4 animate-bounce-slow">
                         <div className="w-12 h-12 rounded-full border-4 border-emerald-500/20 border-t-emerald-500 animate-spin" />
-                        <span className="text-[10px] font-black text-emerald-950/40 uppercase tracking-widest">Growing your list...</span>
+                        <span className="text-[10px] font-black text-foreground/40 uppercase tracking-widest">Growing your list...</span>
                     </div>
                 ) : hasNextPage ? (
                     <div className="w-1.5 h-1.5 rounded-full bg-emerald-500/20 animate-pulse" />
                 ) : (
                     <div className="text-center space-y-2">
                         <div className="text-2xl opacity-20">🍃</div>
-                        <p className="text-[10px] font-black text-emerald-950/20 uppercase tracking-widest">That's everything for now</p>
+                        <p className="text-[10px] font-black text-foreground/20 uppercase tracking-widest">That's everything for now</p>
                     </div>
                 )}
             </div>

@@ -33,7 +33,7 @@ export const getCategories = async (req: Request, res: Response) => {
 export const getCategoryById = async (req: Request, res: Response) => {
     const id = req.params.id as string;
     // ── FIX 2: Cursor pagination for category products ────────────────────
-    const limit = Math.min(Number(req.query.limit) || 20, 100);
+    const limit = Math.min(Number(req.query.limit) || 100, 500);
     const cursor = req.query.cursor as string | undefined;
     const cacheKey = `category:${id}:${cursor ?? "start"}:${limit}`;
 
@@ -53,6 +53,12 @@ export const getCategoryById = async (req: Request, res: Response) => {
                     include: {
                         inventory: true,
                         pricing: { where: { isActive: true } },
+                        variants: {
+                            include: {
+                                pricing: { where: { isActive: true } },
+                                inventory: true
+                            }
+                        }
                     },
                     orderBy: { createdAt: "desc" },
                 },
@@ -79,7 +85,18 @@ export const getCategoryById = async (req: Request, res: Response) => {
 
 export const createCategory = async (req: Request, res: Response) => {
     try {
-        const category = await prisma.category.create({ data: req.body });
+        const { name, slug, icon, imageUrl, isActive, sortOrder, parentId } = req.body;
+        const category = await prisma.category.create({
+            data: {
+                name,
+                slug: slug || name.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+                icon,
+                imageUrl,
+                isActive: isActive !== undefined ? isActive : true,
+                sortOrder: sortOrder !== undefined ? Number(sortOrder) : 0,
+                parentId: parentId || null
+            }
+        });
         // Invalidate list cache
         await redisClient.del("categories:all");
         res.status(201).json(category);
@@ -93,14 +110,28 @@ export const createCategory = async (req: Request, res: Response) => {
 export const updateCategory = async (req: Request, res: Response) => {
     const id = req.params.id as string;
     try {
-        const category = await prisma.category.update({ where: { id }, data: req.body });
+        const { name, slug, icon, imageUrl, isActive, sortOrder, parentId } = req.body;
+
+        const updateData: any = {};
+        if (name !== undefined) updateData.name = name;
+        if (slug !== undefined) updateData.slug = slug;
+        if (icon !== undefined) updateData.icon = icon;
+        if (imageUrl !== undefined) updateData.imageUrl = imageUrl;
+        if (isActive !== undefined) updateData.isActive = isActive;
+        if (sortOrder !== undefined) updateData.sortOrder = Number(sortOrder);
+        if (parentId !== undefined) updateData.parentId = parentId || null;
+
+        const category = await prisma.category.update({ where: { id }, data: updateData });
         // ── FIX 5: Invalidate on update ───────────────────────────────────
         await Promise.all([
             invalidateCategoryCache(id),
             redisClient.del("categories:all"),
         ]);
         res.json(category);
-    } catch (error) {
+    } catch (error: any) {
+        if (error.code === "P2025") {
+            return res.status(404).json({ message: "Category not found" });
+        }
         res.status(500).json({ message: "Error updating category" });
     }
 };
@@ -116,8 +147,10 @@ export const deleteCategory = async (req: Request, res: Response) => {
             redisClient.del("categories:all"),
         ]);
         res.json({ message: "Category deleted" });
-    } catch (error) {
+    } catch (error: any) {
+        if (error.code === "P2025") {
+            return res.status(404).json({ message: "Category not found" });
+        }
         res.status(500).json({ message: "Error deleting category" });
     }
 };
-

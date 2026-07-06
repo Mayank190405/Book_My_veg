@@ -63,17 +63,20 @@ export default function ProductShelf({ title, subtitle, queryKey, queryFn, href 
 
             <div className="flex overflow-x-auto gap-4 pb-4 -mx-5 px-5 scrollbar-hide snap-x">
                 {items.slice(0, 10).map((product: any) => (
-                    <ProductCard
-                        key={product.id}
-                        id={product.id}
-                        name={product.name}
-                        images={product.images}
-                        basePrice={Number(product.basePrice)}
-                        weightUnit={product.weightUnit}
-                        inventory={product.inventory}
-                        pricing={product.pricing}
-                        compact
-                    />
+                    <div key={product.id} className="w-[140px] flex-none snap-start">
+                        <ProductCard
+                            id={product.id}
+                            name={product.name}
+                            images={product.images}
+                            basePrice={Number(product.basePrice)}
+                            weight={product.weight}
+                            weightUnit={product.weightUnit}
+                            inventory={product.inventory}
+                            pricing={product.pricing}
+                            variants={product.variants}
+                            compact
+                        />
+                    </div>
                 ))}
             </div>
         </div>

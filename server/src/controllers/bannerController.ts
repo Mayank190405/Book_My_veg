@@ -14,7 +14,7 @@ export const getBanners = async (req: Request, res: Response, next: NextFunction
 
 export const createBanner = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { title, imageUrl, link, isActive, sortOrder } = req.body;
+        const { title, subtitle, imageUrl, link, isActive, sortOrder, redirectType, redirectId, buttonText, priority, position } = req.body;
 
         if (isActive) {
             const activeCount = await prisma.banner.count({ where: { isActive: true } });
@@ -25,12 +25,19 @@ export const createBanner = async (req: Request, res: Response, next: NextFuncti
 
         const banner = await prisma.banner.create({
             data: {
+                title,
+                subtitle,
                 imageUrl,
                 link,
                 isActive: isActive ?? true,
-                sortOrder: sortOrder || 0
+                sortOrder: sortOrder || 0,
+                redirectType: redirectType || "external",
+                redirectId,
+                buttonText,
+                priority: priority || 0,
+                position: position || "HOME_TOP"
             }
-        } as any); // Using any because of potential title vs position differences in schema
+        });
 
         res.status(201).json(banner);
     } catch (error) {
@@ -41,7 +48,7 @@ export const createBanner = async (req: Request, res: Response, next: NextFuncti
 export const updateBanner = async (req: Request, res: Response, next: NextFunction) => {
     try {
         const id = req.params.id as string;
-        const { imageUrl, link, isActive, sortOrder } = req.body;
+        const { title, subtitle, imageUrl, link, isActive, sortOrder, redirectType, redirectId, buttonText, priority, position } = req.body;
 
         if (isActive) {
             const activeCount = await prisma.banner.count({
@@ -58,10 +65,17 @@ export const updateBanner = async (req: Request, res: Response, next: NextFuncti
         const banner = await prisma.banner.update({
             where: { id },
             data: {
+                title,
+                subtitle,
                 imageUrl,
                 link,
                 isActive,
-                sortOrder
+                sortOrder,
+                redirectType,
+                redirectId,
+                buttonText,
+                priority,
+                position
             }
         });
         res.json(banner);

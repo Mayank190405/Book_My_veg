@@ -73,7 +73,17 @@ export const getPopularSearches = async (req: Request, res: Response) => {
         });
 
         // Map to simple array of strings
-        const results = popular.map(p => p.query);
+        let results = popular.map(p => p.query);
+        if (results.length === 0) {
+            results = [
+                "Organic Potato",
+                "Fresh Onion",
+                "Alphonso Mango",
+                "Mint Leaves",
+                "Green Chili",
+                "Desi Ghee"
+            ];
+        }
         res.json(results);
     } catch (error) {
         res.status(500).json({ message: "Error fetching popular searches" });

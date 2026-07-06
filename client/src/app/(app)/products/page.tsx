@@ -88,7 +88,7 @@ export default function ProductsPage() {
 
     const { data: productsData, isLoading } = useQuery({
         queryKey: ["all-products"],
-        queryFn: () => getProducts(undefined, 100), // Fetch a larger set for client-side filtering
+        queryFn: () => getProducts(undefined, 250), // Fetch a larger set for client-side filtering
     });
 
     const products = productsData?.data || [];
@@ -236,6 +236,7 @@ export default function ProductsPage() {
                                     name={product.name}
                                     images={product.images}
                                     basePrice={Number(product.basePrice)}
+                                    weight={Number(product.weight)}
                                     weightUnit={product.weightUnit}
                                     inventory={product.inventory}
                                     pricing={product.pricing}

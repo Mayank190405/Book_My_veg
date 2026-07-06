@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
+import prisma from "../config/prisma";
 
 const ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || "access_secret";
 
@@ -11,7 +12,7 @@ export interface AuthRequest extends Request {
     };
 }
 
-export const authenticate = (req: AuthRequest, res: Response, next: NextFunction) => {
+export const authenticate = async (req: AuthRequest, res: Response, next: NextFunction) => {
     const authHeader = req.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -22,8 +23,32 @@ export const authenticate = (req: AuthRequest, res: Response, next: NextFunction
 
     try {
         const decoded = jwt.verify(token, ACCESS_SECRET) as { userId: string; role: string; locationId?: string };
+        
+        let sessionValid = false;
+        
+        if (decoded.userId.startsWith("STORE_")) {
+            // Check Location Registry for Virtual Hub Sessions
+            const locationId = decoded.userId.replace("STORE_", "");
+            const locationExists = await prisma.location.findUnique({ where: { id: locationId }, select: { id: true } });
+            sessionValid = !!locationExists;
+        } else {
+            // Standard User Verification
+            const userExists = await prisma.user.findUnique({ where: { id: decoded.userId }, select: { id: true } });
+            sessionValid = !!userExists;
+        }
+        
+        if (!sessionValid) {
+            return res.status(401).json({ message: "Institutional session is invalid" });
+        }
+
         req.user = decoded;
-        next();
+
+        // Wrap next() in context for isolation & auditing
+        import("../utils/context").then(({ runWithContext }) => {
+            runWithContext(decoded, () => {
+                next();
+            });
+        });
     } catch (error) {
         return res.status(401).json({ message: "Invalid token" });
     }

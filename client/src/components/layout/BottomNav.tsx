@@ -1,55 +1,89 @@
 "use client";
 
-import { Home, LayoutGrid, ShoppingBag, User } from "lucide-react";
+import { Home, LayoutGrid, ShoppingCart, User } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { cn } from "@/lib/utils";
 import { useCartStore } from "@/store/useCartStore";
+import { cn } from "@/lib/utils";
 
 const navItems = [
-    { label: "Home", icon: Home, href: "/" },
-    { label: "Categories", icon: LayoutGrid, href: "/categories" },
-    { label: "Cart", icon: ShoppingBag, href: "/cart" },
-    { label: "Account", icon: User, href: "/account" },
+  { label: "HOME", icon: Home, href: "/" },
+  { label: "CATEGORIES", icon: LayoutGrid, href: "/categories" },
+  { label: "CART", icon: ShoppingCart, href: "/cart" },
+  { label: "ACCOUNT", icon: User, href: "/account" },
 ];
 
 export default function BottomNav() {
-    const pathname = usePathname();
-    const { items } = useCartStore();
-    const cartCount = items.length;
+  const pathname = usePathname();
+  const { items } = useCartStore();
 
-    // Hide BottomNav on admin paths
-    if (pathname?.startsWith("/admin")) return null;
+  if (pathname.startsWith("/admin")) return null;
 
-    return (
-        <nav className="fixed bottom-0 left-0 right-0 z-50 px-4 pb-safe pt-2">
-            <div className="bg-white/80 backdrop-blur-2xl border border-black/5 rounded-t-[2.5rem] flex items-center justify-around py-3 shadow-[0_-10px_40px_rgba(0,0,0,0.05)]">
-                {navItems.map((item) => {
-                    const isActive = pathname === item.href;
-                    const Icon = item.icon;
+  return (
+    <div className="fixed bottom-4 left-0 right-0 z-50 flex justify-center px-4">
+      <div className="relative w-full max-w-md bg-white rounded-[32px] shadow-[0_12px_40px_rgba(0,0,0,0.15)] border border-gray-100">
 
-                    return (
-                        <Link
-                            key={item.href}
-                            href={item.href}
-                            className={cn(
-                                "flex flex-col items-center gap-1 transition-all duration-300 active:scale-90",
-                                isActive ? "text-emerald-600" : "text-emerald-950/40 hover:text-emerald-950/70"
-                            )}
-                        >
-                            <div className="relative">
-                                <Icon className={cn("h-6 w-6", isActive && "fill-current")} />
-                                {item.label === "Cart" && cartCount > 0 && (
-                                    <span className="absolute -top-1 -right-1.5 bg-emerald-600 text-white text-[10px] font-black h-4 min-w-[1rem] px-1 flex items-center justify-center rounded-full border border-white/20">
-                                        {cartCount}
-                                    </span>
-                                )}
-                            </div>
-                            <span className="text-[10px] font-black uppercase tracking-widest">{item.label}</span>
-                        </Link>
-                    );
-                })}
-            </div>
-        </nav>
-    );
+        {/* Active Indicator */}
+        <div className="absolute top-0 left-0 w-full flex justify-around">
+          {navItems.map((item) => {
+            const active = pathname === item.href;
+
+            return (
+              <div
+                key={item.href}
+                className="flex-1 flex justify-center"
+              >
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="grid grid-cols-4 pt-4 pb-3">
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            const active = pathname === item.href;
+
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className="flex flex-col items-center justify-center gap-1"
+              >
+                <div className="relative">
+
+                  <Icon
+                    size={24}
+                    strokeWidth={2.3}
+                    className={cn(
+                      active
+                        ? "text-[#0B7A53]"
+                        : "text-gray-400"
+                    )}
+                  />
+
+                  {item.label === "CART" &&
+                    items.length > 0 && (
+                      <span className="absolute -top-2 -right-2 h-4 min-w-[16px] rounded-full bg-[#0B7A53] text-white text-[9px] font-bold flex items-center justify-center px-1">
+                        {items.length}
+                      </span>
+                    )}
+                </div>
+
+                <span
+                  className={cn(
+                    "text-[10px] tracking-[0.18em] font-bold",
+                    active
+                      ? "text-[#0B7A53]"
+                      : "text-gray-400"
+                  )}
+                >
+                  {item.label}
+                </span>
+              </Link>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
 }

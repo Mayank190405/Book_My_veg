@@ -14,14 +14,14 @@ export default function ShopByInterest() {
     return (
         <div className="space-y-4">
             <div className="px-1 flex items-center justify-between">
-                <h2 className="text-xl font-black text-white-950 tracking-tight uppercase tracking-widest">Shop By Interest</h2>
+                <h2 className="text-xl font-black text-foreground tracking-tight uppercase tracking-widest leading-none italic">Shop By Interest</h2>
             </div>
             <div className="grid grid-cols-2 gap-4">
                 {INTERESTS.map((item) => (
                     <Link
                         key={item.label}
                         href={item.href}
-                        className="group relative overflow-hidden bg-white/60 backdrop-blur-xl border border-black/5 rounded-3xl p-4 flex items-center gap-4 transition-all hover:shadow-lg active:scale-[0.98]"
+                        className="group relative overflow-hidden bg-card border border-border rounded-2xl p-4 flex items-center gap-4 transition-all hover:bg-secondary active:scale-[0.98] shadow-sm"
                     >
                         <div className={`${item.color} bg-opacity-10 p-3 rounded-2xl transition-transform group-hover:scale-110 group-hover:rotate-3`}>
                             <item.icon className={`h-6 w-6 ${item.text}`} />

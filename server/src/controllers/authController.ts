@@ -10,9 +10,10 @@ import {
     isMagicTokenVerified,
     clearMagicToken
 } from "../utils/otp";
-import { sendOtpViaWhatsapp, getConversation } from "../services/automatex";
+import { sendOtpViaWhatsapp, getConversation, getMyMetaTemplates } from "../services/mbgcard";
 import { generateTokens, verifyRefreshToken } from "../utils/jwt";
 import logger from "../utils/logger";
+import bcrypt from "bcryptjs";
 
 export const sendOtp = async (req: Request, res: Response) => {
     const { phone } = req.body;
@@ -25,7 +26,17 @@ export const sendOtp = async (req: Request, res: Response) => {
         const otp = generateOtp();
         await storeOtp(phone, otp);
 
-        // Send OTP via Automatex
+        // Pre-create/save user in database even if OTP is not yet verified
+        let user = await withRetry(() => prisma.user.findUnique({ where: { phone } }));
+        if (!user) {
+            user = await withRetry(() => prisma.user.create({ data: { phone } }));
+        }
+
+        if (process.env.NODE_ENV !== "production") {
+            console.log(`[AUTH] OTP for ${phone} is ${otp}`);
+        }
+
+        // Send OTP via MBG Card
         try {
             await sendOtpViaWhatsapp(phone, otp);
             res.status(200).json({
@@ -86,6 +97,18 @@ export const verifyOtpAndLogin = async (req: Request, res: Response) => {
             maxAge: 7 * 24 * 60 * 60 * 1000,
         });
 
+        // Create Audit Log
+        await (prisma.auditLog.create as any)({
+            data: {
+                entityType: "USER",
+                entityId: user.id,
+                action: "LOGIN_OTP",
+                staffId: user.id,
+                locationId: user.locationId,
+                newValue: { phone: user.phone, role: user.role }
+            }
+        });
+
         res.status(200).json({
             message: "Login successful",
             accessToken,
@@ -108,7 +131,7 @@ export const checkWhatsappStatus = async (req: Request, res: Response) => {
         // 1. Check Redis if this token has been marked as verified by the webhook
         let isVerified = await isMagicTokenVerified(token);
 
-        // 2. Fallback: If not verified by webhook, poll Automatex API
+        // 2. Fallback: If not verified by webhook, poll MBG Card API
         if (!isVerified) {
             logger.info(`[Auth] Webhook not hit for ${phone}. Triggering fallback polling...`);
             const conversation = await getConversation(phone);
@@ -127,7 +150,7 @@ export const checkWhatsappStatus = async (req: Request, res: Response) => {
 
                         logger.info(`[Auth] Checking user msg from conversation API:`, JSON.stringify(content));
 
-                        // Try all known structures from Automatex API
+                        // Try all known structures from MBG Card API
                         // 1. Meta webhook nested payload (entry > changes > value > messages)
                         const whatsappMsg = content?.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
                         // 2. Direct text field
@@ -207,7 +230,7 @@ export const whatsappWebhook = async (req: Request, res: Response) => {
     logger.info(`[Webhook] Received WhatsApp message: ${JSON.stringify(req.body, null, 2)}`);
 
     try {
-        // Parse the Automatex/Meta payload
+        // Parse the MBG Card/Meta payload
         const messagesStr = req.body.message;
         const messages = typeof messagesStr === 'string' ? JSON.parse(messagesStr) : (messagesStr || []);
 
@@ -283,14 +306,150 @@ export const logout = (req: Request, res: Response) => {
     res.status(200).json({ message: "Logged out successfully" });
 };
 
+export const loginWithPassword = async (req: Request, res: Response) => {
+    const { phone, password } = req.body;
+
+    if (!phone || !password) {
+        return res.status(400).json({ message: "Phone and password are required" });
+    }
+
+    try {
+        logger.info(`[AUTH] Login attempt for identifier: ${phone}`);
+        
+        let user: any = await withRetry(() => prisma.user.findUnique({ where: { phone } }));
+        let locationMatch: any = null;
+
+        if (user) {
+            logger.info(`[AUTH] User found for identifier: ${phone}, checking password...`);
+        }
+
+        if (!user || !user.password) {
+            logger.info(`[AUTH] Triggering fallback identification for identifier: ${phone}...`);
+            // Fallback: Check if this is a Store/Location login using contactNumber & store password
+            locationMatch = await withRetry(() => prisma.location.findFirst({
+                where: { contactNumber: phone }
+            }));
+
+            if (!locationMatch || !locationMatch.password) {
+                logger.warn(`[AUTH] Access identifier not recognized: ${phone}`);
+                return res.status(401).json({ message: "Invalid credentials or no password set for this account" });
+            }
+
+            const isStoreMatch = await bcrypt.compare(password, locationMatch.password);
+            if (!isStoreMatch) {
+                logger.warn(`[AUTH] Store password mismatch for identifier: ${phone}`);
+                return res.status(401).json({ message: "Invalid credentials" });
+            }
+
+            logger.info(`[AUTH] Store login successful for ${locationMatch.name} (${locationMatch.id})`);
+
+            // Create a virtual user session for the store hub
+            const { accessToken, refreshToken } = generateTokens(`STORE_${locationMatch.id}`, "STORE_ADMIN", locationMatch.id);
+
+            res.cookie("refreshToken", refreshToken, {
+                httpOnly: true,
+                secure: process.env.NODE_ENV === "production",
+                sameSite: "lax",
+                maxAge: 7 * 24 * 60 * 60 * 1000,
+            });
+
+            // Create Audit Log - Set staffId to null for virtual store logins (avoids FK violation)
+            try {
+                await withRetry(() => (prisma.auditLog.create as any)({
+                    data: {
+                        entityType: "LOCATION",
+                        entityId: locationMatch.id,
+                        action: "LOGIN_STORE_ADMIN",
+                        staffId: null, 
+                        locationId: locationMatch.id,
+                        newValue: { name: locationMatch.name, virtualId: `STORE_${locationMatch.id}` }
+                    }
+                }));
+            } catch (auditError) {
+                logger.error("[AUTH] Failed to create store login audit log:", auditError);
+                // Don't fail the login if audit log fails, but we've logged it
+            }
+
+            return res.status(200).json({
+                message: "Store login successful",
+                accessToken,
+                user: { 
+                    id: `STORE_${locationMatch.id}`, 
+                    phone: locationMatch.contactNumber, 
+                    role: "STORE_ADMIN", 
+                    name: locationMatch.name, 
+                    locationId: locationMatch.id,
+                    slug: locationMatch.slug
+                },
+            });
+        }
+
+        const isMatch = await bcrypt.compare(password, user.password);
+        if (!isMatch) {
+            logger.warn(`[AUTH] Password mismatch for identifier: ${phone}`);
+            return res.status(401).json({ message: "Invalid credentials" });
+        }
+
+        const { accessToken, refreshToken } = generateTokens(user.id, user.role, user.locationId);
+
+        res.cookie("refreshToken", refreshToken, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === "production",
+            sameSite: "lax",
+            maxAge: 7 * 24 * 60 * 60 * 1000,
+        });
+
+        // Create Audit Log
+        try {
+            await withRetry(() => (prisma.auditLog.create as any)({
+                data: {
+                    entityType: "USER",
+                    entityId: user.id,
+                    action: "LOGIN_PASSWORD",
+                    staffId: user.id,
+                    locationId: user.locationId,
+                    newValue: { phone: user.phone, role: user.role }
+                }
+            }));
+        } catch (auditError) {
+            logger.error("[AUTH] Failed to create user login audit log:", auditError);
+        }
+
+        logger.info(`[AUTH] User login successful for ${user.id} (${user.role})`);
+
+        res.status(200).json({
+            message: "Login successful",
+            accessToken,
+            user: { id: user.id, phone: user.phone, role: user.role, name: user.name, locationId: user.locationId },
+        });
+    } catch (error: any) {
+        logger.error("[AUTH] loginWithPassword critical error:", {
+            error: error.message,
+            stack: error.stack,
+            phone
+        });
+        res.status(500).json({ message: "Internal server error", error: process.env.NODE_ENV === "development" ? error.message : undefined });
+    }
+};
+
 export const getMe = async (req: any, res: Response) => {
     try {
         const user = await withRetry(() => prisma.user.findUnique({
             where: { id: req.user.userId },
-            select: { id: true, phone: true, name: true, email: true, role: true },
+            select: { id: true, phone: true, name: true, email: true, role: true, locationId: true },
         }));
         res.json(user);
     } catch (error) {
         res.status(500).json({ message: "Error fetching profile" });
+    }
+};
+
+export const getWhatsappTemplates = async (req: Request, res: Response) => {
+    try {
+        const data = await getMyMetaTemplates();
+        res.status(200).json(data);
+    } catch (error: any) {
+        logger.error("[Auth] getWhatsappTemplates error:", error);
+        res.status(500).json({ message: "Failed to fetch WhatsApp templates from MBG Card", error: error.message });
     }
 };

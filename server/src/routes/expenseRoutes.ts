@@ -1,10 +1,16 @@
+
 import { Router } from "express";
-import * as expenseController from "../controllers/expenseController";
+import { authenticate } from "../middleware/auth";
+import { 
+    addStoreExpense,
+    getStoreExpenses
+} from "../controllers/expenseController";
 
 const router = Router();
 
-router.post("/", expenseController.recordExpense);
-router.get("/store/:locationId", expenseController.getStoreExpenses);
-router.get("/summary", expenseController.getGlobalSummary);
+router.use(authenticate);
+
+router.post("/add", addStoreExpense);
+router.get("/store/:locationId", getStoreExpenses);
 
 export default router;

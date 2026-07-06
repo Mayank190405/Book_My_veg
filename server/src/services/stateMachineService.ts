@@ -2,7 +2,6 @@
 import { OrderStatus, Prisma } from "@prisma/client";
 import prisma from "../config/prisma";
 import { InventoryService, InventoryLogType } from "./inventoryService";
-import { AccountingService } from "./accountingService";
 
 export class StateMachineService {
     /**

@@ -1,0 +1,10 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const integrationKeyController_1 = require("../controllers/integrationKeyController");
+const router = (0, express_1.Router)();
+router.post("/", integrationKeyController_1.createApiKey);
+router.get("/", integrationKeyController_1.listApiKeys);
+router.patch("/:id/toggle", integrationKeyController_1.toggleApiKey);
+router.delete("/:id", integrationKeyController_1.deleteApiKey);
+exports.default = router;

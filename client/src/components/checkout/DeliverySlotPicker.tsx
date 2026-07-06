@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
-import { Calendar, Clock, ChevronRight } from "lucide-react";
+import { Calendar, Clock, Zap, CheckCircle2 } from "lucide-react";
 
 interface DeliverySlot {
     id: string;
@@ -11,15 +11,15 @@ interface DeliverySlot {
 }
 
 interface DeliverySlotPickerProps {
-    onSelect: (slot: { date: string; time: string } | null) => void;
+    onSelect: (slot: { date: string; time: string; mode: "INSTANT" | "SCHEDULED" } | null) => void;
 }
 
 export default function DeliverySlotPicker({ onSelect }: DeliverySlotPickerProps) {
-    const [selectedDate, setSelectedDate] = useState<number>(0); // 0 = today, 1 = tomorrow
+    const [mode, setMode] = useState<"INSTANT" | "SCHEDULED">("INSTANT");
+    const [selectedDate, setSelectedDate] = useState<number>(0); 
     const [selectedTimeId, setSelectedTimeId] = useState<string | null>(null);
 
-    // Generate dates
-    const dates = Array.from({ length: 5 }).map((_, i) => {
+    const dates = Array.from({ length: 4 }).map((_, i) => {
         const d = new Date();
         d.setDate(d.getDate() + i);
         return {
@@ -31,112 +31,144 @@ export default function DeliverySlotPicker({ onSelect }: DeliverySlotPickerProps
         };
     });
 
-    // Slots
     const slots: DeliverySlot[] = [
         { id: "09-11", label: "9 AM - 11 AM", available: true },
         { id: "11-13", label: "11 AM - 1 PM", available: true },
         { id: "14-16", label: "2 PM - 4 PM", available: true },
         { id: "17-19", label: "5 PM - 7 PM", available: true },
-        { id: "19-21", label: "7 PM - 9 PM", available: false }, // Mock unavailable
+        { id: "19-21", label: "7 PM - 9 PM", available: true },
     ];
 
     useEffect(() => {
-        if (selectedTimeId) {
+        if (mode === "INSTANT") {
+            const today = new Date().toISOString().split("T")[0];
+            onSelect({ date: today, time: "INSTANT", mode: "INSTANT" });
+        } else if (selectedTimeId) {
             const date = dates[selectedDate].fullDate;
             const slot = slots.find((s) => s.id === selectedTimeId);
             if (slot) {
-                onSelect({ date, time: slot.label });
+                onSelect({ date, time: slot.label, mode: "SCHEDULED" });
             }
         } else {
             onSelect(null);
         }
-    }, [selectedDate, selectedTimeId]);
+    }, [mode, selectedDate, selectedTimeId]);
 
     return (
-        <div className="bg-white/80 backdrop-blur-xl p-6 rounded-[2rem] shadow-xl shadow-gray-200/40 border border-white space-y-6">
-            <div className="flex items-center gap-3 mb-2">
-                <div className="bg-blue-100 p-2 rounded-xl text-blue-600">
-                    <Clock className="h-6 w-6" />
-                </div>
-                <h2 className="text-xl font-black text-gray-900 tracking-tight">Delivery Slot</h2>
-            </div>
-
-            {/* Premium Date Scroller */}
-            <div className="flex overflow-x-auto gap-4 pb-2 scrollbar-none">
-                {dates.map((d) => (
-                    <button
-                        key={d.index}
-                        onClick={() => { setSelectedDate(d.index); setSelectedTimeId(null); }}
-                        className={cn(
-                            "flex flex-col items-center justify-center min-w-[85px] p-4 rounded-2xl border-2 transition-all duration-300",
-                            selectedDate === d.index
-                                ? "bg-blue-600 border-blue-600 text-white shadow-lg shadow-blue-200 scale-105"
-                                : "bg-gray-50 border-gray-100 text-gray-400 hover:border-gray-200 hover:bg-white"
-                        )}
-                    >
-                        <span className={cn("text-[10px] font-black uppercase tracking-widest mb-1", selectedDate === d.index ? "text-blue-100" : "text-gray-400")}>
-                            {d.index === 0 ? "Today" : d.index === 1 ? "Tmrw" : d.day}
-                        </span>
-                        <span className="text-2xl font-black tracking-tighter tabular-nums">
-                            {d.date}
-                        </span>
-                        <span className={cn("text-[10px] font-bold uppercase", selectedDate === d.index ? "text-blue-100" : "text-gray-400")}>
-                            {d.month}
-                        </span>
-                    </button>
-                ))}
-            </div>
-
-            {/* Time Grid with Premium States */}
-            <div className="grid grid-cols-2 gap-4">
-                {slots.map((slot) => (
-                    <button
-                        key={slot.id}
-                        onClick={() => setSelectedTimeId(slot.id)}
-                        disabled={!slot.available}
-                        className={cn(
-                            "group py-4 px-4 rounded-2xl border-2 text-center transition-all duration-300 relative overflow-hidden",
-                            selectedTimeId === slot.id
-                                ? "bg-gray-900 text-white border-gray-900 shadow-xl"
-                                : slot.available
-                                    ? "bg-white text-gray-800 border-gray-100 hover:border-blue-400 hover:bg-blue-50/30"
-                                    : "bg-gray-50 text-gray-300 border-transparent cursor-not-allowed grayscale"
-                        )}
-                    >
-                        <span className="relative z-10 font-black tracking-tight text-sm uppercase">{slot.label}</span>
-                        {selectedTimeId === slot.id && (
-                            <div className="absolute top-0 right-0 p-1">
-                                <CheckCircle className="h-4 w-4 text-green-400" />
+        <div className="space-y-4">
+            {/* Delivery Mode Toggle */}
+            <div className="grid grid-cols-2 gap-3">
+                <button
+                    onClick={() => setMode("INSTANT")}
+                    className={cn(
+                        "relative p-5 rounded-[2rem] border-2 transition-all duration-500 flex flex-col items-center justify-center gap-1.5 overflow-hidden",
+                        mode === "INSTANT"
+                            ? "bg-[#00a76f] border-[#00a76f] text-white shadow-lg shadow-[#00a76f]/20"
+                            : "bg-white border-gray-100 text-gray-300 hover:bg-gray-50"
+                    )}
+                >
+                    <Zap className={cn("h-5 w-5 absolute top-4 left-4", mode === "INSTANT" ? "text-white fill-white" : "text-gray-300")} />
+                    <div className="text-center pt-2">
+                        <p className={cn("text-xs font-black uppercase tracking-widest leading-none", mode === "INSTANT" ? "text-white" : "text-gray-400")}>Instant</p>
+                        <p className={cn("text-[10px] font-black mt-1 uppercase tracking-widest italic", mode === "INSTANT" ? "text-white" : "text-gray-400")}>Priority</p>
+                    </div>
+                    {mode === "INSTANT" && (
+                        <div className="absolute top-4 right-4">
+                            <div className="w-5 h-5 rounded-full bg-white flex items-center justify-center text-[#00a76f]">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={4} stroke="currentColor" className="w-3 h-3">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                                </svg>
                             </div>
-                        )}
-                    </button>
-                ))}
+                        </div>
+                    )}
+                </button>
+
+                <button
+                    onClick={() => setMode("SCHEDULED")}
+                    className={cn(
+                        "relative p-5 rounded-[2rem] border-2 transition-all duration-500 flex flex-col items-center justify-center gap-1.5 overflow-hidden",
+                        mode === "SCHEDULED"
+                            ? "bg-[#00a76f] border-[#00a76f] text-white shadow-lg shadow-[#00a76f]/20"
+                            : "bg-white border-gray-100 text-gray-300 hover:bg-gray-50"
+                    )}
+                >
+                    <Calendar className={cn("h-5 w-5 absolute top-4 left-4", mode === "SCHEDULED" ? "text-white" : "text-gray-300")} />
+                    <div className="text-center pt-2">
+                        <p className={cn("text-xs font-black uppercase tracking-widest leading-none", mode === "SCHEDULED" ? "text-white" : "text-gray-400")}>Schedule</p>
+                        <p className={cn("text-[10px] font-black mt-1 uppercase tracking-widest", mode === "SCHEDULED" ? "text-white" : "text-gray-400")}>Later</p>
+                    </div>
+                    {mode === "SCHEDULED" && (
+                        <div className="absolute top-4 right-4">
+                            <div className="w-5 h-5 rounded-full bg-white flex items-center justify-center text-[#00a76f]">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={4} stroke="currentColor" className="w-3 h-3">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                                </svg>
+                            </div>
+                        </div>
+                    )}
+                </button>
             </div>
 
-            {/* Selection Feedback Island */}
-            {selectedTimeId && (
-                <div className="animate-in slide-in-from-top-2 fade-in duration-500 bg-blue-50/50 backdrop-blur border border-blue-100 p-4 rounded-2xl flex items-center justify-between group">
-                    <div className="flex items-center gap-3">
-                        <div className="bg-white p-2 rounded-xl shadow-sm text-blue-600">
-                            <Calendar className="h-5 w-5" />
-                        </div>
-                        <div>
-                            <p className="text-[10px] font-black text-blue-400 uppercase tracking-[0.2em] mb-px">Arriving On</p>
-                            <p className="text-sm font-black text-blue-900">
-                                {dates[selectedDate].index === 0 ? "Today" : dates[selectedDate].day}, {dates[selectedDate].date} {dates[selectedDate].month} • {slots.find(s => s.id === selectedTimeId)?.label}
-                            </p>
-                        </div>
+            {/* Expanded Schedule Picker */}
+            {mode === "SCHEDULED" && (
+                <div className="animate-in slide-in-from-top-2 fade-in duration-500 bg-white p-5 rounded-[2rem] border border-gray-100 space-y-4 shadow-sm">
+                    <div className="flex overflow-x-auto gap-2 pb-2 scrollbar-hide">
+                        {dates.map((d) => (
+                            <button
+                                key={d.index}
+                                onClick={() => { setSelectedDate(d.index); setSelectedTimeId(null); }}
+                                className={cn(
+                                    "flex flex-col items-center justify-center min-w-[65px] py-3 rounded-2xl border transition-all duration-500",
+                                    selectedDate === d.index
+                                        ? "bg-[#00a76f] border-[#00a76f] text-white shadow-md scale-105"
+                                        : "bg-gray-50 border-gray-100 text-gray-400 hover:bg-gray-100/50"
+                                )}
+                            >
+                                <span className="text-[8px] font-black uppercase tracking-widest mb-1">
+                                    {d.index === 0 ? "Today" : d.day}
+                                </span>
+                                <span className="text-xl font-black tabular-nums leading-none">{d.date}</span>
+                                <span className="text-[8px] font-bold uppercase mt-1 opacity-60">{d.month}</span>
+                            </button>
+                        ))}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                        {slots.map((slot) => (
+                            <button
+                                key={slot.id}
+                                onClick={() => setSelectedTimeId(slot.id)}
+                                disabled={!slot.available}
+                                className={cn(
+                                    "py-3 px-3 rounded-2xl border text-center transition-all duration-500 relative",
+                                    selectedTimeId === slot.id
+                                        ? "bg-[#00a76f] text-white border-[#00a76f] shadow-lg"
+                                        : "bg-gray-50 text-gray-500 border-gray-100 hover:border-gray-200"
+                                )}
+                            >
+                                <span className="font-black tracking-tight text-[9px] uppercase">{slot.label}</span>
+                            </button>
+                        ))}
                     </div>
                 </div>
             )}
-        </div>
-    );
-}
 
-function CheckCircle({ className }: { className?: string }) {
-    return (
-        <svg fill="currentColor" viewBox="0 0 20 20" className={className}>
-            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-        </svg>
+            {/* Active Selection Display */}
+            <div className="bg-[#dffcf0] border border-[#bef4d9] p-4 rounded-[2rem] flex items-center gap-4 shadow-sm">
+                <div className="w-11 h-11 rounded-full bg-white flex items-center justify-center text-[#00df89] border border-[#bef4d9]">
+                    {mode === "INSTANT" ? <Zap className="h-5 w-5 text-[#00df89] fill-current" /> : <Calendar className="h-5 w-5 text-[#00df89]" />}
+                </div>
+                <div>
+                    <p className="text-[9px] font-black text-[#00a76f] uppercase tracking-widest leading-none mb-1">Arriving {mode === "INSTANT" ? "asap" : "Scheduled"}</p>
+                    <p className="text-xs font-black text-gray-900 leading-none">
+                        {mode === "INSTANT" ? "Instant Arrival" : (
+                            selectedTimeId 
+                                ? `${dates[selectedDate].index === 0 ? "Today" : dates[selectedDate].day}, ${dates[selectedDate].date} ${dates[selectedDate].month} • ${slots.find(s => s.id === selectedTimeId)?.label}`
+                                : "Select a time slot"
+                        )}
+                    </p>
+                </div>
+            </div>
+        </div>
     );
 }

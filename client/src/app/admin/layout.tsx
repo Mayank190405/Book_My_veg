@@ -1,246 +1,300 @@
-"use client";
+"use client"; // Admin Root Entry
 
-import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { useState, useEffect } from "react";
-import {
-    LayoutDashboard, Package, ShoppingBag, Users, LogOut,
-    Menu, X, Bell, ChevronRight, ImageIcon, Settings, QrCode
+import { 
+    LayoutDashboard, 
+    TrendingUp,
+    Store, 
+    Ticket, 
+    Warehouse, 
+    ShoppingCart, 
+    Users, 
+    Image as ImageIcon,
+    Settings,
+    LogOut,
+    Bell,
+    Search,
+    ChevronRight,
+    Menu,
+    X,
+    UserCircle,
+    Layers,
+    Scale,
+    Monitor,
+    Clock,
+    Receipt,
+    ArrowDownToLine,
+    Skull,
+    History,
+    MessageSquare,
+    Key
 } from "lucide-react";
-import { useUserStore } from "@/store/useUserStore";
-import { Loader2 } from "lucide-react";
+import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
-import { toast } from "sonner";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { ThemeProvider } from "next-themes";
+import { Toaster } from "sonner";
+import { useUserStore } from "@/store/useUserStore";
+import { logout } from "@/services/authService";
+import GlobalNotificationListener from "@/components/features/GlobalNotificationListener";
 
-const SUPER_ADMIN_NAV = [
-    { name: "Global Overview", href: "/admin/super-admin?tab=overview", icon: LayoutDashboard },
-    { name: "Global Inventory", href: "/admin/super-admin?tab=inventory", icon: Package },
-    { name: "CRM & Users", href: "/admin/super-admin?tab=crm", icon: Users },
-    { name: "Staff Operations", href: "/admin/super-admin?tab=staff", icon: Users },
-    { name: "Marketing Banners", href: "/admin/super-admin?tab=marketing", icon: ImageIcon },
+const NAV_ITEMS = [
+    { label: "Overview", icon: LayoutDashboard, href: "/admin/dashboard" },
+    { label: "Sales Reports", icon: TrendingUp, href: "/admin/reports" },
+    { label: "Customer Dues & Sales", icon: Users, href: "/admin/reports/customers" },
+    { label: "POS Terminal", icon: Monitor, href: "/pos" },
+    { label: "Attendance", icon: Clock, href: "/admin/attendance" },
+    { label: "Expenses", icon: Receipt, href: "/admin/expenses" },
+    { label: "Categories", icon: Layers, href: "/admin/categories" },
+    { label: "Units", icon: Scale, href: "/admin/units" },
+    { label: "Products", icon: ShoppingCart, href: "/admin/products" },
+    { label: "Inventory", icon: Warehouse, href: "/admin/inventory" },
+    { label: "Stock Inward", icon: ArrowDownToLine, href: "/admin/inventory/inward" },
+    { label: "Stock Transfer", icon: ChevronRight, href: "/admin/inventory/transfer" },
+    { label: "Mortality (Wastage)", icon: Skull, href: "/admin/inventory/mortality" },
+    { label: "Orders", icon: ShoppingCart, href: "/admin/orders" },
+    { label: "Coupons", icon: Ticket, href: "/admin/coupons" },
+    { label: "Support Chat", icon: MessageSquare, href: "/admin/chat" },
+    { label: "Banners", icon: ImageIcon, href: "/admin/banners" },
+    { label: "Users", icon: Users, href: "/admin/users" },
+    { label: "Stores", icon: Store, href: "/admin/stores" },
+    { label: "Manage Pages", icon: Settings, href: "/admin/policies" },
+    { label: "API Console", icon: Key, href: "/admin/api-console" },
 ];
 
-const getStoreAdminNav = (slug: string) => [
-    { name: "Store Dashboard", href: `/admin/${slug}/admin`, icon: LayoutDashboard },
-    { name: "Launch POS", href: `/pos/${slug}`, icon: QrCode },
-    { name: "Packer Hub", href: `/packer/${slug}`, icon: Package },
-    { name: "Driver Hub", href: `/driver`, icon: ShoppingBag },
-];
-
-function SidebarContent({
-    pathname,
-    onLogout,
-    onClose,
-}: {
-    pathname: string;
-    onLogout: () => void;
-    onClose?: () => void;
-}) {
-    return (
-        <div className="flex flex-col h-full">
-            {/* Logo / Brand */}
-            <div className="flex items-center justify-between px-5 py-5 border-b border-gray-100">
-                <div className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 bg-gradient-to-br from-green-400 to-green-600 rounded-xl flex items-center justify-center">
-                        <span className="text-white font-extrabold text-sm">B</span>
-                    </div>
-                    <div>
-                        <p className="font-extrabold text-gray-900 leading-none text-sm">BMV Admin</p>
-                        <p className="text-[10px] text-gray-400 mt-0.5">Quick Commerce</p>
-                    </div>
-                </div>
-                {onClose && (
-                    <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 lg:hidden transition-colors">
-                        <X className="h-4 w-4 text-gray-500" />
-                    </button>
-                )}
-            </div>
-
-            {/* Nav */}
-            <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest px-3 mb-2">Main Menu</p>
-                {(() => {
-                    const isSuperAdmin = pathname.includes("/super-admin");
-                    const storeMatch = pathname.match(/^\/admin\/([^\/]+)\/admin/);
-                    const storeSlug = storeMatch ? storeMatch[1] : null;
-
-                    const activeNavItems = isSuperAdmin ? SUPER_ADMIN_NAV :
-                        storeSlug ? getStoreAdminNav(storeSlug) :
-                            [{ name: "Store View", href: pathname, icon: LayoutDashboard }];
-
-                    return activeNavItems.map((item) => {
-                        const Icon = item.icon;
-                        const isActive = pathname === item.href.split('?')[0] && (
-                            !item.href.includes('tab=') ||
-                            (typeof window !== 'undefined' && window.location.search.includes(item.href.split('?')[1]))
-                        );
-                        return (
-                            <Link
-                                key={item.href}
-                                href={item.href}
-                                onClick={onClose}
-                                className={cn(
-                                    "group relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200",
-                                    isActive
-                                        ? "bg-green-50 text-green-700"
-                                        : "text-gray-500 hover:bg-gray-50 hover:text-gray-800"
-                                )}
-                            >
-                                {/* Active left border indicator */}
-                                {isActive && (
-                                    <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 bg-green-500 rounded-r-full" />
-                                )}
-                                <Icon className={cn(
-                                    "h-4.5 w-4.5 shrink-0 transition-transform duration-200 h-5 w-5",
-                                    isActive && "scale-110",
-                                    !isActive && "group-hover:scale-105"
-                                )} />
-                                <span>{item.name}</span>
-                                {isActive && <ChevronRight className="ml-auto h-3.5 w-3.5 text-green-400" />}
-                            </Link>
-                        );
-                    });
-                })()}
-            </nav>
-
-            {/* Footer */}
-            <div className="px-3 py-4 border-t border-gray-100 space-y-1">
-                <button
-                    onClick={onLogout}
-                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-red-500 hover:bg-red-50 hover:text-red-600 transition-all"
-                >
-                    <LogOut className="h-5 w-5" />
-                    Logout
-                </button>
-            </div>
-        </div>
-    );
-}
-
-function TopNavbar({ page }: { page: string }) {
-    return (
-        <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-gray-100 px-6 py-3 flex items-center gap-4">
-            {/* Page title */}
-            <div className="flex-1">
-                <h1 className="text-lg font-extrabold text-gray-900">{page}</h1>
-            </div>
-
-            {/* Actions */}
-            <div className="flex items-center gap-2">
-                {/* Notifications */}
-                <button className="relative p-2 rounded-xl hover:bg-gray-100 transition-colors">
-                    <Bell className="h-5 w-5 text-gray-500" />
-                    <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full" />
-                </button>
-
-                {/* Admin avatar */}
-                <div className="flex items-center gap-2.5 pl-2 border-l border-gray-100">
-                    <div className="w-8 h-8 bg-gradient-to-br from-green-400 to-green-600 rounded-full flex items-center justify-center">
-                        <span className="text-white font-bold text-xs">A</span>
-                    </div>
-                    <div className="hidden sm:block">
-                        <p className="text-xs font-semibold text-gray-800 leading-none">Admin</p>
-                        <p className="text-[10px] text-gray-400">Super Admin</p>
-                    </div>
-                </div>
-            </div>
-        </header>
-    );
-}
-
-function getPageTitle(pathname: string) {
-    if (pathname.includes("/super-admin")) return "Super Control";
-    const storeMatch = pathname.match(/^\/admin\/([^\/]+)\/admin/);
-    if (storeMatch) return `Store Management`;
-    return "Admin";
-}
+import { useRouter } from "next/navigation";
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
     const pathname = usePathname();
     const router = useRouter();
-    const { user, logout, _hasHydrated } = useUserStore();
-    const [mobileOpen, setMobileOpen] = useState(false);
+    const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+    const { user, _hasHydrated } = useUserStore();
+    const isAdminLogin = pathname === "/admin/login";
 
-    useEffect(() => {
-        const allowedRoles = ["ADMIN", "MANAGER", "POS_OPERATOR"];
-        if (_hasHydrated && (!user || !allowedRoles.includes(user.role))) {
-            router.push("/");
+    const handleLogout = async () => {
+        if (confirm("Are you sure you want to log out of the admin panel?")) {
+            await logout();
+            router.push("/admin/login");
         }
-    }, [user, _hasHydrated, router]);
+    };
 
-    // Close mobile drawer on route change
-    useEffect(() => setMobileOpen(false), [pathname]);
+    // Institutional Navigation Orchestration (Role-based filtering)
+    const filteredNavItems = NAV_ITEMS.filter(item => {
+        if (user?.role === "STORE_ADMIN") {
+            // Store Hub Operators focus on fulfillment, localization, and local team management
+            const restricted = ["/admin/banners", "/admin/stores", "/admin/units", "/admin/categories", "/admin/policies"];
+            return !restricted.includes(item.href);
+        }
+        return true;
+    }).map(item => {
+        const adminUser = user as any;
+        if (adminUser?.role === "STORE_ADMIN" && item.label === "Overview" && adminUser.slug) {
+            // Re-route localized overview to the store's specific hub
+            return { ...item, href: `/admin/stores/${adminUser.slug}` };
+        }
+        return item;
+    });
 
-    const allowedRoles = ["ADMIN", "MANAGER", "POS_OPERATOR"];
-    if (!_hasHydrated || !user || !allowedRoles.includes(user.role)) {
+    // Auth Guard: Ensure user is logged in before accessing admin
+    useEffect(() => {
+        if (_hasHydrated) {
+            if (!user && !isAdminLogin) {
+                router.push(`/admin/login?redirect=${pathname}`);
+            } else if (user && (user.role !== "ADMIN" && user.role !== "SUPER_ADMIN" && user.role !== "STORE_ADMIN") && !isAdminLogin) {
+                // If not an admin of any kind, redirect to home
+                router.push("/");
+            }
+        }
+    }, [user, _hasHydrated, pathname, router, isAdminLogin]);
+
+    if (!_hasHydrated) {
         return (
-            <div className="flex items-center justify-center min-h-screen bg-gray-50">
-                <div className="flex flex-col items-center gap-3">
-                    <div className="w-10 h-10 bg-gradient-to-br from-green-400 to-green-600 rounded-2xl animate-pulse" />
-                    <Loader2 className="h-5 w-5 animate-spin text-green-500" />
+            <div className="h-screen w-full bg-slate-50 flex items-center justify-center">
+                <div className="flex flex-col items-center gap-4">
+                    <div className="w-12 h-12 border-4 border-slate-200 border-t-emerald-600 rounded-full animate-spin" />
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest animate-pulse">Initializing Dashboard...</span>
                 </div>
             </div>
         );
     }
 
-    const handleLogout = () => {
-        logout();
-        toast.success("Logged out successfully");
-        router.push("/");
-    };
+    // Special case: Login page doesn't get the sidebar/shell
+    if (isAdminLogin) {
+        return <div className="min-h-screen bg-gray-50">{children}</div>;
+    }
 
-    const pageTitle = getPageTitle(pathname);
+    // Safety: Don't render content if user is definitely not authorized
+    if (!user || (user.role !== "ADMIN" && user.role !== "SUPER_ADMIN" && user.role !== "STORE_ADMIN")) {
+        return null;
+    }
 
     return (
-        <div className="flex h-screen bg-gray-50 overflow-hidden">
-            {/* ── Desktop Sidebar ─────────────────────────── */}
-            <aside className="hidden lg:flex flex-col w-60 bg-white border-r border-gray-100 shadow-sm shrink-0">
-                <SidebarContent pathname={pathname} onLogout={handleLogout} />
-            </aside>
+        <ThemeProvider attribute="class" forcedTheme="light" enableSystem={false}>
+            <div className="min-h-screen bg-slate-50 text-slate-900 selection:bg-emerald-500/30 selection:text-emerald-900">
+                <style jsx global>{`
+                    #admin-scroll-container::-webkit-scrollbar {
+                        width: 6px;
+                    }
+                    #admin-scroll-container::-webkit-scrollbar-track {
+                        background: transparent;
+                    }
+                    #admin-scroll-container::-webkit-scrollbar-thumb {
+                        background: #e2e8f0;
+                        border-radius: 10px;
+                    }
+                    #admin-scroll-container::-webkit-scrollbar-thumb:hover {
+                        background: #cbd5e1;
+                    }
+                `}</style>
 
-            {/* ── Mobile Drawer Backdrop ─────────────────── */}
-            {mobileOpen && (
-                <div
-                    className="fixed inset-0 bg-black/30 z-40 lg:hidden backdrop-blur-sm"
-                    onClick={() => setMobileOpen(false)}
-                />
-            )}
+                {/* Mobile Backdrop */}
+                {isSidebarOpen && (
+                    <div 
+                        className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[45] md:hidden animate-in fade-in duration-300" 
+                        onClick={() => setIsSidebarOpen(false)}
+                    />
+                )}
 
-            {/* ── Mobile Sidebar Drawer ─────────────────── */}
-            <aside className={cn(
-                "fixed top-0 left-0 h-full w-64 bg-white z-50 shadow-2xl lg:hidden flex flex-col transition-transform duration-300",
-                mobileOpen ? "translate-x-0" : "-translate-x-full"
-            )}>
-                <SidebarContent
-                    pathname={pathname}
-                    onLogout={handleLogout}
-                    onClose={() => setMobileOpen(false)}
-                />
-            </aside>
+                {/* Sidebar */}
+                <aside className={cn(
+                    "fixed top-0 left-0 z-50 h-full bg-white border-r border-slate-200 transition-all duration-500 ease-in-out",
+                    isSidebarOpen ? "w-80 translate-x-0" : "w-24 -translate-x-full md:translate-x-0"
+                )}>
+                    {/* Sidebar Header */}
+                    <div className="h-20 flex items-center justify-between px-6 border-b border-slate-100 bg-white">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 bg-slate-50 border border-slate-100 rounded-xl flex items-center justify-center p-1 shadow-sm overflow-hidden">
+                                <img src="/logo.png" alt="BookMyVeg" className="w-full h-full object-contain" />
+                            </div>
+                            <div className={cn(
+                                "flex flex-col transition-all duration-300 overflow-hidden",
+                                isSidebarOpen ? "w-auto opacity-100" : "w-0 opacity-0"
+                            )}>
+                                <span className="text-sm font-black tracking-tight text-slate-900 leading-none">BookMyVeg</span>
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Admin Panel</span>
+                            </div>
+                        </div>
 
-            {/* ── Main Area ─────────────────────────────── */}
-            <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-                {/* Mobile menu trigger in topbar */}
-                <div className="flex items-center lg:hidden px-4 py-3 border-b border-gray-100 bg-white/80 backdrop-blur-md sticky top-0 z-30 gap-3">
-                    <button
-                        onClick={() => setMobileOpen(true)}
-                        className="p-2 rounded-xl hover:bg-gray-100 transition-colors"
+                        {/* Mobile Close Button */}
+                        {isSidebarOpen && (
+                            <button 
+                                onClick={() => setIsSidebarOpen(false)}
+                                className="md:hidden w-8 h-8 rounded-lg bg-slate-50 flex items-center justify-center text-slate-400 hover:text-slate-900 transition-colors"
+                            >
+                                <X className="h-4 w-4" />
+                            </button>
+                        )}
+                    </div>
+
+                    {/* Nav Items */}
+                    <nav className="p-4 space-y-2 max-h-[calc(100vh-200px)] overflow-y-auto">
+                        {filteredNavItems.map((item) => {
+                            const isActive = pathname === item.href;
+                            const Icon = item.icon;
+                            return (
+                                <Link
+                                    key={item.href}
+                                    href={item.href}
+                                    className={cn(
+                                        "flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group relative",
+                                        isActive 
+                                            ? "bg-emerald-600 text-white shadow-md shadow-emerald-100" 
+                                            : "hover:bg-slate-50 text-slate-500 hover:text-slate-900"
+                                    )}
+                                >
+                                    <Icon className={cn(
+                                        "h-5 w-5 transition-transform duration-500 group-hover:scale-110",
+                                        isActive ? "rotate-3" : ""
+                                    )} />
+                                    <span className={cn(
+                                        "text-xs font-semibold tracking-wide transition-all duration-300",
+                                        isSidebarOpen ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-4 pointer-events-none"
+                                    )}>
+                                        {item.label}
+                                    </span>
+                                    {isActive && isSidebarOpen && (
+                                        <ChevronRight className="ml-auto h-4 w-4 opacity-50" />
+                                    )}
+                                </Link>
+                            );
+                        })}
+                    </nav>
+
+                    {/* Sidebar Footer */}
+                    <div className="absolute bottom-0 left-0 w-full p-4 border-t border-slate-100 bg-white">
+                        <button 
+                            onClick={handleLogout}
+                            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-slate-400 hover:text-red-600 hover:bg-red-50 transition-all group"
+                        >
+                            <LogOut className="h-5 w-5" />
+                            <span className={cn(
+                                "text-xs font-semibold tracking-wide transition-all duration-300",
+                                isSidebarOpen ? "opacity-100" : "opacity-0"
+                            )}>
+                                Logout Session
+                            </span>
+                        </button>
+                    </div>
+                </aside>
+
+                {/* Main Content */}
+                <main className={cn(
+                    "transition-all duration-500 ease-in-out min-h-screen",
+                    isSidebarOpen ? "md:pl-80" : "md:pl-24 pl-0"
+                )}>
+                    {/* Top Header */}
+                        <header className="h-24 border-b border-slate-200 bg-white/80 backdrop-blur-xl sticky top-0 z-40 flex items-center justify-between px-4 md:px-10">
+                        <div className="flex items-center gap-8">
+                            <button 
+                                onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                                className="w-12 h-12 rounded-2xl bg-white border border-slate-200 flex items-center justify-center text-slate-400 hover:text-slate-900 hover:bg-slate-50 transition-all shadow-sm active:scale-95"
+                            >
+                                {isSidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+                            </button>
+                            
+                            <div className="hidden lg:flex items-center gap-4 px-6 py-3 bg-slate-50 rounded-2xl border border-slate-200 group focus-within:border-emerald-500/40 transition-all focus-within:bg-white focus-within:shadow-sm focus-within:shadow-emerald-100/50">
+                                <Search className="h-4 w-4 text-slate-400 group-focus-within:text-emerald-600 transition-colors" />
+                                <input 
+                                    placeholder="Search management console..." 
+                                    className="bg-transparent border-none outline-none text-[10px] font-black uppercase tracking-widest w-64 placeholder:text-slate-400 text-slate-900"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-6">
+                            <button className="relative w-12 h-12 rounded-2xl bg-white border border-slate-200 flex items-center justify-center text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 transition-all group">
+                                <Bell className="h-5 w-5 group-hover:rotate-12 transition-transform" />
+                                <span className="absolute top-3 right-3 w-2 h-2 bg-emerald-500 rounded-full ring-4 ring-white" />
+                            </button>
+
+                            <div className="h-10 w-px bg-slate-200 mx-2" />
+
+                            <div className="flex items-center gap-3 pl-2 cursor-pointer group">
+                                <div className="flex flex-col items-end text-right hidden sm:flex">
+                                    <span className="text-xs font-bold text-slate-900 group-hover:text-emerald-600 transition-colors uppercase tracking-tight">{user?.name || "Administrator"}</span>
+                                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-[0.15em]">
+                                        {user?.role === "STORE_ADMIN" ? "Regional Hub Manager" : user?.role === "SUPER_ADMIN" ? "Network Super Admin" : "Logistics Administrator"}
+                                    </span>
+                                </div>
+                                <div className="w-10 h-10 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-600 group-hover:bg-emerald-50 group-hover:text-emerald-600 transition-all">
+                                    {user?.name?.[0] ? <span className="font-bold">{user.name[0]}</span> : <UserCircle className="h-5 w-5" />}
+                                </div>
+                            </div>
+                        </div>
+                    </header>
+
+                    {/* Page Content */}
+                    <div 
+                        id="admin-scroll-container"
+                        className="p-4 md:p-10 max-h-[calc(100vh-6rem)] overflow-y-auto"
                     >
-                        <Menu className="h-5 w-5 text-gray-600" />
-                    </button>
-                    <p className="font-extrabold text-gray-900">{pageTitle}</p>
-                </div>
-
-                {/* Desktop topbar */}
-                <div className="hidden lg:block">
-                    <TopNavbar page={pageTitle} />
-                </div>
-
-                {/* Page content */}
-                <main className="flex-1 overflow-y-auto p-4 lg:p-6 animate-in fade-in duration-200">
-                    {children}
+                        {children}
+                    </div>
                 </main>
+
+                <Toaster richColors position="top-right" theme="light" />
+                <GlobalNotificationListener />
             </div>
-        </div>
+        </ThemeProvider>
     );
 }

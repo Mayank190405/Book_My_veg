@@ -6,8 +6,7 @@ const stream = {
 };
 
 const skip = () => {
-    const env = process.env.NODE_ENV || "development";
-    return env !== "development";
+    return false;
 };
 
 export const requestLogger = morgan(

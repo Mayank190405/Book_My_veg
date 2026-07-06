@@ -8,6 +8,6 @@ router.use(authenticate); // Protect all cart routes
 
 router.post("/sync", syncCart);
 router.get("/", getCart);
-router.post("/item", updateCartItem);
+router.post("/update", updateCartItem);
 
 export default router;

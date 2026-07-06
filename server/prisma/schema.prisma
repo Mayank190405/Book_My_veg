@@ -7,44 +7,42 @@ datasource db {
 }
 
 model User {
-  id                 String                @id @default(uuid())
-  phone              String                @unique
-  email              String?               @unique
-  name               String?
-  role               Role                  @default(USER)
-  password           String?
-  isActive           Boolean               @default(true)
-  lastLogin          DateTime?
-  createdAt          DateTime              @default(now())
-  updatedAt          DateTime              @updatedAt
-  locationId         String?
-  joiningDate        DateTime?
-  leavingDate        DateTime?
-  profileAddress     String?
-  salary             Decimal?              @db.Decimal(10, 2)
-  addresses          Address[]
-  attendances        Attendance[]
-  auditLogs          AuditLog[]
-  cart               Cart?
-  cashierShifts      CashierShift[]
-  khata              CustomerKhata?
-  driverAssets       DeliveryAsset[]       @relation("AssetDriver")
-  driverAssignments  DriverAssignment[]    @relation("DriverOrders")
-  driverCashLedger   DriverCashLedger[]    @relation("DriverCash")
-  inventoryLogs      InventoryLog[]
-  journalEntries     JournalEntry[]
-  mandiRatesCreated  MandiRate[]           @relation("MandiRateStaff")
-  mortalityLogsStaff MortalityLog[]        @relation("MortalityStaff")
-  packedOrders       Order[]               @relation("OrderPacker")
-  orders             Order[]
-  periodLocks        PeriodLock[]
-  reviews            Review[]
-  salaryPayments     SalaryPayment[]
-  searchHistory      SearchHistory[]
-  staffPerformance   StaffPerformanceLog[] @relation("StaffPerf")
-  transfersInitiated StockTransfer[]       @relation("TransferInitiator")
-  location           Location?             @relation(fields: [locationId], references: [id])
-  supervisorAdjustments CashDrawerAdjustment[] @relation("SupervisorAdjustments")
+  id             String          @id @default(uuid())
+  phone          String          @unique
+  email          String?         @unique
+  name           String?
+  role           Role            @default(USER)
+  password       String?
+  isActive       Boolean         @default(true)
+  lastLogin      DateTime?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  locationId     String?
+  joiningDate    DateTime?
+  leavingDate    DateTime?
+  baseSalary     Decimal?        @db.Decimal(10, 2)
+  profileAddress String?
+  totalDue       Decimal         @default(0) @db.Decimal(10, 2)
+  addresses      Address[]
+  attendance     Attendance[]    @relation("UserAttendance")
+  auditLogs      AuditLog[]
+  batches        Batch[]
+  cart           Cart?
+  shifts         CashierShift[]
+  inventoryLogs  InventoryLog[]
+  mortalityLogs  MortalityLog[]
+  notifications  Notification[]
+  deliveries     Order[]         @relation("OrderDeliveryPartner")
+  packedOrders   Order[]         @relation("OrderPacker")
+  staffOrders    Order[]         @relation("OrderStaff")
+  orders         Order[]
+  reviews        Review[]
+  searchHistory  SearchHistory[]
+  expenses       StoreExpense[]
+  location       Location?       @relation(fields: [locationId], references: [id])
+  targetedCoupons CouponUserTarget[]
+  assignedIncidents SecurityIncident[] @relation("IncidentAssignee")
+  incidentComments  IncidentComment[]
 }
 
 model Address {
@@ -85,93 +83,111 @@ model Category {
   products  Product[]
 }
 
+model Unit {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  symbol    String?  @unique
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 model Product {
-  id                  String               @id @default(uuid())
-  name                String
-  slug                String               @unique
-  description         String?
-  categoryId          String
-  images              String[]
-  basePrice           Decimal              @db.Decimal(10, 2)
-  taxSlab             Decimal              @default(0) @db.Decimal(5, 2)
-  weightUnit          WeightUnit           @default(KG)
-  minQuantity         Int                  @default(1)
-  maxQuantity         Int                  @default(10)
-  isActive            Boolean              @default(true)
-  countryOfOrigin     String?
-  shelfLife           String?
-  packagedDate        DateTime?
-  fssaiLicense        String?
-  nutritionInfo       Json?
-  specifications      Json?
-  version             Int                  @default(0)
-  createdAt           DateTime             @default(now())
-  updatedAt           DateTime             @updatedAt
-  isWebsitePublished  Boolean              @default(true)
-  sku                 String?              @unique
-  batch               Batch[]
-  cartItems           CartItem[]
-  inventory           Inventory[]
-  inventoryLogs       InventoryLog[]
-  mandiRates          MandiRate[]
-  mortalityLogs       MortalityLog[]
-  orderItems          OrderItem[]
-  pricing             Pricing[]
-  category            Category             @relation(fields: [categoryId], references: [id])
-  variants            ProductVariant[]
-  reviews             Review[]
-  sectionProducts     SectionProduct[]
-  stockTransfers      StockTransfer[]
-  suspendedOrderItems SuspendedOrderItem[]
+  id                 String           @id @default(uuid())
+  name               String
+  slug               String           @unique
+  description        String?
+  categoryId         String
+  images             String[]
+  basePrice          Decimal?         @db.Decimal(10, 2)
+  taxSlab            Decimal          @default(0) @db.Decimal(5, 2)
+  weightUnit         WeightUnit       @default(KG)
+  minQuantity        Int              @default(1)
+  maxQuantity        Int              @default(10)
+  isActive           Boolean          @default(true)
+  countryOfOrigin    String?
+  shelfLife          String?
+  packagedDate       DateTime?
+  fssaiLicense       String?
+  nutritionInfo      Json?
+  specifications     Json?
+  tags               Json?
+  version            Int              @default(0)
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  isWebsitePublished Boolean          @default(true)
+  sku                String?          @unique
+  barcode            String?          @unique
+  gstRate            Decimal          @default(0) @db.Decimal(5, 2)
+  hsnCode            String?
+  isFavourite        Boolean          @default(false)
+  batch              Batch[]
+  cartItems          CartItem[]
+  inventory          Inventory[]
+  inventoryLogs      InventoryLog[]
+  mortalityLogs      MortalityLog[]
+  orderItems         OrderItem[]
+  pricing            Pricing[]
+  category           Category         @relation(fields: [categoryId], references: [id])
+  variants           ProductVariant[]
+  reviews            Review[]
+  sectionProducts    SectionProduct[]
 
   @@index([categoryId])
   @@index([isActive])
   @@index([createdAt])
+  @@index([barcode])
+  @@index([isFavourite])
 }
 
 model ProductVariant {
-  id                  String               @id @default(uuid())
-  productId           String
-  name                String
-  price               Decimal              @db.Decimal(10, 2)
-  weight              Decimal?             @db.Decimal(10, 2)
-  weightUnit          WeightUnit           @default(GM)
-  isActive            Boolean              @default(true)
-  createdAt           DateTime             @default(now())
-  updatedAt           DateTime             @updatedAt
-  batches             Batch[]
-  cartItems           CartItem[]
-  inventory           Inventory[]
-  inventoryLogs       InventoryLog[]
-  mortalityLogs       MortalityLog[]
-  orderItems          OrderItem[]
-  pricing             Pricing[]
-  product             Product              @relation(fields: [productId], references: [id])
-  stockTransfers      StockTransfer[]
-  suspendedOrderItems SuspendedOrderItem[]
+  id            String         @id @default(uuid())
+  productId     String
+  name          String
+  price         Decimal        @db.Decimal(10, 2)
+  weight        Decimal?       @db.Decimal(10, 2)
+  weightUnit    WeightUnit     @default(GM)
+  isActive      Boolean        @default(true)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  batches       Batch[]
+  cartItems     CartItem[]
+  inventory     Inventory[]
+  inventoryLogs InventoryLog[]
+  orderItems    OrderItem[]
+  pricing       Pricing[]
+  product       Product        @relation(fields: [productId], references: [id])
 
   @@index([productId])
   @@index([isActive])
 }
 
 model Location {
-  id             String          @id @default(uuid())
-  slug           String          @unique
+  id             String         @id @default(uuid())
+  slug           String         @unique
   name           String
+  password       String?
   address        String?
   contactNumber  String?
-  attendances    Attendance[]
+  gstNumber      String?
+  receiptFooter  String?
+  receiptHeader  String?
+  latitude       Float?
+  longitude      Float?
+  deliveryRadius Float?         @default(10.0)
+  isOpen         Boolean        @default(true)
+  upiId          String?
+  attendance     Attendance[]
   batches        Batch[]
-  cashierShifts  CashierShift[]
-  dailySummaries DailySummary[]
+  shifts         CashierShift[]
   inventory      Inventory[]
   inventoryLogs  InventoryLog[]
-  journalEntries JournalEntry[]
   mortalityLogs  MortalityLog[]
-  transfersFrom  StockTransfer[] @relation("TransferFrom")
-  transfersTo    StockTransfer[] @relation("TransferTo")
+  orders         Order[]
+  orderItems     OrderItem[]
   expenses       StoreExpense[]
   users          User[]
+  apiKeys        ApiKey[]
 }
 
 model Inventory {
@@ -179,8 +195,8 @@ model Inventory {
   productId      String
   variantId      String?
   locationId     String
-  currentStock   Int             @default(0)
-  thresholdStock Int             @default(5)
+  currentStock   Decimal         @default(0) @db.Decimal(12, 3)
+  thresholdStock Decimal         @default(5) @db.Decimal(12, 3)
   lastRestocked  DateTime?
   isLowStock     Boolean         @default(false)
   updatedAt      DateTime        @updatedAt
@@ -227,7 +243,7 @@ model CartItem {
   cartId    String
   productId String
   variantId String?
-  quantity  Int             @default(1)
+  quantity  Decimal         @default(1) @db.Decimal(12, 3)
   metadata  Json?
   createdAt DateTime        @default(now())
   updatedAt DateTime        @updatedAt
@@ -254,53 +270,62 @@ model Order {
   discountAmount    Decimal              @default(0) @db.Decimal(10, 2)
   channel           Channel              @default(WEB)
   taxAmount         Decimal              @default(0) @db.Decimal(10, 2)
+  deliveryCharge    Decimal              @default(0) @db.Decimal(10, 2)
   isPaid            Boolean              @default(false)
   notes             String?
-  shiftId           String?
   createdAt         DateTime             @default(now())
   updatedAt         DateTime             @updatedAt
   isCredit          Boolean              @default(false)
   idempotencyKey    String?              @unique
-  packedAt          DateTime?
+  locationId        String?
+  deliveryPartnerId String?
   packerId          String?
-  packerNotes       Json?
-  verificationPhoto String?
-  deliveryOtp       DeliveryOTP?
-  driverAssignment  DriverAssignment?
+  packedAt          DateTime?
+  packerNotes       String?
+  packerPhoto       String?
+  deliveryPhoto     String?
+  deliveryOtp       String?
+  staffId           String?
   coupon            Coupon?              @relation(fields: [couponId], references: [id])
+  deliveryPartner   User?                @relation("OrderDeliveryPartner", fields: [deliveryPartnerId], references: [id])
+  location          Location?            @relation(fields: [locationId], references: [id])
   packer            User?                @relation("OrderPacker", fields: [packerId], references: [id])
-  shift             CashierShift?        @relation(fields: [shiftId], references: [id])
+  staff             User?                @relation("OrderStaff", fields: [staffId], references: [id])
   user              User                 @relation(fields: [userId], references: [id])
   items             OrderItem[]
   statusHistory     OrderStatusHistory[]
   payments          Payment[]
 
   @@index([userId])
+  @@index([locationId])
+  @@index([deliveryPartnerId])
+  @@index([packerId])
   @@index([status])
   @@index([paymentStatus])
   @@index([createdAt])
-  refunds           Refund[]
 }
 
 model OrderItem {
-  id               String          @id @default(uuid())
-  orderId          String
-  productId        String
-  variantId        String?
-  quantity          Int
+  id                String          @id @default(uuid())
+  orderId           String
+  productId         String
+  variantId         String?
+  quantity          Decimal         @db.Decimal(12, 3)
   sellingPrice      Decimal         @db.Decimal(10, 2)
   costPriceSnapshot Decimal         @default(0) @db.Decimal(10, 2)
   marginSnapshot    Decimal         @default(0) @db.Decimal(10, 2)
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
-  order            Order           @relation(fields: [orderId], references: [id])
-  product          Product         @relation(fields: [productId], references: [id])
-  variant          ProductVariant? @relation(fields: [variantId], references: [id])
+  locationId        String?
+  location          Location?       @relation(fields: [locationId], references: [id])
+  order             Order           @relation(fields: [orderId], references: [id])
+  product           Product         @relation(fields: [productId], references: [id])
+  variant           ProductVariant? @relation(fields: [variantId], references: [id])
 
   @@index([orderId])
   @@index([productId])
+  @@index([locationId])
   @@index([variantId])
-  refundItems      RefundItem[]
 }
 
 model OrderStatusHistory {
@@ -329,117 +354,6 @@ model Payment {
   order         Order    @relation(fields: [orderId], references: [id])
 }
 
-model SuspendedOrder {
-  id             String               @id @default(uuid())
-  staffId        String
-  customerMobile String?
-  customerName   String?
-  totalAmount    Decimal              @db.Decimal(10, 2)
-  notes          String?
-  createdAt      DateTime             @default(now())
-  updatedAt      DateTime             @updatedAt
-  items          SuspendedOrderItem[]
-
-  @@index([staffId])
-}
-
-model SuspendedOrderItem {
-  id               String          @id @default(uuid())
-  suspendedOrderId String
-  productId        String
-  variantId        String?
-  quantity         Int
-  price            Decimal         @db.Decimal(10, 2)
-  unit             String          @default("pcs")
-  product          Product         @relation(fields: [productId], references: [id])
-  suspendedOrder   SuspendedOrder  @relation(fields: [suspendedOrderId], references: [id], onDelete: Cascade)
-  variant          ProductVariant? @relation(fields: [variantId], references: [id])
-}
-
-model CashierShift {
-  id              String                 @id @default(uuid())
-  userId          String
-  startTime       DateTime               @default(now())
-  endTime         DateTime?
-  status          String                 @default("OPEN")
-  openingBalance  Decimal                @default(0) @db.Decimal(10, 2)
-  closingBalance  Decimal?               @db.Decimal(10, 2)
-  totalSales      Decimal                @default(0) @db.Decimal(10, 2)
-  // Media Breakdown
-  expectedCash    Decimal                @default(0) @db.Decimal(10, 2)
-  expectedOnline  Decimal                @default(0) @db.Decimal(10, 2)
-  expectedCredit  Decimal                @default(0) @db.Decimal(10, 2)
-  declaredCash    Decimal?               @db.Decimal(10, 2)
-  variance        Decimal?               @db.Decimal(10, 2)
-  
-  locationId      String?
-  createdAt       DateTime               @default(now())
-  updatedAt       DateTime               @updatedAt
-  
-  location        Location?              @relation(fields: [locationId], references: [id])
-  user            User                   @relation(fields: [userId], references: [id])
-  orders          Order[]
-  refunds         Refund[]
-  adjustments     CashDrawerAdjustment[]
-
-  @@index([userId])
-  @@index([locationId])
-}
-
-model Refund {
-  id                String       @id @default(uuid())
-  orderId           String
-  cashierShiftId    String
-  totalAmount       Decimal      @db.Decimal(10, 2)
-  reason            String?
-  status            RefundStatus @default(COMPLETED)
-  idempotencyKey    String?      @unique
-  eventId           String       @db.Uuid
-  createdAt         DateTime     @default(now())
-  updatedAt         DateTime     @updatedAt
-  
-  order             Order        @relation(fields: [orderId], references: [id])
-  shift             CashierShift @relation(fields: [cashierShiftId], references: [id])
-  items             RefundItem[]
-
-  @@index([orderId])
-  @@index([cashierShiftId])
-  @@index([eventId])
-}
-
-model RefundItem {
-  id                      String   @id @default(uuid())
-  refundId                String
-  orderItemId             String
-  quantityRefunded        Int
-  amountRefunded          Decimal  @db.Decimal(10, 2)
-  originalSellingPriceSnapshot Decimal  @db.Decimal(10, 2)
-  originalCostSnapshot    Decimal  @db.Decimal(10, 2)
-  isRestocked             Boolean  @default(true)
-  
-  refund                  Refund    @relation(fields: [refundId], references: [id])
-  orderItem               OrderItem @relation(fields: [orderItemId], references: [id])
-
-  @@index([refundId])
-}
-
-model CashDrawerAdjustment {
-  id                String   @id @default(uuid())
-  shiftId           String
-  amount            Decimal  @db.Decimal(10, 2)
-  type              String // OVERRIDE, CORRECTION
-  reason            String
-  supervisorId      String
-  eventId           String   @db.Uuid
-  createdAt         DateTime @default(now())
-  
-  shift             CashierShift @relation(fields: [shiftId], references: [id])
-  supervisor        User         @relation("SupervisorAdjustments", fields: [supervisorId], references: [id])
-
-  @@index([shiftId])
-  @@index([eventId])
-}
-
 model SecurityAuditLog {
   id                 String   @id @default(uuid())
   tableName          String
@@ -453,14 +367,20 @@ model SecurityAuditLog {
 }
 
 model Banner {
-  id        String         @id @default(uuid())
-  position  BannerPosition @default(HOME_TOP)
-  imageUrl  String
-  link      String?
-  isActive  Boolean        @default(true)
-  sortOrder Int            @default(0)
-  createdAt DateTime       @default(now())
-  updatedAt DateTime       @updatedAt
+  id           String         @id @default(uuid())
+  position     BannerPosition @default(HOME_TOP)
+  imageUrl     String
+  link         String?
+  isActive     Boolean        @default(true)
+  sortOrder    Int            @default(0)
+  title        String?
+  subtitle     String?
+  redirectType String?        @default("external")
+  redirectId   String?
+  buttonText   String?
+  priority     Int            @default(0)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
 }
 
 model Section {
@@ -541,81 +461,45 @@ model SearchHistory {
 }
 
 model Coupon {
-  id             String       @id @default(uuid())
-  code           String       @unique
-  discountType   DiscountType @default(FLAT)
-  discountValue  Decimal      @db.Decimal(10, 2)
-  minOrderAmount Decimal      @default(0) @db.Decimal(10, 2)
-  maxDiscount    Decimal?     @db.Decimal(10, 2)
-  expiresAt      DateTime?
-  isActive       Boolean      @default(true)
-  usageLimit     Int?
-  usedCount      Int          @default(0)
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-  orders         Order[]
-}
+  id                 String             @id @default(uuid())
+  code               String             @unique
+  type               CouponType         @default(DISCOUNT)
+  description        String             @default("")
+  
+  // Reward parameters
+  discountType       DiscountType?      @default(FLAT)
+  discountValue      Decimal?           @db.Decimal(10, 2)
+  maxDiscount        Decimal?           @db.Decimal(10, 2)
+  rewardProductId    String?            // The free/₹1/discounted item (for gift/special price)
+  rewardVariantId    String?
+  specialPrice       Decimal?           @db.Decimal(10, 2)
+  
+  // Core constraints
+  minOrderAmount     Decimal            @default(0) @db.Decimal(10, 2)
+  expiresAt          DateTime?
+  isActive           Boolean            @default(true)
+  usageLimit         Int?               // Global usage limit
+  userUsageLimit     Int                @default(1) // Max times a single user can redeem it
+  usedCount          Int                @default(0)
+  
+  // Advanced Rule Specifications (JSON configuration objects)
+  cartRulesJson      Json?            
+  scheduleRulesJson  Json?            
+  
+  // Targeting Relations
+  allowedLocations   String[]           // List of allowed store/warehouse locationIds
+  allowedPincodes    String[]           // Geofenced offers
+  allowedPayment     String[]           // e.g., ["UPI", "WALLET"]
+  
+  // Dedicated user associations
+  userSegments       UserGroupSegment[] @default([ALL])
+  targetedUsers      CouponUserTarget[] // Individual dedicated user links
+  
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  orders             Order[]
 
-model ChartOfAccount {
-  id            String          @id @default(uuid())
-  code          String          @unique
-  name          String
-  category      AccountCategory
-  description   String?
-  isActive      Boolean         @default(true)
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
-  ledgerEntries LedgerEntry[]
-}
-
-model JournalEntry {
-  id            String         @id @default(uuid())
-  date          DateTime       @default(now())
-  reference     String?
-  description   String?
-  transactionId String         @unique
-  locationId    String
-  staffId       String?
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  inventoryLogs InventoryLog[]
-  location      Location       @relation(fields: [locationId], references: [id])
-  staff         User?          @relation(fields: [staffId], references: [id])
-  ledgerEntries LedgerEntry[]
-
-  @@index([locationId])
-  @@index([date])
-}
-
-model LedgerEntry {
-  id          String         @id @default(uuid())
-  journalId   String
-  accountId   String
-  debit       Decimal        @default(0) @db.Decimal(12, 2)
-  credit      Decimal        @default(0) @db.Decimal(12, 2)
-  locationId  String
-  fiscalYear  Int
-  fiscalMonth Int
-  createdAt   DateTime       @default(now())
-  account     ChartOfAccount @relation(fields: [accountId], references: [id])
-  journal     JournalEntry   @relation(fields: [journalId], references: [id])
-
-  @@index([journalId])
-  @@index([accountId])
-  @@index([locationId])
-  @@index([fiscalYear, fiscalMonth])
-}
-
-model PeriodLock {
-  id         String    @id @default(uuid())
-  year       Int
-  month      Int
-  isLocked   Boolean   @default(false)
-  lockedAt   DateTime?
-  lockedById String?
-  lockedBy   User?     @relation(fields: [lockedById], references: [id])
-
-  @@unique([year, month])
+  @@index([isActive])
 }
 
 model InventoryLog {
@@ -628,11 +512,9 @@ model InventoryLog {
   beforeQty  Decimal          @db.Decimal(12, 3)
   afterQty   Decimal          @db.Decimal(12, 3)
   delta      Decimal          @db.Decimal(12, 3)
-  journalId  String?
   staffId    String?
   createdAt  DateTime         @default(now())
   batch      Batch?           @relation(fields: [batchId], references: [id])
-  journal    JournalEntry?    @relation(fields: [journalId], references: [id])
   location   Location         @relation(fields: [locationId], references: [id])
   product    Product          @relation(fields: [productId], references: [id])
   staff      User?            @relation(fields: [staffId], references: [id])
@@ -655,10 +537,12 @@ model Batch {
   receivedDate  DateTime        @default(now())
   expiryDate    DateTime?
   version       Int             @default(0)
+  staffId       String?
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
   location      Location        @relation(fields: [locationId], references: [id])
   product       Product         @relation(fields: [productId], references: [id])
+  staff         User?           @relation(fields: [staffId], references: [id])
   variant       ProductVariant? @relation(fields: [variantId], references: [id])
   inventoryLogs InventoryLog[]
   mortalityLogs MortalityLog[]
@@ -684,238 +568,108 @@ model AuditLog {
   @@index([createdAt])
 }
 
-model DailySummary {
-  id            String   @id @default(uuid())
-  date          DateTime @unique
-  locationId    String
-  totalSales    Decimal  @db.Decimal(12, 2)
-  totalCogs     Decimal  @db.Decimal(12, 2)
-  totalExpenses Decimal  @db.Decimal(12, 2)
-  netProfit     Decimal  @db.Decimal(12, 2)
-  taxCollected  Decimal  @db.Decimal(12, 2)
-  isImmutable   Boolean  @default(false)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  location      Location @relation(fields: [locationId], references: [id])
+model InventoryLedger {
+  id               String                       @id @default(uuid())
+  storeId          String
+  productId        String
+  referenceType    InventoryLedgerReferenceType
+  referenceId      String
+  quantityChange   Int
+  previousQuantity Int
+  newQuantity      Int
+  createdAt        DateTime                     @default(now())
+  createdBy        String
 
-  @@index([locationId])
+  @@index([storeId])
+  @@index([productId])
 }
 
-model MandiRate {
+model Notification {
   id        String   @id @default(uuid())
-  productId String
-  date      DateTime @default(now())
-  channel   Channel  @default(POS)
-  costPrice Decimal  @db.Decimal(10, 2)
-  staffId   String?
+  userId    String
+  title     String
+  body      String
+  type      String   @default("INFO")
+  isRead    Boolean  @default(false)
   createdAt DateTime @default(now())
-  product   Product  @relation(fields: [productId], references: [id])
-  staff     User?    @relation("MandiRateStaff", fields: [staffId], references: [id])
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id])
 
-  @@unique([productId, channel])
-  @@index([productId])
-  @@index([date])
-}
-
-model MortalityLog {
-  id         String          @id @default(uuid())
-  productId  String
-  variantId  String?
-  locationId String
-  batchId    String?
-  quantity   Decimal         @db.Decimal(12, 3)
-  reason     MortalityReason
-  notes      String?
-  staffId    String?
-  journalId  String?
-  createdAt  DateTime        @default(now())
-  batch      Batch?          @relation(fields: [batchId], references: [id])
-  location   Location        @relation(fields: [locationId], references: [id])
-  product    Product         @relation(fields: [productId], references: [id])
-  staff      User?           @relation("MortalityStaff", fields: [staffId], references: [id])
-  variant    ProductVariant? @relation(fields: [variantId], references: [id])
-
-  @@index([productId])
-  @@index([locationId])
+  @@index([userId])
   @@index([createdAt])
-}
-
-model StockTransfer {
-  id             String          @id @default(uuid())
-  productId      String
-  variantId      String?
-  fromLocationId String
-  toLocationId   String
-  quantity       Decimal         @db.Decimal(12, 3)
-  status         TransferStatus  @default(PENDING)
-  initiatedById  String?
-  completedAt    DateTime?
-  notes          String?
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  fromLocation   Location        @relation("TransferFrom", fields: [fromLocationId], references: [id])
-  initiatedBy    User?           @relation("TransferInitiator", fields: [initiatedById], references: [id])
-  product        Product         @relation(fields: [productId], references: [id])
-  toLocation     Location        @relation("TransferTo", fields: [toLocationId], references: [id])
-  variant        ProductVariant? @relation(fields: [variantId], references: [id])
-
-  @@index([productId])
-  @@index([fromLocationId])
-  @@index([toLocationId])
-  @@index([status])
-}
-
-model CustomerKhata {
-  id           String             @id @default(uuid())
-  userId       String             @unique
-  creditLimit  Decimal            @default(0) @db.Decimal(10, 2)
-  outstanding  Decimal            @default(0) @db.Decimal(10, 2)
-  updatedAt    DateTime           @updatedAt
-  user         User               @relation(fields: [userId], references: [id])
-  transactions KhataTransaction[]
-}
-
-model KhataTransaction {
-  id        String               @id @default(uuid())
-  khataId   String
-  type      KhataTransactionType
-  amount    Decimal              @db.Decimal(10, 2)
-  orderId   String?
-  notes     String?
-  staffId   String?
-  createdAt DateTime             @default(now())
-  khata     CustomerKhata        @relation(fields: [khataId], references: [id])
-
-  @@index([khataId])
-}
-
-model WeightVerificationLog {
-  id             String   @id @default(uuid())
-  sessionRef     String
-  expectedWeight Decimal  @db.Decimal(10, 3)
-  actualWeight   Decimal  @db.Decimal(10, 3)
-  variance       Decimal  @db.Decimal(10, 3)
-  isPassed       Boolean
-  staffId        String?
-  createdAt      DateTime @default(now())
-
-  @@index([sessionRef])
-}
-
-model DeliveryAsset {
-  id           String    @id @default(uuid())
-  name         String
-  type         AssetType
-  assignedTo   String?
-  isReturned   Boolean   @default(true)
-  lastAssigned DateTime?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  driver       User?     @relation("AssetDriver", fields: [assignedTo], references: [id])
-}
-
-model DriverCashLedger {
-  id        String   @id @default(uuid())
-  driverId  String
-  date      DateTime @default(now())
-  codTotal  Decimal  @db.Decimal(10, 2)
-  deposited Decimal  @db.Decimal(10, 2)
-  variance  Decimal  @db.Decimal(10, 2)
-  status    String   @default("PENDING")
-  notes     String?
-  createdAt DateTime @default(now())
-  driver    User     @relation("DriverCash", fields: [driverId], references: [id])
-
-  @@index([driverId])
-  @@index([date])
-}
-
-model DeliveryOTP {
-  id        String   @id @default(uuid())
-  orderId   String   @unique
-  otp       String
-  expiresAt DateTime
-  isUsed    Boolean  @default(false)
-  createdAt DateTime @default(now())
-  order     Order    @relation(fields: [orderId], references: [id])
-}
-
-model DriverAssignment {
-  id          String    @id @default(uuid())
-  orderId     String    @unique
-  driverId    String
-  status      String    @default("ASSIGNED")
-  clusterZone String?
-  assignedAt  DateTime  @default(now())
-  deliveredAt DateTime?
-  driver      User      @relation("DriverOrders", fields: [driverId], references: [id])
-  order       Order     @relation(fields: [orderId], references: [id])
-
-  @@index([driverId])
-  @@index([status])
-}
-
-model StaffPerformanceLog {
-  id             String   @id @default(uuid())
-  staffId        String
-  date           DateTime
-  ordersPackaged Int      @default(0)
-  errorCount     Int      @default(0)
-  avgPackTimeMin Decimal  @default(0) @db.Decimal(5, 2)
-  createdAt      DateTime @default(now())
-  staff          User     @relation("StaffPerf", fields: [staffId], references: [id])
-
-  @@unique([staffId, date])
-  @@index([staffId])
-  @@index([date])
 }
 
 model Attendance {
   id         String    @id @default(uuid())
-  userId     String
+  userId     String?
   locationId String
   checkIn    DateTime  @default(now())
   checkOut   DateTime?
   status     String    @default("PRESENT")
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
   location   Location  @relation(fields: [locationId], references: [id])
-  user       User      @relation(fields: [userId], references: [id])
+  user       User?     @relation("UserAttendance", fields: [userId], references: [id])
 
-  @@index([userId])
+  @@index([userId, checkIn])
   @@index([locationId])
-  @@index([checkIn])
 }
 
-model SalaryPayment {
-  id          String   @id @default(uuid())
-  userId      String
-  amount      Decimal  @db.Decimal(10, 2)
-  periodStart DateTime
-  periodEnd   DateTime
-  paidAt      DateTime @default(now())
-  notes       String?
-  createdAt   DateTime @default(now())
-  user        User     @relation(fields: [userId], references: [id])
+model CashierShift {
+  id                  String    @id @default(uuid())
+  staffId             String?
+  locationId          String
+  startTime           DateTime  @default(now())
+  endTime             DateTime?
+  openingCash         Decimal   @db.Decimal(10, 2)
+  closingCash         Decimal?  @db.Decimal(10, 2)
+  expectedCash        Decimal?  @db.Decimal(10, 2)
+  openingDenominations Json?
+  closingDenominations Json?
+  currentDenominations Json?
+  notes               String?
+  status              String    @default("OPEN")
+  location            Location  @relation(fields: [locationId], references: [id])
+  staff               User?     @relation(fields: [staffId], references: [id])
 
-  @@index([userId])
+  @@index([staffId, status])
+  @@index([locationId])
 }
 
 model StoreExpense {
-  id          String          @id @default(uuid())
-  locationId  String
-  category    ExpenseCategory
-  amount      Decimal         @db.Decimal(10, 2)
-  date        DateTime        @default(now())
-  description String?
-  referenceId String?
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
-  location    Location        @relation(fields: [locationId], references: [id])
+  id            String   @id @default(uuid())
+  locationId    String
+  staffId       String?
+  amount        Decimal  @db.Decimal(10, 2)
+  category      String
+  description   String?
+  receiptUrl    String?
+  denominations Json?
+  createdAt     DateTime @default(now())
+  location      Location @relation(fields: [locationId], references: [id])
+  staff         User?    @relation(fields: [staffId], references: [id])
 
+  @@index([locationId, createdAt])
+}
+
+model MortalityLog {
+  id         String   @id @default(uuid())
+  productId  String
+  variantId  String?
+  batchId    String?
+  locationId String
+  reason     String
+  quantity   Decimal  @db.Decimal(12, 3)
+  staffId    String?
+  createdAt  DateTime @default(now())
+  costPrice  Decimal  @db.Decimal(12, 2)
+  totalLoss  Decimal  @db.Decimal(12, 2)
+  batch      Batch?   @relation(fields: [batchId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id])
+  product    Product  @relation(fields: [productId], references: [id])
+  staff      User?    @relation(fields: [staffId], references: [id])
+
+  @@index([productId, reason])
   @@index([locationId])
-  @@index([category])
-  @@index([date])
+  @@index([batchId])
 }
 
 enum Role {
@@ -941,6 +695,7 @@ enum WeightUnit {
   LTR
   ML
   PIECE
+  PACKET
 }
 
 enum Channel {
@@ -968,24 +723,10 @@ enum OrderStatus {
   FAILED
 }
 
-enum RefundStatus {
-  PENDING
-  COMPLETED
-  FAILED
-}
-
 enum BannerPosition {
   HOME_TOP
   HOME_MIDDLE
   CATEGORY_TOP
-}
-
-enum AccountCategory {
-  ASSET
-  LIABILITY
-  REVENUE
-  EXPENSE
-  EQUITY
 }
 
 enum InventoryLogType {
@@ -998,42 +739,6 @@ enum InventoryLogType {
   TRANSFER
 }
 
-enum MortalityReason {
-  ROTTEN
-  DAMAGED
-  EXPIRED
-  SHRINKAGE
-  OTHER
-}
-
-enum TransferStatus {
-  PENDING
-  IN_TRANSIT
-  COMPLETED
-  CANCELLED
-}
-
-enum KhataTransactionType {
-  PURCHASE
-  PAYMENT
-  ADJUSTMENT
-}
-
-enum AssetType {
-  CRATE
-  THERMAL_BAG
-  VEHICLE
-  OTHER
-}
-
-enum ExpenseCategory {
-  SALARY
-  MORTALITY
-  UTILITY
-  RENT
-  OTHER
-}
-
 enum InventoryLedgerReferenceType {
   ORDER
   REFUND
@@ -1041,21 +746,151 @@ enum InventoryLedgerReferenceType {
   ADJUSTMENT
 }
 
-model InventoryLedger {
-  id               String                       @id @default(uuid())
-  storeId          String
-  productId        String
-  referenceType    InventoryLedgerReferenceType
-  referenceId      String
-  quantityChange   Int
-  previousQuantity Int
-  newQuantity      Int
-  createdAt        DateTime                     @default(now())
-  createdBy        String
-
-  @@index([storeId])
-  @@index([productId])
+enum CouponType {
+  DISCOUNT           // Flat or Percentage discount on the cart
+  ITEM_DISCOUNT      // Discount applied to a specific product (e.g., 50% off milk)
+  SPECIAL_PRICE_ITEM // Get product X at special price Y (e.g., butter at ₹1)
+  FREE_GIFT          // Get product X for free (e.g., BOGO, free coriander)
+  CASHBACK           // Wallet cashback
 }
 
+enum UserGroupSegment {
+  ALL
+  FIRST_ORDER_BUYERS  // Targeted to first-time shoppers
+  LOYAL_SHOPPERS      // Target monthly repeat buyers
+  SENIOR_CITIZENS     // Target seniors
+  STUDENTS            // Target student hostel groups
+  CORPORATE_PANTRY    // Target corporate pantries
+}
 
+model ChatMessage {
+  id             String   @id @default(uuid())
+  senderId       String
+  senderName     String?
+  isAdmin        Boolean  @default(false)
+  message        String
+  orderId        String?
+  hasAttachment  Boolean  @default(false)
+  attachmentType String?  // "IMAGE" | "VIDEO"
+  isRead         Boolean  @default(false)
+  sessionEnded   Boolean  @default(false)
+  createdAt      DateTime @default(now())
 
+  @@index([senderId])
+  @@index([createdAt])
+  @@index([isAdmin])
+}
+
+// Join Table for Dedicated Individual User Coupons
+model CouponUserTarget {
+  id        String   @id @default(uuid())
+  couponId  String
+  userId    String
+  coupon    Coupon   @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([couponId, userId])
+  @@index([userId])
+}
+
+model ApiKey {
+  id            String    @id @default(uuid())
+  key           String    @unique
+  name          String
+  role          Role      @default(STORE_ADMIN)
+  locationId    String?
+  isActive      Boolean   @default(true)
+  isSuspended   Boolean   @default(false)
+  suspendReason String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  location      Location? @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  metrics       ApiMetric[]
+  incidents     SecurityIncident[]
+
+  @@index([key])
+  @@index([locationId])
+}
+
+model ApiMetric {
+  id            String   @id @default(uuid())
+  apiKeyId      String?
+  endpoint      String
+  method        String
+  status        Int
+  responseTime  Int      // in milliseconds
+  requestBytes  Int      @default(0)
+  responseBytes Int      @default(0)
+  timestamp     DateTime @default(now())
+  ipAddress     String
+  country       String?
+  userAgent     String?
+  apiKey        ApiKey?  @relation(fields: [apiKeyId], references: [id], onDelete: SetNull)
+
+  @@index([timestamp])
+  @@index([apiKeyId])
+  @@index([endpoint])
+}
+
+model SecurityIncident {
+  id             String            @id @default(uuid())
+  title          String
+  description    String?
+  threatType     String            // e.g. "SQL_INJECTION", "DDOS", "MASS_HARVEST", "IMPOSSIBLE_TRAVEL"
+  severity       IncidentSeverity  @default(P2)
+  status         IncidentStatus    @default(OPEN)
+  apiKeyId       String?
+  detectionProof Json?             // Captures source headers, payload snippet, parameters
+  sourceIp       String?
+  userAgent      String?
+  country        String?
+  assignedToId   String?           // Engineer userId
+  slaDeadline    DateTime
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  resolvedAt     DateTime?
+  rootCause      String?
+  resolution     String?
+  comments       IncidentComment[]
+  apiKey         ApiKey?           @relation(fields: [apiKeyId], references: [id], onDelete: SetNull)
+  assignedTo     User?             @relation("IncidentAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([severity])
+  @@index([createdAt])
+}
+
+model IncidentComment {
+  id         String           @id @default(uuid())
+  incidentId String
+  authorId   String
+  content    String
+  createdAt  DateTime         @default(now())
+  incident   SecurityIncident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  author     User             @relation(fields: [authorId], references: [id])
+}
+
+enum IncidentSeverity {
+  P0 // Critical - 15m SLA
+  P1 // High - 1h SLA
+  P2 // Medium - 4h SLA
+  P3 // Low - 24h SLA
+}
+
+enum IncidentStatus {
+  OPEN
+  ACKNOWLEDGED
+  INVESTIGATING
+  MITIGATED
+  RESOLVED
+  CLOSED
+}
+
+model PageContent {
+  id        String   @id @default(uuid())
+  slug      String   @unique
+  title     String
+  content   String   @db.Text
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+}

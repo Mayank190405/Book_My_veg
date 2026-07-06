@@ -37,7 +37,7 @@ export default function SimilarProducts({ productId }: { productId: string }) {
             <ScrollArea className="w-full whitespace-nowrap pb-4">
                 <div className="flex gap-4">
                     {products.map((product: any) => (
-                        <div key={product.id} className="w-[180px] shrink-0">
+                        <div key={product.id} className="w-[140px] shrink-0">
                             <ProductCard {...product} compact />
                         </div>
                     ))}

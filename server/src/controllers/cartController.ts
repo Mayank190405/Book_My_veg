@@ -23,28 +23,36 @@ export const syncCart = async (req: AuthenticatedRequest, res: Response) => {
             cart = await prisma.cart.create({ data: { userId } });
         }
 
-        // 2. Upsert items
+        // 2. Manual Upsert items (Avoid composite key null crash)
         for (const item of items) {
-            await prisma.cartItem.upsert({
-                where: {
-                    cartId_productId_variantId: {
+            // Verify product exists as registry may have reset
+            const product = await prisma.product.findUnique({ where: { id: item.productId } });
+            if (!product) continue; // Skip stale identifiers
+
+            const vId = item.variantId || null;
+            const existing = await prisma.cartItem.findFirst({
+                where: { cartId: cart.id, productId: item.productId, variantId: vId }
+            });
+
+            if (existing) {
+                await prisma.cartItem.update({
+                    where: { id: existing.id },
+                    data: {
+                        quantity: item.quantity,
+                        metadata: item.metadata || undefined
+                    }
+                });
+            } else {
+                await prisma.cartItem.create({
+                    data: {
                         cartId: cart.id,
                         productId: item.productId,
-                        variantId: item.variantId || null
+                        variantId: vId,
+                        quantity: item.quantity,
+                        metadata: item.metadata || undefined
                     }
-                },
-                update: {
-                    quantity: item.quantity,
-                    metadata: item.metadata || undefined
-                },
-                create: {
-                    cartId: cart.id,
-                    productId: item.productId,
-                    variantId: item.variantId || null,
-                    quantity: item.quantity,
-                    metadata: item.metadata || undefined
-                }
-            });
+                });
+            }
         }
 
         // 3. Fetch updated cart
@@ -104,11 +112,18 @@ export const updateCartItem = async (req: AuthenticatedRequest, res: Response) =
     const { productId, variantId, quantity } = req.body;
 
     if (!userId) return res.status(401).json({ message: "Unauthorized" });
+    if (!productId) return res.status(400).json({ message: "productId is required" });
 
     try {
         let cart = await prisma.cart.findUnique({ where: { userId } });
         if (!cart) {
             cart = await prisma.cart.create({ data: { userId } });
+        }
+
+        // Verify product registry entry exists
+        const product = await prisma.product.findUnique({ where: { id: productId } });
+        if (!product) {
+            return res.status(404).json({ message: "Requested merchandise not found in registry" });
         }
 
         if (quantity <= 0) {
@@ -121,27 +136,31 @@ export const updateCartItem = async (req: AuthenticatedRequest, res: Response) =
                 }
             });
         } else {
-            // Upsert item
-            await prisma.cartItem.upsert({
-                where: {
-                    cartId_productId_variantId: {
+            // Manual Upsert item (Avoid composite key null crash)
+            const vId = variantId || null;
+            const existing = await prisma.cartItem.findFirst({
+                where: { cartId: cart.id, productId, variantId: vId }
+            });
+
+            if (existing) {
+                await prisma.cartItem.update({
+                    where: { id: existing.id },
+                    data: {
+                        quantity,
+                        metadata: req.body.metadata || undefined
+                    }
+                });
+            } else {
+                await prisma.cartItem.create({
+                    data: {
                         cartId: cart.id,
                         productId,
-                        variantId: variantId || null
+                        variantId: vId,
+                        quantity,
+                        metadata: req.body.metadata || undefined
                     }
-                },
-                update: {
-                    quantity,
-                    metadata: req.body.metadata || undefined
-                },
-                create: {
-                    cartId: cart.id,
-                    productId,
-                    variantId: variantId || null,
-                    quantity,
-                    metadata: req.body.metadata || undefined
-                }
-            });
+                });
+            }
         }
 
         const updatedCart = await prisma.cart.findUnique({

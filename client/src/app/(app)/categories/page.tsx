@@ -5,18 +5,8 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { getCategories } from "@/services/categoryService";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ChevronRight, LayoutGrid } from "lucide-react";
-
-const CATEGORY_EMOJIS: Record<string, string> = {
-    "Fruits": "🍎",
-    "Vegetables": "🥦",
-    "Dairy Products": "🥛",
-    "Grains": "🌾",
-    "Cold Pressed Oils": "🌿",
-    "Cold Pressed Juices": "🥤",
-    "Exotic Vegetables": "🥬",
-    "Exotic Fruits": "🐉",
-};
+import SearchBar from "@/components/features/SearchBar";
+import { cn } from "@/lib/utils";
 
 export default function CategoriesPage() {
     const { data: categories, isLoading } = useQuery({
@@ -25,50 +15,84 @@ export default function CategoriesPage() {
     });
 
     return (
-        <div className="pb-32 px-5 pt-20">
-            <div className="mb-8 px-1">
-                <h1 className="text-2xl font-black text-emerald-950 tracking-tight flex items-center gap-3 uppercase tracking-widest leading-none">
-                    All Categories 📦
-                </h1>
-                <p className="text-[10px] font-bold text-emerald-950/40 uppercase tracking-widest mt-2">Explore our entire collection</p>
+        <div className="pb-36 px-5 max-w-2xl mx-auto scrollbar-hide">
+            {/* Search Bar Section */}
+            <div className="mb-6 mt-4 w-full">
+                <SearchBar />
             </div>
 
+            {/* Grid Section */}
             {isLoading ? (
-                <div className="grid grid-cols-2 gap-4">
-                    {[...Array(10)].map((_, i) => (
-                        <Skeleton key={i} className="h-28 rounded-[2.25rem] bg-white/60 blur-sm" />
+                <div className="grid grid-cols-4 gap-3">
+                    {[...Array(12)].map((_, i) => (
+                        <div key={i} className="flex flex-col items-center p-2.5 rounded-3xl border border-slate-100/50 bg-white shadow-xs">
+                            <Skeleton className="w-full aspect-square rounded-full bg-slate-100" />
+                            <Skeleton className="w-10 h-2 bg-slate-100 rounded mt-2" />
+                        </div>
                     ))}
                 </div>
             ) : !categories || categories.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-24 gap-3 text-emerald-950/20">
-                    <LayoutGrid className="h-12 w-12 opacity-30" />
-                    <p className="text-sm font-black uppercase tracking-widest">No categories yet</p>
+                <div className="flex flex-col items-center justify-center py-20 gap-4 text-slate-300">
+                    <div className="w-16 h-16 bg-white border border-slate-100 rounded-3xl flex items-center justify-center">
+                        <span className="text-2xl">📦</span>
+                    </div>
+                    <p className="text-[10px] font-black uppercase tracking-widest">No categories found</p>
                 </div>
             ) : (
-                <div className="grid grid-cols-2 gap-4">
-                    {categories.map((cat: any, idx: number) => (
+                <div className="grid grid-cols-4 gap-3">
+                    {categories.map((cat: any) => (
                         <Link
                             key={cat.id}
                             href={`/category/${cat.id}`}
-                            className="group relative overflow-hidden h-28 bg-white/60 backdrop-blur-xl border border-black/5 rounded-[2.25rem] p-5 flex flex-col justify-between transition-all hover:shadow-lg active:scale-[0.98] animate-fade-in"
-                            style={{ animationDelay: `${idx * 40}ms` }}
+                            className="group flex flex-col items-center justify-between p-2.5 rounded-3xl border border-slate-100 bg-white shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 active:scale-95"
                         >
-                            <span className="text-4xl filter drop-shadow-sm group-hover:scale-110 group-hover:rotate-6 transition-transform origin-left">
-                                {CATEGORY_EMOJIS[cat.name] || "📦"}
-                            </span>
-                            <div className="flex justify-between items-end">
-                                <span className="text-sm font-black text-emerald-950 tracking-tight leading-none uppercase">
-                                    {cat.name}
-                                </span>
-                                <div className="w-6 h-6 rounded-full bg-emerald-500/10 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
-                                </div>
+                            {/* Circular Image Container */}
+                            <div className="relative w-full aspect-square rounded-full overflow-hidden bg-slate-50/50 flex items-center justify-center p-0.5 border border-slate-100/30">
+                                {cat.imageUrl ? (
+                                    <Image
+                                        src={cat.imageUrl}
+                                        alt={cat.name}
+                                        fill
+                                        className="object-cover transition-transform duration-500 group-hover:scale-110 rounded-full"
+                                        sizes="(max-width: 768px) 80px, 120px"
+                                    />
+                                ) : (
+                                    <span className="text-xl">📦</span>
+                                )}
                             </div>
 
-                            {/* Decorative background element */}
-                            <div className="absolute top-0 right-0 w-16 h-16 bg-emerald-500/5 rounded-bl-[4rem] group-hover:scale-150 transition-transform" />
+                            {/* Label */}
+                            <span className="text-[9px] font-black text-center text-[#1c2e24] mt-2 tracking-wide uppercase leading-tight line-clamp-2 h-[22px] flex items-center justify-center group-hover:text-emerald-700 transition-colors">
+                                {cat.name}
+                            </span>
                         </Link>
                     ))}
+                </div>
+            )}
+
+            {/* Quality Promise Promotional Banner */}
+            {!isLoading && categories && categories.length > 0 && (
+                <div className="relative mt-8 rounded-[2rem] overflow-hidden bg-[#f0fcf6] border border-emerald-500/10 p-5 flex items-center justify-between shadow-sm">
+                    <div className="space-y-2.5 z-10 flex-1 pr-2">
+                        <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 text-emerald-800 text-[9px] font-black uppercase rounded-full tracking-wider">
+                            <svg className="w-3.5 h-3.5 fill-current text-emerald-600" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                            </svg>
+                            100% Original
+                        </div>
+                        <h3 className="text-[13px] font-black text-[#023324] uppercase tracking-wider leading-snug">
+                            Premium Quality Products<br />Delivered to You
+                        </h3>
+                    </div>
+                    <div className="relative w-28 h-20 shrink-0 select-none">
+                        <Image
+                            src="/images/fresh_produce_banner.png"
+                            alt="Fresh organic produce basket"
+                            fill
+                            className="object-contain"
+                            sizes="125px"
+                        />
+                    </div>
                 </div>
             )}
         </div>

@@ -3,10 +3,13 @@ import { useUserStore } from "@/store/useUserStore";
 
 const getBaseURL = () => {
     if (typeof window !== "undefined") {
-        // If NEXT_PUBLIC_API_URL is set, use it. 
-        // Otherwise, assume backend is on port 5000 of the same host.
-        return process.env.NEXT_PUBLIC_API_URL ||
-            `${window.location.protocol}//${window.location.hostname}:5000/api/v1`;
+        if (process.env.NEXT_PUBLIC_API_URL) return process.env.NEXT_PUBLIC_API_URL;
+        
+        // Fallback for production: If not on localhost, use the current origin
+        if (window.location.hostname !== "localhost") {
+            return `${window.location.origin}/api/v1`;
+        }
+        return `${window.location.protocol}//${window.location.hostname}:5000/api/v1`;
     }
     return process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api/v1";
 };

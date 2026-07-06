@@ -48,56 +48,78 @@ export class InventoryService {
         let invId: string | null = null;
 
         if (!invRows || invRows.length === 0) {
-            if (params.qtyDelta < 0) {
-                throw new StockError(`Inventory record not found for product ${params.productId}`);
-            }
+            // Reconcile from Batches if missing
+            const batchSummary: any = await db.batch.aggregate({
+                where: {
+                    productId: params.productId,
+                    locationId: params.locationId,
+                    variantId: params.variantId || null
+                },
+                _sum: { remainingQty: true }
+            });
+
+            currentStock = Number(batchSummary._sum.remainingQty || 0);
+
             const newInv = await db.inventory.create({
                 data: {
                     productId: params.productId,
                     locationId: params.locationId,
                     variantId: params.variantId || null,
-                    currentStock: params.qtyDelta
+                    currentStock: currentStock
                 }
             });
             invId = newInv.id;
-            currentStock = 0;
+            // No need to apply delta below as it's already reflected in the Batch SUM we just queried
         } else {
-            invId = invRows[0].id;
-            currentStock = invRows[0].currentStock;
+        invId = invRows[0].id;
+        const existingStock = new Prisma.Decimal(invRows[0].currentStock);
+        const delta = new Prisma.Decimal(params.qtyDelta);
 
-            if (currentStock + params.qtyDelta < 0) {
-                throw new StockError(`Insufficient actual stock for product ${params.productId}. Required: ${Math.abs(params.qtyDelta)}, Available: ${currentStock}`);
-            }
-
-            await db.$executeRaw`
-                UPDATE "Inventory" 
-                SET "currentStock" = "currentStock" + ${params.qtyDelta}, "updatedAt" = NOW()
-                WHERE id = ${invId}
-            `;
+        if (existingStock.plus(delta).isNegative()) {
+            throw new StockError(`Insufficient actual stock for product ${params.productId}. Required: ${delta.abs()}, Available: ${existingStock}`);
         }
 
-        const newStock = currentStock + params.qtyDelta;
+        // Apply atomic delta to existing record using native Prisma increment/decrement
+        const updatedInv = await db.inventory.update({
+            where: { id: invId },
+            data: {
+                currentStock: { increment: delta },
+                updatedAt: new Date()
+            }
+        });
+        currentStock = updatedInv.currentStock;
+    }
 
-        await db.$executeRaw`
-            INSERT INTO "InventoryLedger" (
-                "id", "storeId", "productId", "referenceType", "referenceId", 
-                "quantityChange", "previousQuantity", "newQuantity", "createdAt", "createdBy"
-            ) VALUES (
-                gen_random_uuid(), ${params.locationId}, ${params.productId}, 
-                CAST(${params.referenceType} AS "InventoryLedgerReferenceType"), COALESCE(${params.referenceId || null}, 'N/A'), 
-                ${params.qtyDelta}, ${currentStock}, ${newStock}, NOW(), COALESCE(${params.staffId || null}, 'SYSTEM')
-            )
-        `;
+    const newStock = currentStock;
 
+    // Use a valid InventoryLedgerReferenceType
+    let safeRefType: any = params.referenceType;
+    const validRefTypes = ["ORDER", "REFUND", "MORTALITY", "ADJUSTMENT"];
+    if (!validRefTypes.includes(safeRefType)) {
+        safeRefType = "ADJUSTMENT";
+    }
+
+    await db.inventoryLedger.create({
+        data: {
+            storeId: params.locationId,
+            productId: params.productId,
+            referenceType: safeRefType,
+            referenceId: params.referenceId || "N/A",
+            quantityChange: new Prisma.Decimal(params.qtyDelta),
+            previousQuantity: (new Prisma.Decimal(currentStock as any)).minus(new Prisma.Decimal(params.qtyDelta)),
+            newQuantity: new Prisma.Decimal(currentStock as any),
+            createdBy: params.staffId || "SYSTEM"
+        }
+    });
         // Automated Website Sync if dropping to 0 or rising above 0 globally
         const globalInventory = await db.inventory.aggregate({
             where: { productId: params.productId },
             _sum: { currentStock: true }
         });
-        const totalStock = Number(globalInventory._sum.currentStock || 0);
+        const totalStock = new Prisma.Decimal(globalInventory._sum.currentStock || 0);
         await db.product.update({
             where: { id: params.productId },
-            data: { isWebsitePublished: totalStock > 0, version: { increment: 1 } }
+            data: { isWebsitePublished: totalStock.gt(0), version: { increment: 1 } }
         });
 
         return { currentStock: newStock };
@@ -110,7 +132,6 @@ export class InventoryService {
         items: StockDeductionItem[];
         locationId: string;
         type: InventoryLogType;
-        journalId?: string;
         staffId?: string;
     }, tx?: any) {
         const executeLogic = async (db: any) => {
@@ -119,7 +140,7 @@ export class InventoryService {
                 let remainingToDeduct = qtyToDeduct;
 
                 // 1. Fetch available batches for this product/location ordered by FIFO (receivedDate)
-                const batches = await db.batch.findMany({
+                let batches = await db.batch.findMany({
                     where: {
                         productId: item.productId,
                         variantId: item.variantId || null,
@@ -129,11 +150,45 @@ export class InventoryService {
                     orderBy: { receivedDate: "asc" }
                 });
 
-                console.log(`[FIFO] Found ${batches.length} batches for product ${item.productId}. Total required: ${qtyToDeduct}`);
+                // Calculate total available in batches
+                let totalAvailable = batches.reduce((acc: Prisma.Decimal, b: any) => acc.plus(b.remainingQty), new Prisma.Decimal(0));
 
-                const totalAvailable = batches.reduce((acc: Prisma.Decimal, b: any) => acc.plus(b.remainingQty), new Prisma.Decimal(0));
+                // ── SELF-HEALING: Reconcile with Master Inventory if batches are insufficient ── 
                 if (totalAvailable.lessThan(qtyToDeduct)) {
-                    throw new StockError(`Insufficient stock for product ${item.productId}. Required: ${qtyToDeduct}, Available: ${totalAvailable}`);
+                    const masterInv = await db.inventory.findFirst({
+                        where: {
+                            productId: item.productId,
+                            locationId: params.locationId,
+                            ...(item.variantId ? { variantId: item.variantId } : {}),
+                            currentStock: { gt: 0 }
+                        }
+                    });
+
+                    if (masterInv && new Prisma.Decimal(masterInv.currentStock).greaterThan(totalAvailable)) {
+                        const missingQty = new Prisma.Decimal(masterInv.currentStock).minus(totalAvailable);
+                        console.log(`[FIFO-FIX] Detected Batch/Inventory mismatch for product ${item.productId}. Inventory: ${masterInv.currentStock}, Batches: ${totalAvailable}. Recovering ${missingQty} into new batch.`);
+                        
+                        const recoveredBatch = await db.batch.create({
+                            data: {
+                                batchNumber: `RECOVERED_${Date.now()}`,
+                                productId: item.productId,
+                                variantId: item.variantId || null,
+                                locationId: params.locationId,
+                                initialQty: missingQty,
+                                remainingQty: missingQty,
+                                costPrice: 0 
+                            }
+                        });
+                        batches.push(recoveredBatch);
+                        totalAvailable = totalAvailable.plus(missingQty);
+                    }
+                }
+
+                console.log(`[FIFO] Final batch count for ${item.productId}: ${batches.length}. Total Available: ${totalAvailable}, Required: ${qtyToDeduct}`);
+
+                if (totalAvailable.lessThan(qtyToDeduct)) {
+                    console.error(`[STOCK-FAIL] Product: ${item.productId}, Variant: ${item.variantId || 'NONE'}, Location: ${params.locationId}, Required: ${qtyToDeduct}, Available: ${totalAvailable}`);
+                    throw new StockError(`Insufficient balance for product ${item.productId}. Requested: ${qtyToDeduct}, System has: ${totalAvailable}. Please update stock via Purchase/Adjustment.`);
                 }
 
                 // 2. Iterate through batches and deduct
@@ -163,41 +218,42 @@ export class InventoryService {
                     const beforeQty = batch.remainingQty as Prisma.Decimal;
                     const afterQty = beforeQty.minus(deductionFromBatch);
 
+                    const prismaStaffId = (params.staffId && !params.staffId.startsWith("STORE_") && params.staffId !== "SYSTEM") ? params.staffId : undefined;
+
                     await db.inventoryLog.create({
                         data: {
                             product: { connect: { id: item.productId } },
-                            variant: item.variantId ? { connect: { id: item.variantId } } : undefined,
+                            variant: batch.variantId ? { connect: { id: batch.variantId } } : undefined,
                             batch: { connect: { id: batch.id } },
                             location: { connect: { id: params.locationId } },
                             type: params.type,
                             beforeQty,
                             afterQty,
                             delta: deductionFromBatch.negated(),
-                            journal: params.journalId ? { connect: { id: params.journalId } } : undefined,
-                            staff: params.staffId ? { connect: { id: params.staffId } } : undefined
+                            staff: prismaStaffId ? { connect: { id: prismaStaffId } } : undefined
                         }
+                    });
+
+                    // Determine ledger reference type
+                    let refType: 'ORDER' | 'REFUND' | 'MORTALITY' | 'ADJUSTMENT' = 'ADJUSTMENT';
+                    if (params.type === InventoryLogType.SALE) refType = 'ORDER';
+                    if (params.type === InventoryLogType.RETURN) refType = 'REFUND';
+                    if (params.type === InventoryLogType.DAMAGE) refType = 'MORTALITY';
+                    if (params.type === InventoryLogType.ADJUSTMENT) refType = 'ADJUSTMENT';
+
+                    // 4. Update Global Inventory Snapshot via centralized locking wrapper
+                    // We must deduct from THAT SPECIFIC batch's variant globally
+                    await InventoryService.adjustGlobalInventory(db, {
+                        productId: item.productId,
+                        variantId: batch.variantId || undefined,
+                        locationId: params.locationId,
+                        qtyDelta: -deductionFromBatch.toNumber(),
+                        referenceType: refType,
+                        staffId: params.staffId
                     });
 
                     remainingToDeduct = remainingToDeduct.minus(deductionFromBatch);
                 }
-
-                // Determine ledger reference type
-                let refType: 'ORDER' | 'REFUND' | 'MORTALITY' | 'ADJUSTMENT' = 'ADJUSTMENT';
-                if (params.type === InventoryLogType.SALE) refType = 'ORDER';
-                if (params.type === InventoryLogType.RETURN) refType = 'REFUND';
-                if (params.type === InventoryLogType.DAMAGE) refType = 'MORTALITY';
-                if (params.type === InventoryLogType.ADJUSTMENT) refType = 'ADJUSTMENT';
-
-                // 4. Update Global Inventory Snapshot via centralized locking wrapper
-                await InventoryService.adjustGlobalInventory(db, {
-                    productId: item.productId,
-                    variantId: item.variantId,
-                    locationId: params.locationId,
-                    qtyDelta: -qtyToDeduct.toNumber(),
-                    referenceType: refType,
-                    referenceId: params.journalId,
-                    staffId: params.staffId
-                });
             }
         };
 
@@ -253,6 +309,8 @@ export class InventoryService {
         const beforeQty = new Prisma.Decimal(inv?.currentStock || 0);
         const afterQty = beforeQty.plus(qty);
 
+        const prismaStaffId = (params.staffId && !params.staffId.startsWith("STORE_") && params.staffId !== "SYSTEM") ? params.staffId : undefined;
+
         // 3. Create InventoryLog
         await db.inventoryLog.create({
             data: {
@@ -264,7 +322,7 @@ export class InventoryService {
                 beforeQty,
                 afterQty,
                 delta: qty,
-                staff: params.staffId ? { connect: { id: params.staffId } } : undefined
+                staff: prismaStaffId ? { connect: { id: prismaStaffId } } : undefined
             }
         });
 
@@ -322,6 +380,8 @@ export class InventoryService {
                 });
             }
 
+            const prismaStaffId = (params.staffId && !params.staffId.startsWith("STORE_") && params.staffId !== "SYSTEM") ? params.staffId : undefined;
+
             // Create InventoryLog
             await db.inventoryLog.create({
                 data: {
@@ -335,7 +395,7 @@ export class InventoryService {
                         ? (latestBatch?.remainingQty || 0)
                         : (latestBatch ? (latestBatch.remainingQty as Prisma.Decimal).plus(qty) : 0),
                     delta: isSpoilage ? new Prisma.Decimal(0) : qty,
-                    staff: params.staffId ? { connect: { id: params.staffId } } : undefined
+                    staff: prismaStaffId ? { connect: { id: prismaStaffId } } : undefined
                 }
             });
 
@@ -346,18 +406,27 @@ export class InventoryService {
                 variantId: item.variantId,
                 locationId: params.locationId,
                 qtyDelta: isSpoilage ? 0 : qty.toNumber(),
-                referenceType: isSpoilage ? 'SPOILAGE' : 'REFUND',
+                referenceType: isSpoilage ? 'MORTALITY' : 'REFUND',
                 referenceId: params.referenceId,
                 staffId: params.staffId
             });
         }
     }
 
+
     /**
-     * Shim for legacy reserveStock. 
+     * Real stock reservation – deducts from batches immediately.
+     * Use this for Web/WhatsApp orders to prevent overselling while paying.
      */
-    static async reserveStock(tx: any, items: any[]) {
-        console.log("[InventoryService] reserveStock called (Placeholder)");
-        return;
+    static async reserveStock(params: {
+        items: StockDeductionItem[];
+        locationId: string;
+        staffId?: string;
+    }, tx?: any) {
+        // We reuse deductStock logic but with a specific reference
+        return await InventoryService.deductStock({
+            ...params,
+            type: InventoryLogType.SALE // Use SALE for now to match DB schema enum
+        }, tx);
     }
 }

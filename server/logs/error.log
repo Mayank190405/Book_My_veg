@@ -1038,3 +1038,127 @@
 2026-02-25 17:58:03:583 [31merror[39m: [31mRedis Client Error Connection timeout[39m
 2026-02-25 18:02:47:247 [31merror[39m: [31mRedis Client Error Connection timeout[39m
 2026-02-25 18:13:43:1343 [31merror[39m: [31mRedis Client Error Connection timeout[39m
+2026-03-05 16:14:55:1455 [31merror[39m: [31mFailed to auto-seed SYSTEM-POS user:[39m
+2026-03-05 16:15:00:150 [31merror[39m: [31m[Jobs] Reconciliation job failed:[39m
+2026-03-05 16:15:36:1536 [31merror[39m: [31mUnhandled Error[39m
+2026-03-05 16:15:37:1537 [31merror[39m: [31mUnhandled Error[39m
+2026-03-05 16:15:39:1539 [31merror[39m: [31mUnhandled Error[39m
+2026-03-05 16:15:44:1544 [31merror[39m: [31mUnhandled Error[39m
+2026-03-05 16:15:57:1557 [31merror[39m: [31mUnhandled Error[39m
+2026-03-05 16:15:58:1558 [31merror[39m: [31mUnhandled Error[39m
+2026-03-05 16:16:01:161 [31merror[39m: [31mUnhandled Error[39m
+2026-03-05 16:16:05:165 [31merror[39m: [31mUnhandled Error[39m
+2026-03-05 16:38:32:3832 [31merror[39m: [31mFailed to auto-seed SYSTEM-POS user:[39m
+2026-03-05 16:38:32:3832 [31merror[39m: [31m[Jobs] Reconciliation job failed:[39m
+2026-03-05 16:52:28:5228 [31merror[39m: [31mFailed to auto-seed SYSTEM-POS user:[39m
+2026-03-05 16:59:33:5933 [31merror[39m: [31mFailed to auto-seed SYSTEM-POS user:[39m
+2026-03-05 17:00:00:00 [31merror[39m: [31m[Jobs] Reconciliation job failed:[39m
+2026-03-05 17:03:19:319 [31merror[39m: [31mFailed to auto-seed SYSTEM-POS user:[39m
+2026-03-05 17:37:07:377 [31merror[39m: [31mUnhandled Error[39m
+2026-03-05 17:37:14:3714 [31merror[39m: [31mUnhandled Error[39m
+2026-03-05 17:44:35:4435 [31merror[39m: [31mUnhandled Error[39m
+2026-03-05 17:44:40:4440 [31merror[39m: [31mUnhandled Error[39m
+2026-03-05 17:44:40:4440 [31merror[39m: [31mUnhandled Error[39m
+2026-03-05 17:44:41:4441 [31merror[39m: [31mUnhandled Error[39m
+2026-03-05 17:49:16:4916 [31merror[39m: [31mUnhandled Error[39m
+2026-03-05 18:03:19:319 [31merror[39m: [31mUnhandled Error[39m
+2026-03-05 18:03:51:351 [31merror[39m: [31mUnhandled Error[39m
+2026-03-05 18:10:09:109 [31merror[39m: [31mUnhandled Error[39m
+2026-03-05 18:10:11:1011 [31merror[39m: [31mUnhandled Error[39m
+2026-03-05 18:10:12:1012 [31merror[39m: [31mUnhandled Error[39m
+2026-03-05 18:18:25:1825 [31merror[39m: [31mUnhandled Error[39m
+2026-03-06 12:12:38:1238 [31merror[39m: [31mRedis Client Error Connection timeout[39m
+2026-03-06 12:39:01:391 [31merror[39m: [31mFailed to auto-seed SYSTEM-POS user:[39m
+2026-03-06 12:39:05:395 [31merror[39m: [31mHealth Check DB Failed Connection terminated due to connection timeout[39m
+2026-03-11 11:50:06:506 [31merror[39m: [31mUnhandled Error[39m
+2026-03-11 11:51:01:511 [31merror[39m: [31mUnhandled Error[39m
+2026-03-11 11:51:49:5149 [31merror[39m: [31mUnhandled Error[39m
+2026-03-11 11:54:17:5417 [31merror[39m: [31mUnhandled Error[39m
+2026-03-11 11:55:10:5510 [31merror[39m: [31mRedis Client Error Connection timeout[39m
+2026-03-11 11:55:18:5518 [31merror[39m: [31mUnhandled Error[39m
+2026-03-11 11:55:43:5543 [31merror[39m: [31mRedis Client Error Connection timeout[39m
+2026-03-11 12:15:24:1524 [31merror[39m: [31m[Reconciliation] Failed to reconcile order 838b6865-6768-436e-9960-3d5c53259cdc:[39m
+2026-03-11 12:30:00:300 [31merror[39m: [31m[Reconciliation] Failed to reconcile order 838b6865-6768-436e-9960-3d5c53259cdc:[39m
+2026-03-11 12:30:00:300 [31merror[39m: [31m[Reconciliation] Failed to reconcile order c9af7c02-5fc3-4a24-8629-62f39a688618:[39m
+2026-03-11 12:31:22:3122 [31merror[39m: [31mRedis Client Error Connection timeout[39m
+2026-03-11 12:45:00:450 [31merror[39m: [31m[Reconciliation] Failed to reconcile order 838b6865-6768-436e-9960-3d5c53259cdc:[39m
+2026-03-11 12:45:00:450 [31merror[39m: [31m[Reconciliation] Failed to reconcile order c9af7c02-5fc3-4a24-8629-62f39a688618:[39m
+2026-03-11 13:00:00:00 [31merror[39m: [31m[Reconciliation] Failed to reconcile order 838b6865-6768-436e-9960-3d5c53259cdc:[39m
+2026-03-11 13:00:00:00 [31merror[39m: [31m[Reconciliation] Failed to reconcile order c9af7c02-5fc3-4a24-8629-62f39a688618:[39m
+2026-03-11 13:00:01:01 [31merror[39m: [31m[Reconciliation] Failed to reconcile order 9f5f7876-40bc-4524-9e07-306445f8f609:[39m
+2026-03-11 13:15:00:150 [31merror[39m: [31m[Reconciliation] Failed to reconcile order c9af7c02-5fc3-4a24-8629-62f39a688618:[39m
+2026-03-11 13:15:00:150 [31merror[39m: [31m[Reconciliation] Failed to reconcile order 9f5f7876-40bc-4524-9e07-306445f8f609:[39m
+2026-03-27 20:55:13:5513 [31merror[39m: [31mUnhandled Error[39m
+2026-03-27 23:38:16:3816 [31merror[39m: [31mRedis Client Error Connection timeout[39m
+2026-03-28 14:29:58:2958 [31merror[39m: [31mUnhandled Error[39m
+2026-03-28 14:29:58:2958 [31merror[39m: [31mUnhandled Error[39m
+2026-03-28 14:30:10:3010 [31merror[39m: [31mUnhandled Error[39m
+2026-03-28 14:30:10:3010 [31merror[39m: [31mUnhandled Error[39m
+2026-03-28 14:30:26:3026 [31merror[39m: [31mUnhandled Error[39m
+2026-03-28 14:30:26:3026 [31merror[39m: [31mUnhandled Error[39m
+2026-03-28 14:30:43:3043 [31merror[39m: [31mUnhandled Error[39m
+2026-03-28 14:32:45:3245 [31merror[39m: [31mUnhandled Error[39m
+2026-03-28 14:32:45:3245 [31merror[39m: [31mUnhandled Error[39m
+2026-03-28 14:33:06:336 [31merror[39m: [31mUnhandled Error[39m
+2026-03-28 14:33:06:336 [31merror[39m: [31mUnhandled Error[39m
+2026-03-28 14:33:20:3320 [31merror[39m: [31mUnhandled Error[39m
+2026-03-28 14:33:20:3320 [31merror[39m: [31mUnhandled Error[39m
+2026-03-28 14:33:39:3339 [31merror[39m: [31mUnhandled Error[39m
+2026-03-28 14:33:55:3355 [31merror[39m: [31mUnhandled Error[39m
+2026-03-28 14:33:55:3355 [31merror[39m: [31mUnhandled Error[39m
+2026-03-28 14:34:38:3438 [31merror[39m: [31mUnhandled Error[39m
+2026-03-28 14:36:04:364 [31merror[39m: [31mUnhandled Error[39m
+2026-03-28 14:36:15:3615 [31merror[39m: [31mUnhandled Error[39m
+2026-03-28 20:04:07:47 [31merror[39m: [31mRedis Client Error Connection timeout[39m
+2026-03-28 21:48:53:4853 [31merror[39m: [31mUnhandled Error[39m
+2026-03-28 21:48:53:4853 [31merror[39m: [31mUnhandled Error[39m
+2026-03-28 21:51:19:5119 [31merror[39m: [31mUnhandled Error[39m
+2026-03-28 21:52:00:520 [31merror[39m: [31mUnhandled Error[39m
+2026-03-28 21:53:35:5335 [31merror[39m: [31mUnhandled Error[39m
+2026-03-28 21:58:58:5858 [31merror[39m: [31mRedis Client Error Connection timeout[39m
+2026-03-28 22:00:58:058 [31merror[39m: [31mRedis Client Error Connection timeout[39m
+2026-03-28 22:07:42:742 [31merror[39m: [31mUnhandled Error[39m
+2026-03-28 22:07:46:746 [31merror[39m: [31mUnhandled Error[39m
+2026-03-28 22:07:59:759 [31merror[39m: [31mUnhandled Error[39m
+2026-03-28 22:08:07:87 [31merror[39m: [31mUnhandled Error[39m
+2026-03-28 22:31:58:3158 [31merror[39m: [31mRedis Client Error Connection timeout[39m
+2026-03-29 13:01:04:14 [31merror[39m: [31mRedis Client Error Connection timeout[39m
+2026-03-29 19:41:03:413 [31merror[39m: [31mRedis Client Error Connection timeout[39m
+2026-03-29 22:11:21:1121 [31merror[39m: [31mRedis Client Error Connection timeout[39m
+2026-03-29 22:16:22:1622 [31merror[39m: [31mRedis Client Error Connection timeout[39m
+2026-03-29 22:17:10:1710 [31merror[39m: [31mRedis Client Error Connection timeout[39m
+2026-03-29 22:55:51:5551 [31merror[39m: [31mRedis Client Error Connection timeout[39m
+2026-03-30 13:06:28:628 [31merror[39m: [31mRedis Client Error Connection timeout[39m
+2026-04-16 16:24:29:2429 [31merror[39m: [31mRedis Client Error Connection timeout[39m
+2026-04-16 16:25:27:2527 [31merror[39m: [31mRedis Client Error Connection timeout[39m
+2026-04-16 21:13:33:1333 [31merror[39m: [31mUnhandled Error[39m
+2026-04-16 21:18:01:181 [31merror[39m: [31mUnhandled Error[39m
+2026-04-17 12:41:40:4140 [31merror[39m: [31mRedis Client Error Connection timeout[39m
+2026-04-17 12:44:46:4446 [31merror[39m: [31mRedis Client Error Connection timeout[39m
+2026-04-17 14:04:51:451 [31merror[39m: [31mSearch Service Init Failed MeiliSearch is not a constructor[39m
+2026-04-17 14:06:39:639 [31merror[39m: [31mSearch Service Init Failed MeiliSearch is not a constructor[39m
+2026-04-17 14:10:34:1034 [31merror[39m: [31mSearch Service Init Failed MeiliSearch is not a constructor[39m
+2026-04-17 15:07:24:724 [31merror[39m: [31mRedis Client Error Connection timeout[39m
+2026-04-17 15:09:37:937 [31merror[39m: [31mRedis Client Error Connection timeout[39m
+2026-04-18 12:04:35:435 [31merror[39m: [31mRedis Client Error Connection timeout[39m
+2026-04-18 14:27:29:2729 [31merror[39m: [31mRedis Client Error Connection timeout[39m
+2026-04-20 17:27:36:2736 [31merror[39m: [31mUnhandled Error[39m
+2026-04-20 17:27:37:2737 [31merror[39m: [31mUnhandled Error[39m
+2026-04-20 17:27:40:2740 [31merror[39m: [31mUnhandled Error[39m
+2026-04-20 17:27:44:2744 [31merror[39m: [31mUnhandled Error[39m
+2026-04-20 17:28:08:288 [31merror[39m: [31m[AUTH] loginWithPassword critical error:[39m
+2026-04-21 12:32:32:3232 [31merror[39m: [31mRedis Client Error Connection timeout[39m
+2026-04-21 12:53:59:5359 [31merror[39m: [31mRedis Client Error Connection timeout[39m
+2026-04-21 12:58:10:5810 [31merror[39m: [31mRedis Client Error Connection timeout[39m
+2026-04-21 14:02:12:212 [31merror[39m: [31mRedis Client Error Connection timeout[39m
+2026-04-21 14:08:12:812 [31merror[39m: [31mRedis Client Error Connection timeout[39m
+2026-04-21 14:08:46:846 [31merror[39m: [31mRedis Client Error Connection timeout[39m
+2026-06-02 20:20:04:204 [31merror[39m: [31mFailed to dispatch Socket.io alert Socket.io not initialized![39m
+2026-06-02 20:26:24:2624 [31merror[39m: [31mFailed to broadcast real-time socket popup alert: Socket.io not initialized![39m
+2026-06-02 20:26:24:2624 [31merror[39m: [31mFailed to broadcast real-time socket popup alert: Socket.io not initialized![39m
+2026-06-02 20:37:59:3759 [31merror[39m: [31mFailed to dispatch Socket.io alert Socket.io not initialized![39m
+2026-06-02 20:39:20:3920 [31merror[39m: [31mFailed to broadcast real-time socket popup alert: Socket.io not initialized![39m
+2026-06-02 20:42:12:4212 [31merror[39m: [31mFailed to dispatch Socket.io alert Socket.io not initialized![39m
+2026-06-29 15:19:44:1944 [31merror[39m: [31m[🔴 SLA BREACH WARNING] Incident "⚠️ API Incident: [P1] IMPOSSIBLE_TRAVEL" has breached SLA guidelines.[39m
+2026-06-29 15:19:44:1944 [31merror[39m: [31m[🔴 SLA BREACH WARNING] Incident "⚠️ API Incident: [P1] MASS_RECORD_HARVESTING" has breached SLA guidelines.[39m
+2026-06-29 15:19:44:1944 [31merror[39m: [31m[🔴 SLA BREACH WARNING] Incident "⚠️ API Incident: [P1] MASS_RECORD_HARVESTING" has breached SLA guidelines.[39m

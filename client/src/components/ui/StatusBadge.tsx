@@ -32,7 +32,10 @@ interface StatusBadgeProps {
 
 export default function StatusBadge({ status, className, dot = false }: StatusBadgeProps) {
     const colors = STATUS_MAP[status?.toUpperCase()] ?? "bg-gray-100 text-gray-600 border-gray-200";
-    const label = status?.replace(/_/g, " ");
+    let label = status?.replace(/_/g, " ");
+    if (status?.toUpperCase() === "REFUNDED") {
+        label = "EXCHANGED";
+    }
 
     return (
         <span className={cn(

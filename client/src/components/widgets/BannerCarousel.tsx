@@ -9,10 +9,11 @@ import { useQuery } from "@tanstack/react-query";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getBanners } from "@/services/bannerService";
 import { cn } from "@/lib/utils";
+import { Leaf, ChevronRight } from "lucide-react";
 
 export default function BannerCarousel() {
     const [emblaRef, emblaApi] = useEmblaCarousel({ loop: true }, [
-        Autoplay({ delay: 3000, stopOnInteraction: false }),
+        Autoplay({ delay: 5000, stopOnInteraction: false }),
     ]);
 
     const [selectedIndex, setSelectedIndex] = useState(0);
@@ -34,57 +35,104 @@ export default function BannerCarousel() {
         emblaApi.on("select", onSelect);
         onSelect();
         return () => { emblaApi.off("select", onSelect); };
-    }, [emblaApi, onSelect]);
+    }, [emblaApi, onSelect, banners]);
 
     if (isLoading) {
-        return <Skeleton className="w-full h-52 md:h-72 rounded-[2rem] bg-white/5" />;
+        return (
+            <div className="px-6 mt-2">
+                <Skeleton className="w-full aspect-[16/9] rounded-3xl bg-slate-100 animate-pulse" />
+            </div>
+        );
     }
 
-    if (!banners || banners.length === 0) {
-        return null;
-    }
+    if (!banners || banners.length === 0) return null;
+
+    const getBannerHref = (banner: any) => {
+        const { redirectType, redirectId, link } = banner;
+        if (!redirectType) return link || "#";
+        
+        switch (redirectType.toLowerCase()) {
+            case "category":
+                return `/category/${redirectId}`;
+            case "product":
+                return `/products/${redirectId}`;
+            case "coupon":
+                return `/offers?coupon=${redirectId}`;
+            case "search":
+                return `/search?q=${encodeURIComponent(redirectId)}`;
+            case "external":
+            default:
+                return link || "#";
+        }
+    };
 
     return (
-        <div className="relative group">
+        <div className="relative group px-6 mt-2 select-none animate-fade-in">
             {/* Carousel viewport */}
-            <div className="overflow-hidden rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.5)] border border-white/5" ref={emblaRef}>
+            <div className="overflow-hidden rounded-3xl shadow-sm border border-slate-100" ref={emblaRef}>
                 <div className="flex">
                     {banners.map((banner: any, idx: number) => {
-                        const href = banner.link || "#";
+                        const href = getBannerHref(banner);
                         const isExternal = href.startsWith("http");
+                        
+                        const isDailyEssentials = banner.title?.toLowerCase() === "daily essentials";
+
                         const content = (
-                            <div className="relative flex-[0_0_100%] min-w-0 h-56 md:h-80">
+                            <div className="relative w-full h-full select-none bg-slate-100">
                                 <Image
-                                    src={banner.imageUrl || "https://placehold.co/800x400/0b2820/ffffff?text=Premium+Selection"}
+                                    src={banner.imageUrl}
                                     alt={banner.title || `Banner ${idx + 1}`}
                                     fill
-                                    className="object-cover transition-transform duration-1000 group-hover:scale-105"
+                                    className="object-cover object-center scale-100 group-hover:scale-105 transition-all duration-700"
                                     sizes="100vw"
                                     priority={idx === 0}
                                 />
-                                {/* Premium Overlay Gradient */}
-                                <div className="absolute inset-0 bg-gradient-to-t from-[#061512] via-transparent to-black/10" />
-
-                                {/* Glass Overlay with title */}
-                                {banner.title && (
-                                    <div className="absolute bottom-6 left-6 right-6">
-                                        <div className="bg-white/10 backdrop-blur-xl p-4 rounded-2xl border border-white/10 shadow-2xl max-w-max animate-fade-in">
-                                            <p className="text-white font-black text-xl md:text-2xl tracking-tighter drop-shadow-lg">{banner.title}</p>
-                                            {banner.description && (
-                                                <p className="text-white/60 text-xs md:text-sm font-bold mt-1 line-clamp-1 uppercase tracking-widest">{banner.description}</p>
-                                            )}
-                                        </div>
+                                {(banner.title || banner.subtitle) && (
+                                    <div className="absolute inset-0 bg-gradient-to-r from-black/75 via-black/35 to-transparent flex flex-col justify-center px-8 md:px-16 text-white py-4 select-none">
+                                        {isDailyEssentials && (
+                                            <div className="flex items-center gap-1.5 self-start bg-[#0b5c3e] border border-emerald-500/20 text-emerald-300 px-2.5 py-1 rounded-full mb-2">
+                                                <Leaf className="w-3.5 h-3.5 text-emerald-300 fill-emerald-300/30" />
+                                                <span className="text-[9px] font-black tracking-wider uppercase leading-none">FRESH & PURE</span>
+                                            </div>
+                                        )}
+                                        {banner.title && (
+                                            <h2 className="text-2xl md:text-4xl font-extrabold uppercase tracking-tight leading-tight max-w-[70%]">
+                                                {isDailyEssentials ? (
+                                                    <>
+                                                        Daily <br className="hidden md:inline" />
+                                                        <span className="text-[#bef264] font-black">Essentials</span>
+                                                    </>
+                                                ) : (
+                                                    banner.title
+                                                )}
+                                            </h2>
+                                        )}
+                                        {banner.subtitle && (
+                                            <p className="text-[10px] md:text-xs font-semibold text-slate-100 uppercase tracking-widest mt-1 max-w-[70%] leading-relaxed">
+                                                {banner.subtitle}
+                                            </p>
+                                        )}
+                                        {banner.buttonText && (
+                                            <div className="mt-4 flex items-center justify-center bg-white hover:bg-slate-50 text-[#023324] text-[10px] font-black px-4 py-2.5 rounded-full shadow-md select-none self-start active:scale-95 transition-all">
+                                                <span className="uppercase tracking-widest mr-2">{banner.buttonText}</span>
+                                                <div className="w-5 h-5 rounded-full bg-[#023324] flex items-center justify-center text-white shrink-0">
+                                                    <ChevronRight className="w-3.5 h-3.5 stroke-[3]" />
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                 )}
                             </div>
                         );
 
+                        const slideClass = "relative flex-[0_0_100%] min-w-0 aspect-[16/9] overflow-hidden";
+
                         return isExternal ? (
-                            <a key={banner.id} href={href} target="_blank" rel="noreferrer" className="block w-full">
+                            <a key={banner.id || idx} href={href} target="_blank" rel="noreferrer" className={slideClass}>
                                 {content}
                             </a>
                         ) : (
-                            <Link key={banner.id} href={href} className="block w-full">
+                            <Link key={banner.id || idx} href={href} className={slideClass}>
                                 {content}
                             </Link>
                         );
@@ -93,17 +141,17 @@ export default function BannerCarousel() {
             </div>
 
             {/* Indicator dots */}
-            {banners.length > 1 && (
-                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2 z-10 bg-black/40 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/10 shadow-xl">
-                    {scrollSnaps.map((_, idx) => (
+            {banners.length > 1 && scrollSnaps.length > 0 && (
+                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2.5 z-10">
+                    {scrollSnaps.map((_, idx: number) => (
                         <button
                             key={idx}
                             onClick={() => emblaApi?.scrollTo(idx)}
                             className={cn(
-                                "rounded-full transition-all duration-500",
+                                "rounded-full transition-all duration-300",
                                 selectedIndex === idx
-                                    ? "w-8 h-1.5 bg-green-400 shadow-[0_0_10px_rgba(74,222,128,0.5)]"
-                                    : "w-1.5 h-1.5 bg-white/20 hover:bg-white/40"
+                                    ? "w-4 h-1.5 bg-white shadow-sm"
+                                    : "w-1.5 h-1.5 bg-white/50 hover:bg-white/75"
                             )}
                             aria-label={`Go to slide ${idx + 1}`}
                         />

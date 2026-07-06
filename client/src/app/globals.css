@@ -38,60 +38,59 @@
 }
 
 :root {
-  /* Blinkit-inspired Dark Theme Tokens */
-  --blinkit-dark: oklch(0.18 0.04 175);
-  /* Deep Emerald Dark */
-  --blinkit-green: oklch(0.65 0.22 145);
-  --blinkit-card: oklch(0.22 0.03 175);
-  --blinkit-border: oklch(1 0 0 / 12%);
+  /* LIGHT BOUTIQUE THEME - High Contrast */
+  --background: #fbfdfc;
+  --foreground: #061512;
+  --card: #ffffff;
+  --card-foreground: #061512;
+  --popover: #ffffff;
+  --popover-foreground: #061512;
 
-  --radius: 0.75rem;
-  --background: oklch(0.98 0 0);
-  --foreground: oklch(0.13 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.13 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.13 0 0);
+  --primary: #059669; /* Emerald 600 */
+  --primary-foreground: #ffffff;
 
-  /* Default Primary (Emerald Teal) */
-  --primary: oklch(0.35 0.12 175);
-  --primary-foreground: oklch(1 0 0);
+  --secondary: #f0fdf4;
+  --secondary-foreground: #166534;
+  --muted: #f3f4f6;
+  --muted-foreground: #4b5563;
+  --accent: #ecfdf5;
+  --accent-foreground: #047857;
+  --destructive: #dc2626;
+  --border: rgba(6, 21, 18, 0.08);
+  --input: rgba(6, 21, 18, 0.05);
+  --ring: #10b981;
+  --radius: 1.5rem;
 
-  /* Brand Action (Pink/Red for Add buttons) */
-  --brand-action: oklch(0.6 0.25 350);
-  --brand-action-foreground: oklch(1 0 0);
-
-  --secondary: oklch(0.96 0.01 175);
-  --secondary-foreground: oklch(0.3 0.1 175);
-  --muted: oklch(0.96 0 0);
-  --muted-foreground: oklch(0.52 0 0);
-  --accent: oklch(0.94 0.03 175);
-  --accent-foreground: oklch(0.3 0.1 175);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.91 0 0);
-  --input: oklch(0.91 0 0);
-  --ring: oklch(0.35 0.12 175);
+  --glass-bg: rgba(255, 255, 255, 0.8);
+  --glass-border: rgba(0, 0, 0, 0.05);
+  --glass-blur: 24px;
 }
 
 .dark {
-  --background: oklch(0.13 0 0);
-  --foreground: oklch(0.98 0 0);
-  --card: oklch(0.18 0 0);
-  --card-foreground: oklch(0.98 0 0);
-  --popover: oklch(0.18 0 0);
-  --popover-foreground: oklch(0.98 0 0);
-  --primary: oklch(0.65 0.22 145);
-  --primary-foreground: oklch(0.1 0 0);
-  --secondary: oklch(0.25 0 0);
-  --secondary-foreground: oklch(0.98 0 0);
-  --muted: oklch(0.25 0 0);
-  --muted-foreground: oklch(0.65 0 0);
-  --accent: oklch(0.25 0 0);
-  --accent-foreground: oklch(0.98 0 0);
-  --destructive: oklch(0.7 0.19 22);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.65 0.22 145);
+  /* PREMIUM DARK EMERALD THEME */
+  --background: #061512;
+  --foreground: #ffffff;
+  --card: rgba(11, 28, 25, 0.8);
+  --card-foreground: #ffffff;
+  --popover: #0b1c19;
+  --popover-foreground: #ffffff;
+
+  --primary: #10b981;
+  --primary-foreground: #061512;
+
+  --secondary: #0b1c19;
+  --secondary-foreground: #ffffff;
+  --muted: #0b1c19;
+  --muted-foreground: #a1a1aa;
+  --accent: #111827;
+  --accent-foreground: #ffffff;
+  --destructive: #ef4444;
+  --border: rgba(255, 255, 255, 0.1);
+  --input: rgba(255, 255, 255, 0.1);
+  --ring: #10b981;
+
+  --glass-bg: rgba(255, 255, 255, 0.05);
+  --glass-border: rgba(255, 255, 255, 0.1);
 }
 
 @layer base {
@@ -154,7 +153,8 @@
   }
 
   .bg-gradient-app {
-    background: linear-gradient(to bottom, #f0fff4 0%, #064e3b 100%);
+    background: linear-gradient(to bottom, var(--background) 0%, var(--secondary) 100%);
+    transition: background 0.5s ease;
   }
 }
 
@@ -188,4 +188,19 @@
 
 .animate-slide-up {
   animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes pageTransition {
+  from {
+    opacity: 0.3;
+    transform: scale(0.99) translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.animate-page-transition {
+  animation: pageTransition 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }

@@ -18,7 +18,7 @@ interface PaymentButtonProps {
 
 export default function PaymentButton({ amount, address, items, className }: PaymentButtonProps) {
     const [loading, setLoading] = useState(false);
-    const { user } = useUserStore();
+    const { user, activeStore } = useUserStore();
     const router = useRouter();
 
     const handlePayment = async () => {
@@ -39,7 +39,8 @@ export default function PaymentButton({ amount, address, items, className }: Pay
             const { data } = await api.post("/payments/initiate", {
                 amount,
                 address,
-                items
+                items,
+                locationId: activeStore?.id
             });
 
             if (data.paymentLink) {

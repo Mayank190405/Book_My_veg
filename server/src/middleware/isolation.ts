@@ -12,8 +12,8 @@ export const requireStoreAccess = () => {
             return res.status(401).json({ message: "Unauthorized" });
         }
 
-        // Super Admin can access all stores
-        if (req.user.role === "SUPER_ADMIN" || req.user.role === "ADMIN") {
+        // Global Admin can access all stores
+        if (req.user.role === "ADMIN") {
             return next();
         }
 

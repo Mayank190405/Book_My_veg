@@ -5,7 +5,7 @@ export const getMe = async () => {
     return response.data;
 };
 
-export const updateProfile = async (data: { name: string; email: string }) => {
+export const updateProfile = async (data: { name: string; email?: string }) => {
     const response = await api.put("/users/profile", data);
     return response.data;
 };

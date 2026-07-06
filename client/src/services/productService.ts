@@ -5,9 +5,12 @@ export const getProducts = async (cursor?: string, limit = 20) => {
     return response.data;
 };
 
-export const getTrendingProducts = async (pincode?: string) => {
-    const query = pincode ? `?pincode=${pincode}` : "";
-    const response = await api.get(`/products/trending${query}`);
+export const getTrendingProducts = async (pincode?: string, lat?: number, lng?: number) => {
+    const params = new URLSearchParams();
+    if (pincode) params.append("pincode", pincode);
+    if (lat !== undefined && lat !== null) params.append("lat", lat.toString());
+    if (lng !== undefined && lng !== null) params.append("lng", lng.toString());
+    const response = await api.get(`/products/trending?${params.toString()}`);
     return response.data;
 };
 
@@ -36,8 +39,23 @@ export const getBuyAgainProducts = async () => {
     return response.data;
 };
 
+export const createProduct = async (data: any) => {
+    const response = await api.post("/products", data);
+    return response.data;
+};
+
 export const updateProduct = async (id: string, data: any) => {
     const response = await api.patch(`/products/${id}`, data);
+    return response.data;
+};
+
+export const deleteProduct = async (id: string) => {
+    const response = await api.delete(`/products/${id}`);
+    return response.data;
+};
+
+export const toggleProductStatus = async (id: string) => {
+    const response = await api.patch(`/products/${id}/toggle`);
     return response.data;
 };
 

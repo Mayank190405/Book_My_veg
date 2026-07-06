@@ -1,5 +1,7 @@
 import { Router } from "express";
 import { authenticate, authorize } from "../middleware/auth";
+import { validate } from "../middleware/validate";
+import { uuidParamsSchema } from "../schemas/productSchemas";
 import {
     getCategories,
     getCategoryById,
@@ -11,11 +13,11 @@ import {
 const router = Router();
 
 router.get("/", getCategories);
-router.get("/:id", getCategoryById);
+router.get("/:id", validate(uuidParamsSchema), getCategoryById);
 
-// Admin Routes
-router.post("/", authenticate, authorize(["ADMIN"]), createCategory);
-router.put("/:id", authenticate, authorize(["ADMIN"]), updateCategory);
-router.delete("/:id", authenticate, authorize(["ADMIN"]), deleteCategory);
+// Admin/Manager Routes
+router.post("/", authenticate, authorize(["ADMIN", "STORE_ADMIN", "MANAGER"]), createCategory);
+router.put("/:id", authenticate, authorize(["ADMIN", "STORE_ADMIN", "MANAGER"]), validate(uuidParamsSchema), updateCategory);
+router.delete("/:id", authenticate, authorize(["ADMIN", "STORE_ADMIN", "MANAGER"]), validate(uuidParamsSchema), deleteCategory);
 
 export default router;

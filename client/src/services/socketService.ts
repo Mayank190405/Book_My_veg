@@ -2,11 +2,25 @@ import { io, Socket } from "socket.io-client";
 
 let socket: Socket | null = null;
 
+const getSocketURL = () => {
+    if (typeof window !== "undefined") {
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || "";
+        if (apiUrl.startsWith("http")) {
+            const url = new URL(apiUrl);
+            return `${url.protocol}//${url.host}`;
+        }
+        if (window.location.hostname !== "localhost") return window.location.origin;
+        return `http://${window.location.hostname}:5000`;
+    }
+    return "http://localhost:5000";
+};
+
 export const initSocket = (userId: string) => {
     if (socket) return socket;
 
-    socket = io(process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000", {
+    socket = io(getSocketURL(), {
         withCredentials: true,
+        transports: ["websocket"],
     });
 
     socket.on("connect", () => {

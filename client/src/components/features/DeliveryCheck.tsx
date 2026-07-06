@@ -32,9 +32,9 @@ export default function DeliveryCheck() {
     };
 
     return (
-        <div className="p-4 bg-gray-50 rounded-xl border border-gray-100 space-y-3">
-            <div className="flex items-center gap-2 text-sm font-medium text-gray-700">
-                <MapPin className="w-4 h-4 text-gray-500" />
+        <div className="bg-white space-y-4">
+            <div className="flex items-center gap-2.5 text-xs font-black uppercase tracking-widest text-slate-800">
+                <MapPin className="w-4 h-4 text-[#0B7A53]" />
                 <span>Check Delivery Availability</span>
             </div>
             <form onSubmit={handleCheck} className="flex gap-2">
@@ -46,22 +46,23 @@ export default function DeliveryCheck() {
                         setPincode(val);
                         setResult(null);
                     }}
-                    className="bg-white"
+                    className="bg-white rounded-2xl border-slate-250/70 h-12 text-sm focus-visible:ring-emerald-500/25 placeholder:text-slate-400 font-bold text-slate-700"
                 />
                 <Button
                     type="submit"
-                    variant="outline"
                     disabled={pincode.length !== 6 || loading}
-                    className="shrink-0"
+                    className="shrink-0 rounded-2xl h-12 px-6 bg-[#0B7A53] hover:bg-[#096645] text-white font-black text-xs uppercase tracking-wider transition-all disabled:opacity-50"
                 >
-                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Check"}
+                    {loading ? <Loader2 className="w-4 h-4 animate-spin text-white" /> : "Check"}
                 </Button>
             </form>
 
             {result && (
                 <div className={cn(
-                    "text-sm flex items-start gap-2 p-2 rounded-lg",
-                    result.serviceable ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"
+                    "text-xs flex items-start gap-2.5 p-3 rounded-2xl border animate-in fade-in duration-350",
+                    result.serviceable 
+                        ? "bg-emerald-50/50 border-emerald-100 text-emerald-700" 
+                        : "bg-red-50/50 border-red-100 text-red-700"
                 )}>
                     {result.serviceable ? (
                         <CheckCircle className="w-4 h-4 shrink-0 mt-0.5" />
@@ -69,9 +70,9 @@ export default function DeliveryCheck() {
                         <XCircle className="w-4 h-4 shrink-0 mt-0.5" />
                     )}
                     <div>
-                        <p className="font-medium">{result.message}</p>
+                        <p className="font-extrabold uppercase tracking-wide">{result.message}</p>
                         {result.estimatedDelivery && (
-                            <p className="text-xs opacity-90 mt-0.5">Estimated by {result.estimatedDelivery}</p>
+                            <p className="text-[10px] font-bold opacity-80 mt-0.5">Estimated by {result.estimatedDelivery}</p>
                         )}
                     </div>
                 </div>

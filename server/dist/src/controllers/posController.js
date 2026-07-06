@@ -1,0 +1,590 @@
+"use strict";
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.settleAccountBalance = exports.collectDuePayment = exports.getStoreConfig = exports.cancelPOSOrder = exports.getCustomerHistory = exports.getStoreProducts = exports.processPOSOrder = exports.createOrUpdateCustomer = exports.searchCustomer = void 0;
+const prisma_1 = __importDefault(require("../config/prisma"));
+const errors_1 = require("../utils/errors");
+const client_1 = require("@prisma/client");
+const io_1 = require("../sockets/io");
+const idGenerator_1 = require("../utils/idGenerator");
+const inventoryService_1 = require("../services/inventoryService");
+const searchService_1 = require("../services/searchService");
+// ─── Customer Management ──────────────────────────────────────────────────────
+const searchCustomer = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    const { query } = req.query;
+    try {
+        const customers = yield prisma_1.default.user.findMany({
+            where: {
+                role: "USER",
+                OR: [
+                    { name: { contains: query, mode: 'insensitive' } },
+                    { phone: { contains: query } },
+                    { email: { contains: query, mode: 'insensitive' } }
+                ]
+            },
+            take: 10,
+            select: {
+                id: true,
+                name: true,
+                phone: true,
+                email: true,
+                profileAddress: true,
+                addresses: {
+                    where: { isDefault: true },
+                    take: 1
+                }
+            }
+        });
+        res.json(customers);
+    }
+    catch (error) {
+        next(error);
+    }
+});
+exports.searchCustomer = searchCustomer;
+const createOrUpdateCustomer = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
+    const { id, name, phone, email, address } = req.body;
+    try {
+        if (id) {
+            const customer = yield prisma_1.default.user.update({
+                where: { id },
+                data: Object.assign({ name,
+                    phone,
+                    email }, (address && {
+                    addresses: {
+                        upsert: {
+                            where: { id: ((_a = (yield prisma_1.default.address.findFirst({ where: { userId: id, isDefault: true } }))) === null || _a === void 0 ? void 0 : _a.id) || 'new-address-id' },
+                            update: { fullAddress: address },
+                            create: { fullAddress: address, isDefault: true }
+                        }
+                    }
+                })),
+                include: { addresses: { where: { isDefault: true } } }
+            });
+            return res.json({ message: "Customer updated", customer });
+        }
+        else {
+            // New Customer
+            const customer = yield prisma_1.default.user.create({
+                data: Object.assign({ name,
+                    phone,
+                    email, role: "USER", password: "POS_AUTO_GENERATED_" + Math.random().toString(36).slice(-8) }, (address && {
+                    addresses: {
+                        create: {
+                            fullAddress: address,
+                            isDefault: true
+                        }
+                    }
+                })),
+                include: { addresses: { where: { isDefault: true } } }
+            });
+            return res.json({ message: "Customer created", customer });
+        }
+    }
+    catch (error) {
+        next(error);
+    }
+});
+exports.createOrUpdateCustomer = createOrUpdateCustomer;
+// ─── POS Order Processing ─────────────────────────────────────────────────────
+const processPOSOrder = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a, _b, _c;
+    const { customerId, items, paymentMethod, paymentDetails, discountAmount, couponId, packerId, duePaymentAmount = 0, paidAmount = 0, // NEW: Amount paid specifically for THIS bill
+    suspend = false, denominations } = req.body;
+    const staffId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.userId;
+    const locationId = (_b = req.user) === null || _b === void 0 ? void 0 : _b.locationId;
+    if (!staffId || !locationId) {
+        return next(new errors_1.AppError("Operational context missing (Staff/Location)", 401));
+    }
+    try {
+        // Fetch current due BEFORE processing
+        const prevOrders = yield prisma_1.default.order.findMany({
+            where: {
+                userId: customerId,
+                channel: client_1.Channel.POS,
+                paymentStatus: { in: ["PENDING", "PARTIAL"] },
+                status: { notIn: ["CANCELLED", "FAILED", "PAYMENT_PENDING"] }
+            },
+            include: { payments: true }
+        });
+        const previousDue = prevOrders.reduce((acc, o) => acc + (Number(o.totalAmount) - o.payments.reduce((pAcc, p) => pAcc + Number(p.amount), 0)), 0);
+        // 🛡️ RECOVERY: Verify Staff Existence (Avoid P2003 if DB was wiped/re-seeded)
+        let validatedStaffId = staffId;
+        const staffExists = yield prisma_1.default.user.findUnique({ where: { id: staffId } });
+        if (!staffExists) {
+            console.warn(`[POS] Invalid Staff Session ID ${staffId}. Falling back to Root Admin.`);
+            const rootAdmin = yield prisma_1.default.user.findFirst({ where: { role: "ADMIN" } });
+            validatedStaffId = (rootAdmin === null || rootAdmin === void 0 ? void 0 : rootAdmin.id) || staffId; // Fallback to root or keep original if absolutely zero users (though unlikely)
+        }
+        const result = yield prisma_1.default.$transaction((tx) => __awaiter(void 0, void 0, void 0, function* () {
+            const itemTotals = items.reduce((acc, item) => acc + (item.price * item.quantity), 0);
+            const totalAmount = itemTotals - (discountAmount || 0);
+            // Determine payment status for THIS bill
+            const effectivePaid = paymentMethod === "CREDIT" ? 0 : Number(paidAmount || totalAmount);
+            const isFull = effectivePaid >= totalAmount;
+            const pStatus = effectivePaid <= 0 ? "PENDING" : (isFull ? "COMPLETED" : "PARTIAL");
+            const order = yield tx.order.create({
+                data: {
+                    id: (0, idGenerator_1.generateOrderId)(),
+                    userId: customerId,
+                    locationId,
+                    totalAmount: new client_1.Prisma.Decimal(totalAmount),
+                    discountAmount: new client_1.Prisma.Decimal(discountAmount || 0),
+                    status: (suspend ? "PENDING" : "CONFIRMED"),
+                    paymentStatus: pStatus,
+                    isPaid: isFull,
+                    shippingAddress: { type: "POS_IN_STORE", note: "Handover at Counter" },
+                    channel: client_1.Channel.POS,
+                    notes: `POS Transaction by ${staffId}${!staffExists ? " (SESSION_RECOVERED)" : ""}`,
+                    packerId,
+                    staffId: validatedStaffId, // Use validated ID
+                    items: {
+                        create: items.map((item) => ({
+                            productId: item.productId,
+                            variantId: item.variantId,
+                            quantity: item.quantity,
+                            sellingPrice: new client_1.Prisma.Decimal(item.price),
+                            locationId
+                        }))
+                    },
+                    statusHistory: {
+                        create: {
+                            status: (suspend ? "PENDING" : "CONFIRMED"),
+                            remark: `POS Checkout (${pStatus})`,
+                            changedBy: staffId
+                        }
+                    }
+                }
+            });
+            if (!suspend) {
+                yield inventoryService_1.InventoryService.deductStock({
+                    items: items.map((i) => ({ productId: i.productId, variantId: i.variantId, quantity: i.quantity })),
+                    locationId,
+                    type: inventoryService_1.InventoryLogType.SALE,
+                    staffId
+                }, tx);
+            }
+            if (effectivePaid > 0 && !suspend) {
+                yield tx.payment.create({
+                    data: {
+                        orderId: order.id,
+                        amount: new client_1.Prisma.Decimal(effectivePaid),
+                        method: paymentMethod,
+                        status: "SUCCESS",
+                        transactionId: (paymentDetails === null || paymentDetails === void 0 ? void 0 : paymentDetails.transactionId) || `POS_${Date.now()}`,
+                        denominations: denominations || null
+                    }
+                });
+                if (paymentMethod === "CASH" && denominations && locationId) {
+                    const activeShift = yield tx.cashierShift.findFirst({
+                        where: { locationId, status: "OPEN" }
+                    });
+                    if (activeShift) {
+                        const shiftDenominations = activeShift.currentDenominations
+                            ? (typeof activeShift.currentDenominations === "string"
+                                ? JSON.parse(activeShift.currentDenominations)
+                                : activeShift.currentDenominations)
+                            : {};
+                        const received = denominations.received || {};
+                        const change = denominations.change || {};
+                        const denominationsKeys = ["500", "200", "100", "50", "20", "10", "5", "2", "1"];
+                        const updatedDenominations = {};
+                        for (const key of denominationsKeys) {
+                            const currentCount = Number(shiftDenominations[key] || 0);
+                            const receivedCount = Number(received[key] || 0);
+                            const changeCount = Number(change[key] || 0);
+                            updatedDenominations[key] = Math.max(0, currentCount + receivedCount - changeCount);
+                        }
+                        yield tx.cashierShift.update({
+                            where: { id: activeShift.id },
+                            data: {
+                                currentDenominations: updatedDenominations
+                            }
+                        });
+                    }
+                }
+            }
+            return order;
+        }));
+        // ─── SETTLE OLD DUES ────────────────────────────────────────────────
+        let settledFromOld = 0;
+        if (duePaymentAmount > 0) {
+            let remaining = Number(duePaymentAmount);
+            const unpaidOrders = yield prisma_1.default.order.findMany({
+                where: {
+                    userId: customerId,
+                    channel: client_1.Channel.POS,
+                    id: { not: result.id },
+                    paymentStatus: { in: ["PENDING", "PARTIAL"] },
+                    status: { notIn: ["CANCELLED", "FAILED", "PAYMENT_PENDING"] }
+                },
+                orderBy: { createdAt: "asc" },
+                include: { payments: true }
+            });
+            for (const oldOrder of unpaidOrders) {
+                if (remaining <= 0)
+                    break;
+                const paid = oldOrder.payments.reduce((acc, p) => acc + Number(p.amount), 0);
+                const due = Number(oldOrder.totalAmount) - paid;
+                const toApply = Math.min(remaining, due);
+                if (toApply > 0) {
+                    yield prisma_1.default.payment.create({
+                        data: {
+                            orderId: oldOrder.id,
+                            amount: new client_1.Prisma.Decimal(toApply),
+                            method: paymentMethod || "CASH",
+                            status: "SUCCESS",
+                            transactionId: `POS_SETTLE_${Date.now()}`
+                        }
+                    });
+                    const fullyPaid = (paid + toApply) >= Number(oldOrder.totalAmount);
+                    yield prisma_1.default.order.update({
+                        where: { id: oldOrder.id },
+                        data: { isPaid: fullyPaid, paymentStatus: fullyPaid ? "COMPLETED" : "PARTIAL" }
+                    });
+                    remaining -= toApply;
+                    settledFromOld += toApply;
+                }
+            }
+        }
+        const finalOrder = yield prisma_1.default.order.findUnique({
+            where: { id: result.id },
+            include: {
+                payments: true,
+                staff: { select: { name: true } }
+            }
+        });
+        const currentBillPaid = finalOrder.payments.reduce((acc, p) => acc + Number(p.amount), 0);
+        const currentBillDue = Number(finalOrder.totalAmount) - currentBillPaid;
+        res.status(201).json({
+            message: "POS Order Processed",
+            order: finalOrder,
+            dueSummary: {
+                previousDue,
+                settledFromOld,
+                currentBillDue,
+                netOutstanding: previousDue - settledFromOld + currentBillDue
+            }
+        });
+        // 🔔 Alert Packer if assigned
+        if (packerId && !suspend) {
+            (0, io_1.getIo)().to(packerId).emit("OP_NEW_ORDER", {
+                id: result.id,
+                status: "CONFIRMED",
+                type: "PACKING"
+            });
+        }
+        // ── WhatsApp Notification Dispatch ────────────────────────────────
+        if (customerId && !suspend) {
+            try {
+                const user = yield prisma_1.default.user.findUnique({ where: { id: customerId }, select: { phone: true } });
+                if (user === null || user === void 0 ? void 0 : user.phone) {
+                    const { sendOrderConfirmationViaWhatsapp } = require("../services/mbgcard");
+                    sendOrderConfirmationViaWhatsapp(user.phone, result.id, Number(result.totalAmount)).catch((err) => {
+                        console.error("[POSController] WhatsApp dispatch failure:", err);
+                    });
+                }
+            }
+            catch (err) {
+                console.error("[POSController] Failed to send WhatsApp:", err);
+            }
+        }
+    }
+    catch (error) {
+        if ((_c = error.message) === null || _c === void 0 ? void 0 : _c.includes("stock")) {
+            return res.status(409).json({ message: error.message });
+        }
+        next(error);
+    }
+});
+exports.processPOSOrder = processPOSOrder;
+const getStoreProducts = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a, _b;
+    let locationId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.locationId;
+    if (!locationId && (((_b = req.user) === null || _b === void 0 ? void 0 : _b.role) === "ADMIN")) {
+        const firstStore = yield prisma_1.default.location.findFirst();
+        locationId = firstStore === null || firstStore === void 0 ? void 0 : firstStore.id;
+    }
+    if (!locationId)
+        return next(new errors_1.AppError("Store context required.", 400));
+    const { search } = req.query;
+    try {
+        let productIds = null;
+        if (search) {
+            const searchResults = yield searchService_1.SearchService.getInstance().search(search, {
+                locationId: locationId,
+                isActive: true,
+                limit: 50
+            });
+            productIds = searchResults.hits.map((h) => h.id);
+            if (!productIds || productIds.length === 0)
+                return res.json([]);
+        }
+        const products = yield prisma_1.default.product.findMany({
+            where: Object.assign({ isActive: true, inventory: { some: { locationId } } }, (productIds ? { id: { in: productIds } } : {})),
+            select: {
+                id: true,
+                name: true,
+                sku: true,
+                slug: true,
+                description: true,
+                images: true,
+                weightUnit: true,
+                categoryId: true,
+                inventory: { where: { locationId } },
+                variants: {
+                    include: {
+                        pricing: { where: { channel: client_1.Channel.POS, isActive: true } }
+                    }
+                },
+                pricing: { where: { channel: client_1.Channel.POS, isActive: true } }
+            }
+        });
+        res.json(products);
+    }
+    catch (error) {
+        next(error);
+    }
+});
+exports.getStoreProducts = getStoreProducts;
+const getCustomerHistory = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
+    const customerId = req.params.customerId;
+    try {
+        const orders = yield prisma_1.default.order.findMany({
+            where: { userId: customerId, channel: "POS" },
+            include: {
+                items: { include: { product: { select: { name: true, sku: true } } } },
+                payments: true,
+                staff: { select: { name: true } },
+                location: { select: { name: true } }
+            },
+            orderBy: { createdAt: "desc" },
+            take: 50
+        });
+        // 🛡️ ACCURATE DUE: amount - SUM(payments) where paymentStatus != COMPLETED
+        const dueOrders = orders.filter(o => o.paymentStatus !== "COMPLETED" && o.status !== "CANCELLED" && o.status !== "FAILED" && o.status !== "PAYMENT_PENDING");
+        const totalDue = dueOrders.reduce((acc, o) => {
+            const paid = o.payments.reduce((pAcc, p) => pAcc + Number(p.amount), 0);
+            return acc + (Number(o.totalAmount) - paid);
+        }, 0);
+        const totalSpend = orders.filter(o => o.status !== "CANCELLED" && o.status !== "FAILED" && o.status !== "PAYMENT_PENDING").reduce((acc, o) => acc + Number(o.totalAmount), 0);
+        const lastVisit = ((_a = orders[0]) === null || _a === void 0 ? void 0 : _a.createdAt) || null;
+        res.json({
+            orders,
+            summary: { totalOrders: orders.length, totalSpend, totalDue, lastVisit }
+        });
+    }
+    catch (error) {
+        next(error);
+    }
+});
+exports.getCustomerHistory = getCustomerHistory;
+const cancelPOSOrder = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
+    const orderId = req.params.orderId;
+    const { reason, refundMode } = req.body;
+    const staffId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.userId;
+    if (!staffId)
+        return next(new errors_1.AppError("Unauthorized", 401));
+    try {
+        const order = yield prisma_1.default.order.findUnique({
+            where: { id: orderId },
+            include: { items: true }
+        });
+        if (!order)
+            return next(new errors_1.AppError("Order not found", 404));
+        const daysSinceOrder = (Date.now() - order.createdAt.getTime()) / (1000 * 60 * 60 * 24);
+        if (daysSinceOrder > 7)
+            return next(new errors_1.AppError("Cancellation window expired.", 400));
+        if (order.status === "CANCELLED")
+            return next(new errors_1.AppError("Order is already cancelled", 400));
+        yield prisma_1.default.$transaction((tx) => __awaiter(void 0, void 0, void 0, function* () {
+            yield inventoryService_1.InventoryService.restoreStock({
+                items: order.items.map((i) => ({
+                    productId: i.productId,
+                    variantId: i.variantId,
+                    quantity: i.quantity
+                })),
+                locationId: order.locationId || "MAIN_WAREHOUSE",
+                staffId,
+                referenceId: `POS_CANCEL_${order.id}`
+            }, tx);
+            yield tx.order.update({
+                where: { id: orderId },
+                data: {
+                    status: "CANCELLED",
+                    statusHistory: {
+                        create: { status: "CANCELLED", remark: `POS Cancellation: ${reason}.`, changedBy: staffId }
+                    }
+                }
+            });
+        }));
+        res.json({ message: "Order cancelled." });
+    }
+    catch (error) {
+        next(error);
+    }
+});
+exports.cancelPOSOrder = cancelPOSOrder;
+const getStoreConfig = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a, _b, _c, _d;
+    let locationId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.locationId;
+    const isGlobal = ((_b = req.user) === null || _b === void 0 ? void 0 : _b.role) === "ADMIN" || ((_c = req.user) === null || _c === void 0 ? void 0 : _c.role) === "SUPER_ADMIN";
+    if (!locationId && isGlobal) {
+        const loc = yield prisma_1.default.location.findFirst();
+        locationId = loc === null || loc === void 0 ? void 0 : loc.id;
+    }
+    if (!locationId) {
+        return next(new errors_1.AppError(`No store context assigned to user ${(_d = req.user) === null || _d === void 0 ? void 0 : _d.userId}. Please link this account to a Regional Hub.`, 400));
+    }
+    try {
+        const location = yield prisma_1.default.location.findUnique({ where: { id: locationId } });
+        res.json(location);
+    }
+    catch (error) {
+        next(error);
+    }
+});
+exports.getStoreConfig = getStoreConfig;
+const collectDuePayment = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
+    const orderId = req.params.orderId;
+    const { amount, method } = req.body;
+    const staffId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.userId;
+    if (!staffId)
+        return next(new errors_1.AppError("Unauthorized", 401));
+    try {
+        const order = yield prisma_1.default.order.findUnique({ where: { id: orderId }, include: { payments: true } });
+        if (!order)
+            return next(new errors_1.AppError("Order not found", 404));
+        const paidAlready = order.payments.reduce((acc, p) => acc + Number(p.amount), 0);
+        const payingNow = Number(amount || (Number(order.totalAmount) - paidAlready));
+        const totalPaid = paidAlready + payingNow;
+        const isFull = totalPaid >= Number(order.totalAmount);
+        yield prisma_1.default.$transaction((tx) => __awaiter(void 0, void 0, void 0, function* () {
+            yield tx.payment.create({
+                data: {
+                    orderId,
+                    amount: new client_1.Prisma.Decimal(payingNow),
+                    method: method || "CASH",
+                    status: "SUCCESS",
+                    transactionId: `DUE_COLLECT_${Date.now()}`
+                }
+            });
+            yield tx.order.update({
+                where: { id: orderId },
+                data: {
+                    isPaid: isFull,
+                    paymentStatus: isFull ? "COMPLETED" : "PARTIAL",
+                    statusHistory: {
+                        create: {
+                            status: order.status,
+                            remark: `Due payment collected: ₹${payingNow} via ${method || "CASH"}. Total Paid: ₹${totalPaid}`,
+                            changedBy: staffId
+                        }
+                    }
+                }
+            });
+        }));
+        res.json({ message: "Payment recorded successfully", isFull });
+    }
+    catch (error) {
+        next(error);
+    }
+});
+exports.collectDuePayment = collectDuePayment;
+const settleAccountBalance = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a, _b;
+    const { customerId } = req.params;
+    const { amount, method, transactionId, denominations } = req.body;
+    const staffId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.userId;
+    const locationId = (_b = req.user) === null || _b === void 0 ? void 0 : _b.locationId;
+    if (!staffId)
+        return next(new errors_1.AppError("Unauthorized", 401));
+    try {
+        let remaining = Number(amount);
+        const result = yield prisma_1.default.$transaction((tx) => __awaiter(void 0, void 0, void 0, function* () {
+            const unpaid = yield tx.order.findMany({
+                where: {
+                    userId: customerId,
+                    channel: client_1.Channel.POS,
+                    paymentStatus: { in: ["PENDING", "PARTIAL"] },
+                    status: { notIn: ["CANCELLED", "FAILED", "PAYMENT_PENDING"] }
+                },
+                orderBy: { createdAt: "asc" },
+                include: { payments: true }
+            });
+            let firstPaymentSaved = false;
+            for (const order of unpaid) {
+                if (remaining <= 0)
+                    break;
+                const paid = order.payments.reduce((acc, p) => acc + Number(p.amount), 0);
+                const due = Number(order.totalAmount) - paid;
+                const toApply = Math.min(remaining, due);
+                if (toApply > 0) {
+                    yield tx.payment.create({
+                        data: {
+                            orderId: order.id,
+                            amount: new client_1.Prisma.Decimal(toApply),
+                            method: method || "CASH",
+                            status: "SUCCESS",
+                            transactionId: transactionId || `SETTLE_${Date.now()}`,
+                            denominations: (!firstPaymentSaved && method === "CASH") ? (denominations || null) : null
+                        }
+                    });
+                    firstPaymentSaved = true;
+                    const isFull = (paid + toApply) >= Number(order.totalAmount);
+                    yield tx.order.update({ where: { id: order.id }, data: { isPaid: isFull, paymentStatus: isFull ? "COMPLETED" : "PARTIAL" } });
+                    remaining -= toApply;
+                }
+            }
+            if (method === "CASH" && denominations && locationId) {
+                const activeShift = yield tx.cashierShift.findFirst({
+                    where: { locationId, status: "OPEN" }
+                });
+                if (activeShift) {
+                    const shiftDenominations = activeShift.currentDenominations
+                        ? (typeof activeShift.currentDenominations === "string"
+                            ? JSON.parse(activeShift.currentDenominations)
+                            : activeShift.currentDenominations)
+                        : {};
+                    const received = denominations.received || {};
+                    const change = denominations.change || {};
+                    const denominationsKeys = ["500", "200", "100", "50", "20", "10", "5", "2", "1"];
+                    const updatedDenominations = {};
+                    for (const key of denominationsKeys) {
+                        const currentCount = Number(shiftDenominations[key] || 0);
+                        const receivedCount = Number(received[key] || 0);
+                        const changeCount = Number(change[key] || 0);
+                        updatedDenominations[key] = Math.max(0, currentCount + receivedCount - changeCount);
+                    }
+                    yield tx.cashierShift.update({
+                        where: { id: activeShift.id },
+                        data: {
+                            currentDenominations: updatedDenominations
+                        }
+                    });
+                }
+            }
+            return { settled: Number(amount) - remaining };
+        }));
+        res.json(result);
+    }
+    catch (error) {
+        next(error);
+    }
+});
+exports.settleAccountBalance = settleAccountBalance;

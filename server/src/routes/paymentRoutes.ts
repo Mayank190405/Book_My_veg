@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { authenticate } from "../middleware/auth";
-import { initiatePayment, verifyPayment, refundPayment, handleWebhook, getOrderStatus } from "../controllers/paymentController";
+import { authenticate, authorize } from "../middleware/auth";
+import { initiatePayment, verifyPayment, refundPayment, handleWebhook, getOrderStatus, generatePaymentLink } from "../controllers/paymentController";
 
 const router = Router();
 
@@ -10,8 +10,11 @@ router.post("/webhook", handleWebhook);
 router.use(authenticate);
 
 router.post("/initiate", initiatePayment);
+router.post("/:orderId/generate-link", generatePaymentLink);
 router.post("/verify", verifyPayment);
 router.get("/order-status/:orderId", getOrderStatus);
-router.post("/refund", refundPayment);
+
+// Admin
+router.post("/refund", authorize(["ADMIN", "STORE_ADMIN"]), refundPayment);
 
 export default router;

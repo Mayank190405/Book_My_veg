@@ -1,0 +1,32 @@
+{
+    "repositories": [
+        {
+            "repositoryArn": "arn:aws:ecr:ap-south-1:199836513638:repository/crm-web",
+            "registryId": "199836513638",
+            "repositoryName": "crm-web",
+            "repositoryUri": "199836513638.dkr.ecr.ap-south-1.amazonaws.com/crm-web",
+            "createdAt": "2026-03-16T21:46:49.315000+05:30",
+            "imageTagMutability": "MUTABLE",
+            "imageScanningConfiguration": {
+                "scanOnPush": false
+            },
+            "encryptionConfiguration": {
+                "encryptionType": "AES256"
+            }
+        },
+        {
+            "repositoryArn": "arn:aws:ecr:ap-south-1:199836513638:repository/crm-backend",
+            "registryId": "199836513638",
+            "repositoryName": "crm-backend",
+            "repositoryUri": "199836513638.dkr.ecr.ap-south-1.amazonaws.com/crm-backend",
+            "createdAt": "2026-03-16T18:47:35.485000+05:30",
+            "imageTagMutability": "MUTABLE",
+            "imageScanningConfiguration": {
+                "scanOnPush": false
+            },
+            "encryptionConfiguration": {
+                "encryptionType": "AES256"
+            }
+        }
+    ]
+}

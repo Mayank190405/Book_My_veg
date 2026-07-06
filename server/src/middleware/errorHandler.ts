@@ -14,6 +14,7 @@ export const errorHandler = (err: Error, req: Request, res: Response, next: Next
 
     // Log the error
     if (statusCode >= 500) {
+        console.error("🔥 RAW ERROR:", err);
         logger.error("Unhandled Error", {
             method: req.method,
             url: req.url,

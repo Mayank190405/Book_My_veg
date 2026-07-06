@@ -5,7 +5,7 @@ export const getCategories = async () => {
     return response.data;
 };
 
-export const getCategoryById = async (id: string) => {
-    const response = await api.get(`/categories/${id}`);
+export const getCategoryById = async (id: string, limit = 100) => {
+    const response = await api.get(`/categories/${id}?limit=${limit}`);
     return response.data;
 };

@@ -25,7 +25,7 @@ export default function BuyAgain() {
         return (
             <div className="flex gap-4 overflow-hidden py-2">
                 {[...Array(2)].map((_, i) => (
-                    <Skeleton key={i} className="w-44 h-64 rounded-[2.25rem] bg-white/5 flex-none" />
+                    <Skeleton key={i} className="w-44 h-64 rounded-3xl bg-secondary flex-none" />
                 ))}
             </div>
         );
@@ -50,9 +50,9 @@ export default function BuyAgain() {
             <div className="flex items-center justify-between px-1">
                 <div className="flex items-center gap-3">
                     <div className="bg-emerald-500/10 p-2 rounded-xl">
-                        <RefreshCw className="h-4 w-4 text-emerald-600" />
+                        <RefreshCw className="h-4 w-4 text-emerald-500" />
                     </div>
-                    <h2 className="text-xl font-black text-emerald-950 tracking-tight uppercase tracking-widest leading-none">Buy it again</h2>
+                    <h2 className="text-xl font-black text-foreground tracking-tight uppercase tracking-widest leading-none italic">Buy it again</h2>
                 </div>
                 <Button
                     variant="ghost"
@@ -68,7 +68,7 @@ export default function BuyAgain() {
                 {products.map((product: any, idx: number) => (
                     <div
                         key={product.id}
-                        className="flex-none snap-start animate-fade-in"
+                        className="w-[140px] flex-none snap-start animate-fade-in"
                         style={{ animationDelay: `${idx * 40}ms` }}
                     >
                         <ProductCard
@@ -76,11 +76,12 @@ export default function BuyAgain() {
                             name={product.name}
                             images={product.images}
                             basePrice={Number(product.basePrice)}
+                            weight={product.weight}
                             weightUnit={product.weightUnit}
                             inventory={product.inventory}
                             pricing={product.pricing}
+                            variants={product.variants}
                             compact
-                            variant="transparent"
                         />
                     </div>
                 ))}

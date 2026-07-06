@@ -10,7 +10,7 @@ import { updateProfile } from "@/services/userService";
 import { toast } from "sonner";
 import { Loader2, PenSquare } from "lucide-react";
 
-export default function ProfileEditForm() {
+export default function ProfileEditForm({ children }: { children?: React.ReactNode }) {
     const { user, setUser } = useUserStore();
     const [open, setOpen] = useState(false);
     const [loading, setLoading] = useState(false);
@@ -39,9 +39,11 @@ export default function ProfileEditForm() {
     return (
         <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
-                <Button variant="ghost" size="sm" className="h-8 w-8 p-0 ml-auto rounded-full hover:bg-gray-100">
-                    <PenSquare className="h-4 w-4 text-gray-500" />
-                </Button>
+                {children ? children : (
+                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0 ml-auto rounded-full hover:bg-gray-100">
+                        <PenSquare className="h-4 w-4 text-gray-500" />
+                    </Button>
+                )}
             </DialogTrigger>
             <DialogContent>
                 <DialogHeader>

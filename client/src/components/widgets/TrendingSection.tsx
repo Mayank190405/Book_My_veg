@@ -1,11 +1,12 @@
 "use client";
 
-import { Flame } from "lucide-react";
+import { MapPin } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { getTrendingProducts } from "@/services/productService";
 import { Skeleton } from "@/components/ui/skeleton";
 import ProductCard from "@/components/ui/ProductCard";
 import { useUserStore } from "@/store/useUserStore";
+import Link from "next/link";
 
 export default function TrendingSection() {
     const { location } = useUserStore();
@@ -20,10 +21,10 @@ export default function TrendingSection() {
     if (isLoading) {
         return (
             <div className="space-y-4">
-                <Skeleton className="w-48 h-6 bg-white/5" />
+                <Skeleton className="w-48 h-6 bg-secondary" />
                 <div className="flex gap-4 overflow-hidden">
                     {[...Array(3)].map((_, i) => (
-                        <Skeleton key={i} className="w-44 h-64 rounded-[2rem] flex-none bg-white/5" />
+                        <Skeleton key={i} className="w-44 h-64 rounded-3xl flex-none bg-card border border-border" />
                     ))}
                 </div>
             </div>
@@ -33,29 +34,26 @@ export default function TrendingSection() {
     if (!products || products.length === 0) return null;
 
     return (
-        <div className="space-y-5">
-            <div className="flex items-center justify-between px-1">
-                <div className="flex items-center gap-3">
-                    <div className="bg-orange-500/10 p-2 rounded-xl border border-orange-500/10">
-                        <Flame className="h-5 w-5 text-orange-600 fill-current" />
-                    </div>
-                    <div>
-                        <h2 className="text-xl font-black text-emerald-950 tracking-tight">
-                            Trending {pincode ? "Near You" : "Now"}
-                        </h2>
-                        <p className="text-[10px] text-emerald-900/40 font-black tracking-[0.2em] uppercase">
-                            Popular choices {pincode && `in ${pincode}`}
-                        </p>
-                    </div>
+        <div className="space-y-4 select-none">
+            {/* Header section with Location Pin icon and SEE ALL button */}
+            <div className="flex items-center justify-between px-5">
+                <div className="flex items-center gap-2">
+                    <MapPin className="h-5 w-5 text-[#0b5c3e] fill-emerald-600/20" />
+                    <h2 className="text-[17px] font-black text-[#1c2e24] tracking-wider uppercase">TRENDING NEAR YOU</h2>
                 </div>
-                <button className="text-[10px] font-black text-emerald-600 uppercase tracking-widest hover:underline bg-emerald-50 px-3 py-1 rounded-full border border-emerald-500/10">See All</button>
+                <Link
+                    href="/products"
+                    className="text-[10px] font-black text-[#0b5c3e] uppercase tracking-widest border border-emerald-600/35 hover:bg-emerald-50 px-4 py-2 rounded-full transition-all active:scale-95 shadow-sm"
+                >
+                    SEE ALL
+                </Link>
             </div>
 
             <div className="flex overflow-x-auto gap-4 pb-4 -mx-5 px-5 scrollbar-none snap-x">
-                {products.slice(0, 10).map((product: any, idx: number) => (
+                {products.slice(0, 25).map((product: any, idx: number) => (
                     <div
                         key={product.id}
-                        className="flex-none snap-start animate-fade-in"
+                        className="w-[140px] flex-none snap-start animate-fade-in"
                         style={{ animationDelay: `${idx * 50}ms` }}
                     >
                         <ProductCard
@@ -63,12 +61,13 @@ export default function TrendingSection() {
                             name={product.name}
                             images={product.images}
                             basePrice={Number(product.basePrice)}
+                            weight={product.weight}
                             weightUnit={product.weightUnit}
                             inventory={product.inventory}
                             pricing={product.pricing}
+                            variants={product.variants}
                             badge="trending"
                             compact
-                            variant="transparent"
                         />
                     </div>
                 ))}

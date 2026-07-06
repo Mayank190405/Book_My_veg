@@ -11,11 +11,25 @@ const withPWA = withPWAInit({
 const nextConfig: NextConfig = {
   /* config options here */
   reactCompiler: true,
+  output: "standalone",
   async rewrites() {
     return [
       {
         source: "/api/:path*",
         destination: "http://localhost:5000/api/:path*",
+      },
+    ];
+  },
+  async headers() {
+    return [
+      {
+        source: "/:path*\\.(jpg|jpeg|png|svg|webp|gif|ico|woff|woff2)",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=31536000, immutable",
+          },
+        ],
       },
     ];
   },

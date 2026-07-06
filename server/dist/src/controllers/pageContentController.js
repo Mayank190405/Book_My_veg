@@ -1,0 +1,246 @@
+"use strict";
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.deletePageContent = exports.listPageContents = exports.updatePageContent = exports.getPageContent = void 0;
+const prisma_1 = __importDefault(require("../config/prisma"));
+const DEFAULT_POLICIES = {
+    "promos": {
+        title: "Promotional Offers",
+        content: JSON.stringify([
+            {
+                "id": "promo-1",
+                "type": "FREE_DELIVERY",
+                "title": "Free Delivery",
+                "subtitle": "On orders above ₹499",
+                "icon": "Percent",
+                "link": "/offers/free-delivery"
+            },
+            {
+                "id": "promo-2",
+                "type": "EXPRESS_DELIVERY",
+                "title": "Express Delivery",
+                "subtitle": "10-20 mins delivery",
+                "icon": "Truck",
+                "link": "/offers/express-delivery"
+            }
+        ], null, 2)
+    },
+    "privacy": {
+        title: "Privacy Policy",
+        content: `# Privacy Policy
+Last Updated: June 25, 2026
+
+Welcome to **Book My Veg**. We value your trust and are committed to protecting your privacy. This Privacy Policy explains how **Book My Veg** ("we", "us", or "our") collects, uses, discloses, and safeguards your information when you use our website (bookmyveg.co.in) and our quick-commerce delivery services.
+
+### 1. Information We Collect
+We collect information that is necessary to process and deliver your fresh vegetable orders, including:
+- **Personal Details:** Name, phone number, and email address provided during registration.
+- **Delivery Address:** Physical address, landmark, city, and GPS coordinates/location to facilitate precision deliveries.
+- **Order Details:** Items purchased, transaction totals, and delivery preferences.
+- **Usage & Device Data:** IP address, device details, and app usage logs to improve platform performance.
+
+### 2. How We Use Your Information
+We utilize your information strictly to support your premium marketplace experience:
+- Facilitating checkout, processing payments, and fulfilling vegetable deliveries.
+- Sending transaction notifications, OTP verifications, and order status updates via WhatsApp.
+- Providing concierge customer service and processing returns.
+- Analyzing shopping behavior to refine our seasonal product catalog.
+
+### 3. Information Sharing and Disclosure
+We respect your privacy. Your data is only shared in the following scenarios:
+- **Delivery Partners:** Disclosing names, phone numbers, and addresses to delivery agents to ensure accurate, quick deliveries.
+- **Payment Gateways:** Transmitting transactional context to authorized payment aggregators (e.g., Juspay) to complete secure transactions.
+- **Legal Compliance:** Sharing information if required by law or to protect our legal rights.
+
+### 4. Data Security
+We implement robust industry-standard electronic, administrative, and physical security measures (including HTTPS encryption) to prevent unauthorized access, alteration, or disclosure of your personal data.
+
+### 5. Your Rights and Controls
+You can review, update, or edit your name, contact information, and delivery locations at any time directly through the **Account** page of our application.
+
+### Merchant Legal Registration
+- **LEGAL BUSINESS NAME:** Book My Veg
+- **REGISTERED ADDRESS:** Plot No. 42, Sector 4, Dwarka, New Delhi - 110075, India
+- **CUSTOMER SUPPORT EMAIL:** support@bookmyveg.com
+- **BUSINESS CONTACT NUMBER:** +91 77968 33633`
+    },
+    "terms": {
+        title: "Terms & Conditions",
+        content: `# Terms & Conditions
+Last Updated: June 25, 2026
+
+These Terms & Conditions govern your use of the website (bookmyveg.co.in) and the quick-commerce delivery services offered by **Book My Veg** ("we", "us", or "our"). By accessing or placing an order on our platform, you agree to comply with and be bound by these terms.
+
+### 1. Platform Services
+Book My Veg operates a premium quick-commerce marketplace providing fresh, handpicked vegetables and fruits directly to customers. Product specifications, weight, and visual representations are provided as accurately as possible, though slight natural variations in fresh farm produce may occur.
+
+### 2. Registration and Eligibility
+Users must be at least 18 years old or legally competent to enter into binding contracts under applicable laws. You are responsible for ensuring the accuracy of your phone number and address details during onboarding.
+
+### 3. Pricing, Ordering, and Payments
+- All prices listed on the platform are in Indian Rupees (INR) and are inclusive of GST unless explicitly stated otherwise.
+- Payment for orders can be made securely online using Credit/Debit Cards, UPI, Netbanking, or cash on delivery (COD) where available.
+- Orders are subject to acceptance by us and product availability in the designated location hub.
+
+### 4. Deliveries and Shipments
+We strive to deliver all fresh vegetable orders within the promised timeframe. Deliveries are made to the designated location address provided by the user. If an order is delayed due to weather, traffic, or other unforeseen events, our concierge customer support will contact you.
+
+### 5. Return, Cancellation & Refund Policy
+We offer a **100% no-questions-asked refund policy** on fresh produce if quality does not meet our premium standards. Return requests must be initiated within 24 hours of delivery. Once verified, refunds are processed back to the original source payment method or credit wallet within 2-3 business days.
+
+### 6. Governing Law & Jurisdiction
+These Terms & Conditions shall be governed by and construed in accordance with the laws of India. Any disputes arising out of or in connection with these terms shall be subject to the exclusive jurisdiction of the courts in New Delhi, India.
+
+### Merchant Legal Registration
+- **LEGAL BUSINESS NAME:** Book My Veg
+- **REGISTERED ADDRESS:** Plot No. 42, Sector 4, Dwarka, New Delhi - 110075, India
+- **CUSTOMER SUPPORT EMAIL:** support@bookmyveg.com
+- **BUSINESS CONTACT NUMBER:** +91 77968 33633`
+    },
+    "refund-policy": {
+        title: "Refund & Shipping Policy",
+        content: `# Refund & Shipping Policy
+Last Updated: June 25, 2026
+
+At **Book My Veg**, we strive to deliver the freshest quality farm produce to your doorstep. This document outlines our Shipping, Delivery, Cancellation, and Refund policies.
+
+### 1. Shipping & Delivery Policy
+Since we deal in fresh, perishable farm produce, our shipping model is optimized for quick commerce:
+- **Delivery Timeline:** All orders are delivered within 30-45 minutes of placement, depending on the distance from the nearest local distribution hub.
+- **Delivery Hours:** Delivery operates daily from 6:00 AM to 10:00 PM.
+- **Delivery Charges:** Shipping fees are calculated dynamically based on distance and order volume and are clearly listed at checkout before payment.
+- **Verification:** To ensure secure deliveries, delivery agents may request an OTP (sent to your registered WhatsApp number) at the time of handover.
+
+### 2. Cancellation & Return Policy
+- **Cancellation:** You can cancel your order at any time before it is packed or dispatched from our hub. Once dispatched, cancellations cannot be processed.
+- **100% Quality Guarantee:** We offer a no-questions-asked refund policy for fresh vegetables. If you receive produce that is damaged, sub-standard, or incorrect, you can request a return.
+- **Time Limit:** Return requests must be initiated within **24 hours** of delivery through the returns section of the application or by contacting our support.
+
+### 3. Refund Processing Timelines
+Once a cancellation or return is verified and approved:
+- Refunds are immediately initiated back to the source payment method (Credit/Debit Card, Netbanking, UPI, or Wallet).
+- The refunded amount will reflect in your account within **2 to 3 business days**, depending on your bank's clearance process.
+- For Cash on Delivery (COD) orders, refunds are credited to your customer wallet or via UPI transfer.
+
+### Merchant Legal Registration
+- **LEGAL BUSINESS NAME:** Book My Veg
+- **REGISTERED ADDRESS:** Plot No. 42, Sector 4, Dwarka, New Delhi - 110075, India
+- **CUSTOMER SUPPORT EMAIL:** support@bookmyveg.com
+- **BUSINESS CONTACT NUMBER:** +91 77968 33633`
+    }
+};
+const getPageContent = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    const slug = req.params.slug;
+    try {
+        let page = yield prisma_1.default.pageContent.findUnique({
+            where: { slug }
+        });
+        // Initialize with default if it doesn't exist in DB
+        if (!page && DEFAULT_POLICIES[slug]) {
+            page = yield prisma_1.default.pageContent.create({
+                data: {
+                    slug,
+                    title: DEFAULT_POLICIES[slug].title,
+                    content: DEFAULT_POLICIES[slug].content
+                }
+            });
+        }
+        if (!page) {
+            return res.status(404).json({ message: "Page not found" });
+        }
+        res.status(200).json(page);
+    }
+    catch (error) {
+        console.error("Error fetching page content:", error);
+        res.status(500).json({ message: "Error fetching page content", error: error.message });
+    }
+});
+exports.getPageContent = getPageContent;
+const updatePageContent = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a, _b;
+    const slug = req.params.slug;
+    const { title, content } = req.body;
+    if (!content) {
+        return res.status(400).json({ message: "Content is required" });
+    }
+    try {
+        const page = yield prisma_1.default.pageContent.upsert({
+            where: { slug },
+            update: {
+                title: title || ((_a = DEFAULT_POLICIES[slug]) === null || _a === void 0 ? void 0 : _a.title) || slug,
+                content
+            },
+            create: {
+                slug,
+                title: title || ((_b = DEFAULT_POLICIES[slug]) === null || _b === void 0 ? void 0 : _b.title) || slug,
+                content
+            }
+        });
+        res.status(200).json({ message: "Page updated successfully", page });
+    }
+    catch (error) {
+        console.error("Error updating page content:", error);
+        res.status(500).json({ message: "Error updating page content", error: error.message });
+    }
+});
+exports.updatePageContent = updatePageContent;
+const listPageContents = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        let pages = yield prisma_1.default.pageContent.findMany({
+            orderBy: { createdAt: "asc" }
+        });
+        // Check if any default policies are missing from the DB, and create them
+        let updated = false;
+        for (const slug of Object.keys(DEFAULT_POLICIES)) {
+            if (!pages.find(p => p.slug === slug)) {
+                yield prisma_1.default.pageContent.create({
+                    data: {
+                        slug,
+                        title: DEFAULT_POLICIES[slug].title,
+                        content: DEFAULT_POLICIES[slug].content
+                    }
+                });
+                updated = true;
+            }
+        }
+        if (updated) {
+            pages = yield prisma_1.default.pageContent.findMany({
+                orderBy: { createdAt: "asc" }
+            });
+        }
+        res.status(200).json(pages);
+    }
+    catch (error) {
+        console.error("Error listing page contents:", error);
+        res.status(500).json({ message: "Error listing page contents", error: error.message });
+    }
+});
+exports.listPageContents = listPageContents;
+const deletePageContent = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    const slug = req.params.slug;
+    if (DEFAULT_POLICIES[slug]) {
+        return res.status(400).json({ message: "System policy pages cannot be deleted" });
+    }
+    try {
+        yield prisma_1.default.pageContent.delete({
+            where: { slug }
+        });
+        res.status(200).json({ message: "Page deleted successfully" });
+    }
+    catch (error) {
+        console.error("Error deleting page content:", error);
+        res.status(500).json({ message: "Error deleting page content", error: error.message });
+    }
+});
+exports.deletePageContent = deletePageContent;

@@ -39,21 +39,27 @@ export const useCartStore = create<CartState>()(
 
             addItem: async (newItem) => {
                 const { items } = get();
-                const existingItem = items.find((i) => i.productId === newItem.productId && i.variantId === newItem.variantId);
+                // Ensure price and quantity are sanitized at the entry point
+                const price = Number(newItem.price) || 0;
+                const quantityToAdd = newItem.quantity || 1;
+
+                const existingItem = items.find((i) => i.productId === newItem.productId && (i.variantId || undefined) === (newItem.variantId || undefined));
 
                 let updatedItems;
                 if (existingItem) {
                     updatedItems = items.map((i) =>
-                        (i.productId === newItem.productId && i.variantId === newItem.variantId) ? { ...i, quantity: i.quantity + (newItem.quantity || 1) } : i
+                        (i.productId === newItem.productId && (i.variantId || undefined) === (newItem.variantId || undefined)) 
+                        ? { ...i, price, quantity: i.quantity + quantityToAdd } 
+                        : i
                     );
                 } else {
-                    updatedItems = [...items, { ...newItem, quantity: newItem.quantity || 1 }];
+                    updatedItems = [...items, { ...newItem, price, quantity: quantityToAdd }];
                 }
 
                 set({
                     items: updatedItems,
-                    totalItems: updatedItems.reduce((acc, i) => acc + i.quantity, 0),
-                    totalPrice: updatedItems.reduce((acc, i) => acc + i.price * i.quantity, 0)
+                    totalItems: updatedItems.reduce((acc, i) => acc + (Number(i.quantity) || 0), 0),
+                    totalPrice: updatedItems.reduce((acc, i) => acc + (Number(i.price) || 0) * (Number(i.quantity) || 0), 0)
                 });
 
                 // Optimistic update, then sync
@@ -66,12 +72,12 @@ export const useCartStore = create<CartState>()(
 
             removeItem: async (productId, variantId) => {
                 const { items } = get();
-                const updatedItems = items.filter((i) => !(i.productId === productId && i.variantId === variantId));
+                const updatedItems = items.filter((i) => !(i.productId === productId && (i.variantId || undefined) === (variantId || undefined)));
 
                 set({
                     items: updatedItems,
-                    totalItems: updatedItems.reduce((acc, i) => acc + i.quantity, 0),
-                    totalPrice: updatedItems.reduce((acc, i) => acc + i.price * i.quantity, 0)
+                    totalItems: updatedItems.reduce((acc, i) => acc + (Number(i.quantity) || 0), 0),
+                    totalPrice: updatedItems.reduce((acc, i) => acc + (Number(i.price) || 0) * (Number(i.quantity) || 0), 0)
                 });
 
                 try {
@@ -89,17 +95,17 @@ export const useCartStore = create<CartState>()(
                 }
 
                 const updatedItems = items.map((i) =>
-                    (i.productId === productId && i.variantId === variantId) ? { ...i, quantity } : i
+                    (i.productId === productId && (i.variantId || undefined) === (variantId || undefined)) ? { ...i, quantity } : i
                 );
 
                 set({
                     items: updatedItems,
-                    totalItems: updatedItems.reduce((acc, i) => acc + i.quantity, 0),
-                    totalPrice: updatedItems.reduce((acc, i) => acc + i.price * i.quantity, 0)
+                    totalItems: updatedItems.reduce((acc, i) => acc + (Number(i.quantity) || 0), 0),
+                    totalPrice: updatedItems.reduce((acc, i) => acc + (Number(i.price) || 0) * (Number(i.quantity) || 0), 0)
                 });
 
                 try {
-                    await updateCartItem(productId, quantity, variantId, get().items.find(i => i.productId === productId && i.variantId === variantId)?.metadata);
+                    await updateCartItem(productId, quantity, variantId, get().items.find(i => i.productId === productId && (i.variantId || undefined) === (variantId || undefined))?.metadata);
                 } catch (error) {
                     console.error("Failed to update cart quantity", error);
                 }
@@ -136,16 +142,18 @@ export const useCartStore = create<CartState>()(
                         const mergedItems = serverCart.items.map((item: any) => ({
                             productId: item.productId,
                             variantId: item.variantId,
-                            name: item.variant ? `${item.product.name} (${item.variant.name})` : item.product.name,
-                            price: item.variant ? Number(item.variant.price) : Number(item.product.basePrice),
+                            name: item.variant 
+                                ? `${item.product.name} (${item.variant.name})` 
+                                : (item.product.weight ? `${item.product.name} (${item.product.weight} ${item.product.weightUnit || ''})` : item.product.name),
+                            price: item.variant ? (Number(item.variant.price) || 0) : (Number(item.product.basePrice) || 0),
                             image: item.product.images[0],
-                            quantity: item.quantity,
+                            quantity: Number(item.quantity) || 0,
                             metadata: item.metadata
                         }));
                         set({
                             items: mergedItems,
-                            totalItems: mergedItems.reduce((acc: any, i: any) => acc + i.quantity, 0),
-                            totalPrice: mergedItems.reduce((acc: any, i: any) => acc + i.price * i.quantity, 0)
+                            totalItems: mergedItems.reduce((acc: any, i: any) => acc + (Number(i.quantity) || 0), 0),
+                            totalPrice: mergedItems.reduce((acc: any, i: any) => acc + (Number(i.price) || 0) * (Number(i.quantity) || 0), 0)
                         });
                     }
                 } catch (error) {

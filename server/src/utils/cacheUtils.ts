@@ -3,20 +3,26 @@ import redisClient from "../config/redis";
 /**
  * Invalidates all cache keys related to a product.
  */
-export async function invalidateProductCache(productId: string, categoryId?: string): Promise<void> {
-    const keys: string[] = [`product:${productId}`];
+export async function invalidateProductCache(productId?: string, categoryId?: string): Promise<void> {
+    const keys: string[] = [];
+    if (productId) keys.push(`product:${productId}`);
 
     if (categoryId) {
         keys.push(`category:${categoryId}`);
     }
 
-    // Trending keys are location-scoped; delete all trending keys
-    // (Use SCAN in production to avoid blocking with large keysets)
+    // Always clear general product lists (like search results or trending if they have no specific keys)
+    // In a mature app, we'd clear specific list keys.
+    const productListKeys = await redisClient.keys("products:*");
+    keys.push(...productListKeys);
+    
     const trendingKeys = await redisClient.keys("trending:*");
     keys.push(...trendingKeys);
 
     if (keys.length > 0) {
-        await redisClient.del(keys);
+        // Filter unique keys
+        const uniqueKeys = [...new Set(keys)];
+        await redisClient.del(uniqueKeys);
     }
 }
 

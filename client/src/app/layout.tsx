@@ -3,6 +3,7 @@ import { Inter, Outfit } from "next/font/google";
 import "./globals.css";
 import QueryProvider from "@/providers/QueryProvider";
 import SocketProvider from "@/components/providers/SocketProvider";
+import ThemeProvider from "@/components/providers/ThemeProvider";
 import { Toaster } from "@/components/ui/sonner";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
@@ -19,14 +20,23 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body className={`${inter.variable} ${outfit.variable} font-sans antialiased text-foreground bg-background overflow-x-hidden`}>
-        <QueryProvider>
-          <SocketProvider>
-            {children}
-            <Toaster position="top-center" richColors />
-          </SocketProvider>
-        </QueryProvider>
+    <html lang="en" suppressHydrationWarning>
+      <body className={`${inter.variable} ${outfit.variable} font-sans antialiased text-foreground bg-background h-screen overflow-hidden`}>
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="light"
+          enableSystem
+          disableTransitionOnChange
+        >
+          <QueryProvider>
+            <SocketProvider>
+              <div className="flex flex-col h-full overscroll-none">
+                {children}
+              </div>
+              <Toaster position="top-center" richColors />
+            </SocketProvider>
+          </QueryProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

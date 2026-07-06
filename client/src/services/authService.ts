@@ -18,6 +18,17 @@ export const verifyOtp = async (phone: string, otp: string) => {
     return response.data;
 };
 
+export const loginWithPassword = async (phone: string, password: string) => {
+    const response = await api.post("/auth/login", { phone, password });
+    if (response.data.user) {
+        useUserStore.getState().setUser(response.data.user);
+    }
+    if (response.data.accessToken) {
+        useUserStore.getState().setToken(response.data.accessToken);
+    }
+    return response.data;
+};
+
 export const checkWhatsappStatus = async (phone: string, token: string) => {
     const response = await api.post("/auth/whatsapp-check", { phone, token });
     if (response.data.verified) {

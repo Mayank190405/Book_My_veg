@@ -1,0 +1,26 @@
+﻿{
+    "SecurityGroups": [
+        {
+            "GroupId": "sg-061b5e3c5723ed536",
+            "IpPermissionsEgress": [
+                {
+                    "IpProtocol": "-1",
+                    "UserIdGroupPairs": [],
+                    "IpRanges": [
+                        {
+                            "CidrIp": "0.0.0.0/0"
+                        }
+                    ],
+                    "Ipv6Ranges": [],
+                    "PrefixListIds": []
+                }
+            ],
+            "VpcId": "vpc-072823b52fa06d75f",
+            "SecurityGroupArn": "arn:aws:ec2:ap-south-1:071370395808:security-group/sg-061b5e3c5723ed536",
+            "OwnerId": "071370395808",
+            "GroupName": "bmv-prod-sg",
+            "Description": "SG for BMV Production",
+            "IpPermissions": []
+        }
+    ]
+}

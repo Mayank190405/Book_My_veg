@@ -1,54 +1,96 @@
-/**
- * Prisma v7 client singleton
- *
- * Uses @prisma/adapter-pg with a robust pg.Pool that:
- *  - enables TCP keepalive so the OS detects dead connections quickly
- *  - trims idle connections before Supabase/Neon silently drop them
- *  - surfaces pool errors without crashing the process
- *
- * SSL and connection string details are handled via DATABASE_URL params.
- */
 
 import { PrismaClient } from "@prisma/client";
-import * as dotenv from "dotenv";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
-
+import { getContext } from "../utils/context";
+import dotenv from "dotenv";
 dotenv.config();
 
-const connectionString = process.env.DATABASE_URL;
 
+/**
+ * Prisma v7 client singleton with @prisma/adapter-pg
+ * 
+ * Features:
+ * - Robust pooling with TCP keepalive
+ * - SSL configured for Supabase (rejectUnauthorized: false)
+ * - Data isolation (store-level filtering)
+ * - Mandatory audit logging for critical entities
+ */
+
+const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
     throw new Error("DATABASE_URL environment variable is not set");
 }
 
 const pool = new Pool({
     connectionString,
-    max: 5,
-    // Close idle connections after 20 s — before Supabase kills them (~60 s)
-    idleTimeoutMillis: 20_000,
-    // Fail fast if no connection available within 10 s
-    connectionTimeoutMillis: 10_000,
-    // TCP keepalive: keeps the connection alive through NAT/firewalls
-    keepAlive: true,
-    // Required for Supabase pooler — accepts self-signed/intermediate certs
-    ssl: { rejectUnauthorized: false },
+    max: 10,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 5000,
+    ssl: process.env.DB_SSL === "true" ? { rejectUnauthorized: false } : false,
 });
 
-// Surface unexpected idle-client errors without crashing the process
-pool.on("error", (err: Error) => {
-    console.error("[Prisma Pool] Unexpected idle-client error:", err.message);
+
+
+pool.on("error", (err) => {
+    console.error("[Prisma Pool] Unexpected error:", err.message);
 });
 
 const adapter = new PrismaPg(pool);
+export const basePrisma = new PrismaClient({ adapter });
 
-const prisma = new PrismaClient({ adapter } as any);
+export const prisma = basePrisma.$extends({
+    query: {
+        $allModels: {
+            async $allOperations({ model, operation, args, query }) {
+                const ctx = getContext();
 
-export default prisma;
+                // 1. Data Isolation Logic
+                const isolationModels = ["Order", "Inventory", "CashierShift", "Attendance", "StoreExpense", "MortalityLog"];
+                if (ctx?.locationId && isolationModels.includes(model) && ctx.role !== 'SUPER_ADMIN') {
+                    if (['findMany', 'findFirst', 'findUnique', 'count', 'aggregate'].includes(operation)) {
+                        (args as any).where = {
+                            ...(args as any).where,
+                            locationId: ctx.locationId
+                        };
+                    }
+                }
 
-// ---------------------------------------------------------------------------
-// Retry helper – transparently reconnects on dropped-connection errors
-// ---------------------------------------------------------------------------
+                // 2. Audit Logging Logic
+                const auditModels = ["Product", "Pricing", "Inventory", "CustomerKhata", "User"];
+                const auditOps = ["create", "update", "delete"];
+
+                if (auditModels.includes(model) && auditOps.includes(operation) && model !== "AuditLog" && ctx?.userId !== 'SYSTEM') {
+                    const beforeArgs = { ...args };
+                    const result = await query(args);
+
+                    // Resilient staff reference resolution for virtualized hub logins
+                    const staffId = (ctx?.userId && !ctx.userId.startsWith("STORE_")) ? ctx.userId : null;
+
+                    basePrisma.auditLog.create({
+                        data: {
+                            entityType: model,
+                            entityId: (result as any)?.id || "N/A",
+                            action: operation.toUpperCase(),
+                            oldValue: (operation === 'update' || operation === 'delete') ? (beforeArgs as any).data : null,
+                            newValue: (operation === 'create' || operation === 'update') ? (args as any).data : null,
+                            staffId,
+                            locationId: ctx?.locationId || null
+                        }
+                    }).catch(err => console.error("[Audit] Failed to record log:", err));
+
+                    return result;
+                }
+
+                return query(args);
+            }
+        }
+    }
+});
+
+/**
+ * Retry helper for transient DB errors
+ */
 export async function withRetry<T>(
     fn: () => Promise<T>,
     retries = 2,
@@ -65,9 +107,7 @@ export async function withRetry<T>(
                 err?.code === "P1001";
 
             if (isConnectionError && attempt < retries) {
-                console.warn(
-                    `[Prisma] DB error on attempt ${attempt}/${retries}. Retrying in ${delayMs}ms…`
-                );
+                console.warn(`[Prisma] DB error on attempt ${attempt}/${retries}. Retrying in ${delayMs}ms…`);
                 await new Promise((r) => setTimeout(r, delayMs));
                 continue;
             }
@@ -76,3 +116,5 @@ export async function withRetry<T>(
     }
     throw new Error("withRetry: exhausted all retries");
 }
+
+export default prisma;
