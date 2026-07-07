@@ -30,7 +30,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.bulkImportProducts = exports.getProductsAdmin = exports.trackTrendingOnOrder = exports.toggleProductStatus = exports.getBuyAgain = exports.checkServiceability = exports.getSimilarProducts = exports.getFlashDeals = exports.getTrendingProducts = exports.deleteProduct = exports.updateProduct = exports.createProduct = exports.getProductById = exports.getProducts = void 0;
+exports.uploadProductImage = exports.bulkImportProducts = exports.getProductsAdmin = exports.trackTrendingOnOrder = exports.toggleProductStatus = exports.getBuyAgain = exports.checkServiceability = exports.getSimilarProducts = exports.getFlashDeals = exports.getTrendingProducts = exports.deleteProduct = exports.updateProduct = exports.createProduct = exports.getProductById = exports.getProducts = void 0;
 const prisma_1 = __importDefault(require("../config/prisma"));
 const client_1 = require("@prisma/client");
 const redis_1 = __importDefault(require("../config/redis"));
@@ -947,3 +947,31 @@ const bulkImportProducts = (req, res) => __awaiter(void 0, void 0, void 0, funct
     }
 });
 exports.bulkImportProducts = bulkImportProducts;
+const uploadProductImage = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const file = req.file;
+        if (!file) {
+            return res.status(400).json({ message: "No file provided" });
+        }
+        const path = require("path");
+        const crypto = require("crypto");
+        const ext = path.extname(file.originalname).toLowerCase();
+        // Generate random secure filename to prevent path traversal / collisions
+        const randomName = `${crypto.randomUUID()}${ext}`;
+        const productsUploadDir = path.join(__dirname, "../../public/uploads/products");
+        if (!fs_1.default.existsSync(productsUploadDir)) {
+            fs_1.default.mkdirSync(productsUploadDir, { recursive: true });
+        }
+        const targetPath = path.join(productsUploadDir, randomName);
+        // Save file buffer
+        yield fs_1.default.promises.writeFile(targetPath, file.buffer);
+        // Return public relative path
+        const publicUrl = `/uploads/products/${randomName}`;
+        res.status(200).json({ url: publicUrl, filename: randomName });
+    }
+    catch (error) {
+        console.error("Error saving uploaded image:", error);
+        res.status(500).json({ message: "Error saving uploaded image to file storage" });
+    }
+});
+exports.uploadProductImage = uploadProductImage;

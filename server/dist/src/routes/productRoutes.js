@@ -11,6 +11,7 @@ const multer_1 = __importDefault(require("multer"));
 const path_1 = __importDefault(require("path"));
 const fs_1 = __importDefault(require("fs"));
 const productController_1 = require("../controllers/productController");
+const imageScan_1 = require("../middleware/imageScan");
 const router = (0, express_1.Router)();
 // Ensure upload directory exists
 const tempUploadDir = path_1.default.join(__dirname, "../../uploads/temp");
@@ -58,6 +59,7 @@ router.get("/admin", auth_1.authenticate, (0, auth_1.authorize)(["ADMIN", "STORE
 router.get("/:id", (0, validate_1.validate)(productSchemas_1.uuidParamsSchema), productController_1.getProductById);
 // ── Admin ───────────────────────────────────────────────────────────────────
 router.post("/import", auth_1.authenticate, (0, auth_1.authorize)(["ADMIN", "STORE_ADMIN"]), handleUpload, productController_1.bulkImportProducts);
+router.post("/upload-image", auth_1.authenticate, (0, auth_1.authorize)(["ADMIN", "STORE_ADMIN"]), imageScan_1.scanImageUpload, productController_1.uploadProductImage);
 router.post("/", auth_1.authenticate, (0, auth_1.authorize)(["ADMIN", "STORE_ADMIN"]), productController_1.createProduct);
 router.patch("/:id", auth_1.authenticate, (0, auth_1.authorize)(["ADMIN", "STORE_ADMIN"]), (0, validate_1.validate)(productSchemas_1.uuidParamsSchema), productController_1.updateProduct);
 router.put("/:id", auth_1.authenticate, (0, auth_1.authorize)(["ADMIN", "STORE_ADMIN"]), (0, validate_1.validate)(productSchemas_1.uuidParamsSchema), productController_1.updateProduct);

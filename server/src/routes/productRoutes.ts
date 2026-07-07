@@ -19,7 +19,9 @@ import {
     deleteProduct,
     toggleProductStatus,
     bulkImportProducts,
+    uploadProductImage,
 } from "../controllers/productController";
+import { scanImageUpload } from "../middleware/imageScan";
 
 const router = Router();
 
@@ -73,6 +75,7 @@ router.get("/:id", validate(uuidParamsSchema), getProductById);
 
 // ── Admin ───────────────────────────────────────────────────────────────────
 router.post("/import", authenticate, authorize(["ADMIN", "STORE_ADMIN"]), handleUpload, bulkImportProducts);
+router.post("/upload-image", authenticate, authorize(["ADMIN", "STORE_ADMIN"]), scanImageUpload, uploadProductImage);
 router.post("/", authenticate, authorize(["ADMIN", "STORE_ADMIN"]), createProduct);
 router.patch("/:id", authenticate, authorize(["ADMIN", "STORE_ADMIN"]), validate(uuidParamsSchema), updateProduct);
 router.put("/:id", authenticate, authorize(["ADMIN", "STORE_ADMIN"]), validate(uuidParamsSchema), updateProduct);

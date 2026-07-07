@@ -17,8 +17,8 @@ const prisma_1 = __importDefault(require("../config/prisma"));
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
 function main() {
     return __awaiter(this, void 0, void 0, function* () {
-        const phone = "9999999999";
-        const password = "adminPassword123";
+        const phone = process.argv[2] || "9999999999";
+        const password = process.argv[3] || "adminPassword123";
         const hashedPassword = yield bcryptjs_1.default.hash(password, 10);
         const user = yield prisma_1.default.user.upsert({
             where: { phone },

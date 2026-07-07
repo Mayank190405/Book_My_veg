@@ -960,3 +960,38 @@ export const bulkImportProducts = async (req: Request, res: Response) => {
         res.status(500).json({ message: `Bulk import failed: ${error.message}` });
     }
 };
+
+export const uploadProductImage = async (req: Request, res: Response) => {
+    try {
+        const file = req.file;
+        if (!file) {
+            return res.status(400).json({ message: "No file provided" });
+        }
+
+        const path = require("path");
+        const crypto = require("crypto");
+
+        const ext = path.extname(file.originalname).toLowerCase();
+        
+        // Generate random secure filename to prevent path traversal / collisions
+        const randomName = `${crypto.randomUUID()}${ext}`;
+        
+        const productsUploadDir = path.join(__dirname, "../../public/uploads/products");
+        if (!fs.existsSync(productsUploadDir)) {
+            fs.mkdirSync(productsUploadDir, { recursive: true });
+        }
+        
+        const targetPath = path.join(productsUploadDir, randomName);
+        
+        // Save file buffer
+        await fs.promises.writeFile(targetPath, file.buffer);
+        
+        // Return public relative path
+        const publicUrl = `/uploads/products/${randomName}`;
+        res.status(200).json({ url: publicUrl, filename: randomName });
+    } catch (error) {
+        console.error("Error saving uploaded image:", error);
+        res.status(500).json({ message: "Error saving uploaded image to file storage" });
+    }
+};
+

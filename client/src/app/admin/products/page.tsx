@@ -30,6 +30,7 @@ import Papa from "papaparse";
 import { useRef } from "react";
 
 import { useUserStore } from "@/store/useUserStore";
+import ImageUpload from "@/components/features/ImageUpload";
 
 export default function AdminProducts() {
     const { user } = useUserStore();
@@ -806,17 +807,20 @@ export default function AdminProducts() {
                                             ))}
                                         </select>
                                     </div>
-                                    <div className="space-y-2">
-                                        <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Primary Asset (Image URL)</Label>
-                                        <input
-                                            value={editingProduct?.images?.[0] || ""}
-                                            onChange={e => {
+                                    <div className="space-y-2 md:col-span-2">
+                                        <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Product Photo</Label>
+                                        <ImageUpload
+                                            initialUrl={editingProduct?.images?.[0] || ""}
+                                            onUploadComplete={(url) => {
                                                 const imgs = [...(editingProduct?.images || [])];
-                                                imgs[0] = e.target.value;
+                                                imgs[0] = url;
                                                 setEditingProduct({ ...editingProduct, images: imgs });
                                             }}
-                                            className="w-full h-12 bg-slate-50 border border-slate-200 rounded-xl px-4 text-sm font-semibold text-slate-900 outline-none focus:border-emerald-500 focus:bg-white transition-all"
-                                            placeholder="https://images.unsplash.com/..."
+                                            onImageRemove={() => {
+                                                const imgs = [...(editingProduct?.images || [])];
+                                                imgs[0] = "";
+                                                setEditingProduct({ ...editingProduct, images: imgs });
+                                            }}
                                         />
                                     </div>
                                 </div>
