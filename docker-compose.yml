@@ -41,7 +41,11 @@ services:
       - "6379:6379"
 
   client:
-    build: ./client
+    build:
+      context: ./client
+      args:
+        - INTERNAL_SERVER_URL=http://server:5000
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:5000/api/v1}
     container_name: bmv-client
     restart: always
     ports:
