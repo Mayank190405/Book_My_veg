@@ -143,17 +143,8 @@ export default function ImageUpload({ initialUrl, onUploadComplete, onImageRemov
             });
 
             const uploadedUrl = response.data.url;
-            // Get full URL if base URL is absolute, else prepend backend address
-            let fullImageUrl = uploadedUrl;
-            if (uploadedUrl && !uploadedUrl.startsWith("http")) {
-                const origin = apiBaseURL && apiBaseURL.startsWith("http") 
-                    ? new URL(apiBaseURL).origin 
-                    : window.location.protocol + "//" + window.location.hostname + ":5000";
-                fullImageUrl = `${origin}${uploadedUrl}`;
-            }
-
-            setPreviewUrl(fullImageUrl);
-            onUploadComplete(fullImageUrl);
+            setPreviewUrl(uploadedUrl);
+            onUploadComplete(uploadedUrl);
             setValidationStatus("Upload complete!");
             toast.success("Product image uploaded successfully");
         } catch (error: any) {

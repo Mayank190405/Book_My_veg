@@ -13,10 +13,15 @@ const nextConfig: NextConfig = {
   reactCompiler: true,
   output: "standalone",
   async rewrites() {
+    const serverUrl = process.env.INTERNAL_SERVER_URL || "http://localhost:5000";
     return [
       {
         source: "/api/:path*",
-        destination: "http://localhost:5000/api/:path*",
+        destination: `${serverUrl}/api/:path*`,
+      },
+      {
+        source: "/uploads/:path*",
+        destination: `${serverUrl}/uploads/:path*`,
       },
     ];
   },
@@ -35,6 +40,16 @@ const nextConfig: NextConfig = {
   },
   images: {
     remotePatterns: [
+      {
+        protocol: "http",
+        hostname: "localhost",
+        port: "5000",
+      },
+      {
+        protocol: "http",
+        hostname: "127.0.0.1",
+        port: "5000",
+      },
       {
         protocol: "https",
         hostname: "images.unsplash.com",
