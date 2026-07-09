@@ -976,7 +976,7 @@ export const uploadProductImage = async (req: Request, res: Response) => {
         // Generate random secure filename to prevent path traversal / collisions
         const randomName = `${crypto.randomUUID()}${ext}`;
         
-        const productsUploadDir = path.join(__dirname, "../../public/uploads/products");
+        const productsUploadDir = path.join(process.cwd(), "public/uploads/products");
         if (!fs.existsSync(productsUploadDir)) {
             fs.mkdirSync(productsUploadDir, { recursive: true });
         }

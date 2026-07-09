@@ -94,7 +94,7 @@ app.use(cors({
     maxAge: 86400,
 }));
 import path from "path";
-app.use("/uploads", express.static(path.join(__dirname, "../public/uploads"), {
+app.use("/uploads", express.static(path.join(process.cwd(), "public/uploads"), {
     maxAge: "365d",
     setHeaders: (res) => {
         res.setHeader("Cache-Control", "public, max-age=31536000, immutable");

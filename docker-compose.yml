@@ -32,6 +32,7 @@ services:
       - redis
     volumes:
       - ./server/.env:/app/.env
+      - bmv-uploads:/app/public/uploads
 
   redis:
     image: redis:7-alpine
@@ -59,3 +60,4 @@ services:
 
 volumes:
   postgres_data:
+  bmv-uploads:

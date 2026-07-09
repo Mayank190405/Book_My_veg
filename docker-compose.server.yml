@@ -47,6 +47,8 @@ services:
       JUSPAY_ENCODING_KEY: "00816F675194A55BEACC1F42909EDF"
     ports:
       - '5000:5000'
+    volumes:
+      - bmv-uploads:/app/public/uploads
     depends_on:
       - db
       - redis
@@ -59,8 +61,10 @@ services:
       - '3000:3000'
     environment:
       NEXT_PUBLIC_API_URL: https://bookmyveg.co.in/api/v1
+      INTERNAL_SERVER_URL: http://server:5000
     depends_on:
       - server
 
 volumes:
   postgres_data:
+  bmv-uploads:
