@@ -13,6 +13,7 @@ import { useRouter } from "next/navigation";
 import { useUserStore } from "@/store/useUserStore";
 import { getReverseGeocode } from "@/services/geocodingService";
 import { toast } from "sonner";
+import { getBaseURL } from "@/services/api";
 
 import PagePreloader from "@/components/ui/PagePreloader";
 import TopProgressBar from "@/components/ui/TopProgressBar";
@@ -65,7 +66,7 @@ export default function AppLayout({
                             const geoResult = await getReverseGeocode(latitude, longitude);
 
                             // 2. Fetch all stores
-                            const apiUrl = process.env.NEXT_PUBLIC_API_URL || (typeof window !== "undefined" && window.location.hostname !== "localhost" ? `${window.location.origin}/api/v1` : 'http://localhost:5000/api/v1');
+                            const apiUrl = getBaseURL();
                             const storesRes = await (await fetch(`${apiUrl}/locations`)).json();
 
                             // 3. Filter stores to only those whose deliveryRadius covers the customer

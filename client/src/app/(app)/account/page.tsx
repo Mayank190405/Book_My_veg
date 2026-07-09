@@ -31,6 +31,7 @@ import AuthGuard from "@/components/auth/AuthGuard";
 import ProfileEditForm from "@/components/account/ProfileEditForm";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
+import { getBaseURL } from "@/services/api";
 
 import { useState, useEffect } from "react";
 import { useTheme } from "next-themes";
@@ -62,10 +63,7 @@ export default function AccountPage() {
             if (!location?.coords) return;
             setLoadingStores(true);
             try {
-                const apiUrl = process.env.NEXT_PUBLIC_API_URL || 
-                    (typeof window !== 'undefined' && window.location.hostname !== 'localhost'
-                        ? `${window.location.origin}/api/v1`
-                        : 'http://localhost:5000/api/v1');
+                const apiUrl = getBaseURL();
                 const res = await fetch(`${apiUrl}/locations`);
                 const stores = await res.json();
                 const { lat, lng } = location.coords;

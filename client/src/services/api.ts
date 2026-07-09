@@ -1,18 +1,24 @@
 import axios from "axios";
 import { useUserStore } from "@/store/useUserStore";
 
-const getBaseURL = () => {
+export const getBaseURL = () => {
     if (typeof window !== "undefined") {
-        if (process.env.NEXT_PUBLIC_API_URL) return process.env.NEXT_PUBLIC_API_URL;
+        const isClientLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+        const envUrl = process.env.NEXT_PUBLIC_API_URL;
+        
+        if (envUrl && (!envUrl.includes("localhost") && !envUrl.includes("127.0.0.1") || isClientLocal)) {
+            return envUrl;
+        }
         
         // Fallback for production: If not on localhost, use the current origin
-        if (window.location.hostname !== "localhost") {
+        if (!isClientLocal) {
             return `${window.location.origin}/api/v1`;
         }
         return `${window.location.protocol}//${window.location.hostname}:5000/api/v1`;
     }
     return process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api/v1";
 };
+
 
 const api = axios.create({
     baseURL: getBaseURL(),

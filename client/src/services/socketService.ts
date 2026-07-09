@@ -4,12 +4,18 @@ let socket: Socket | null = null;
 
 const getSocketURL = () => {
     if (typeof window !== "undefined") {
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || "";
+        const isClientLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+        let apiUrl = process.env.NEXT_PUBLIC_API_URL || "";
+        
+        if (apiUrl.includes("localhost") && !isClientLocal) {
+            apiUrl = "";
+        }
+        
         if (apiUrl.startsWith("http")) {
             const url = new URL(apiUrl);
             return `${url.protocol}//${url.host}`;
         }
-        if (window.location.hostname !== "localhost") return window.location.origin;
+        if (!isClientLocal) return window.location.origin;
         return `http://${window.location.hostname}:5000`;
     }
     return "http://localhost:5000";

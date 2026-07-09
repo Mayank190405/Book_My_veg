@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { getReverseGeocode } from "@/services/geocodingService";
 import { cn } from "@/lib/utils";
+import { getBaseURL } from "@/services/api";
 
 interface LocationSelectorProps {
     isCompact?: boolean;
@@ -278,7 +279,7 @@ export default function LocationSelector({ isCompact }: LocationSelectorProps) {
             const lng = mapCenter.lng;
 
             // Fetch physical stores for proximity hub routing
-            const apiUrl = process.env.NEXT_PUBLIC_API_URL || (typeof window !== "undefined" && window.location.hostname !== "localhost" ? `${window.location.origin}/api/v1` : 'http://localhost:5000/api/v1');
+            const apiUrl = getBaseURL();
             const storesRes = await (await fetch(`${apiUrl}/locations`)).json();
             
             let nearestStore = null;

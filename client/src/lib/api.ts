@@ -1,14 +1,23 @@
 
 import axios from "axios";
 
-const getBaseURL = () => {
+export const getBaseURL = () => {
     if (typeof window !== "undefined") {
-        if (process.env.NEXT_PUBLIC_API_URL) return process.env.NEXT_PUBLIC_API_URL;
-        if (window.location.hostname !== "localhost") return `${window.location.origin}/api/v1`;
+        const isClientLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+        const envUrl = process.env.NEXT_PUBLIC_API_URL;
+        
+        if (envUrl && (!envUrl.includes("localhost") && !envUrl.includes("127.0.0.1") || isClientLocal)) {
+            return envUrl;
+        }
+        
+        if (!isClientLocal) {
+            return `${window.location.origin}/api/v1`;
+        }
         return "http://localhost:5000/api/v1";
     }
     return process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api/v1";
 };
+
 
 const API_URL = getBaseURL();
 
