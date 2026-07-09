@@ -30,6 +30,7 @@ export const createCouponSchema = z.object({
         allowedPincodes: z.array(z.string()).optional(),
         allowedPayment: z.array(z.string()).optional(),
         userSegments: z.array(z.string()).optional(),
+        targetedPhoneNumbers: z.array(z.string()).optional(),
     }),
 });
 
@@ -55,7 +56,8 @@ export const createCoupon = async (req: Request, res: Response) => {
             allowedLocations,
             allowedPincodes,
             allowedPayment,
-            userSegments
+            userSegments,
+            targetedPhoneNumbers
         } = req.body;
 
         const existing = await prisma.coupon.findUnique({ where: { code } });
@@ -63,6 +65,14 @@ export const createCoupon = async (req: Request, res: Response) => {
 
         const expiresDate = expiresAt ? new Date(expiresAt) : null;
         const validExpiresAt = (expiresDate instanceof Date && !isNaN(expiresDate.getTime())) ? expiresDate : null;
+
+        let users: { id: string }[] = [];
+        if (targetedPhoneNumbers && Array.isArray(targetedPhoneNumbers) && targetedPhoneNumbers.length > 0) {
+            users = await prisma.user.findMany({
+                where: { phone: { in: targetedPhoneNumbers.map((p: string) => p.trim()) } },
+                select: { id: true }
+            });
+        }
 
         const coupon = await prisma.coupon.create({
             data: {
@@ -84,9 +94,22 @@ export const createCoupon = async (req: Request, res: Response) => {
                 allowedLocations: allowedLocations || [],
                 allowedPincodes: allowedPincodes || [],
                 allowedPayment: allowedPayment || [],
-                userSegments: userSegments || ["ALL"]
+                userSegments: userSegments || ["ALL"],
+                targetedUsers: users.length > 0 ? {
+                    create: users.map(u => ({ userId: u.id }))
+                } : undefined
             },
+            include: {
+                targetedUsers: {
+                    include: {
+                        user: {
+                            select: { phone: true, name: true }
+                        }
+                    }
+                }
+            }
         });
+
 
         res.status(201).json(coupon);
     } catch (error) {
@@ -98,9 +121,19 @@ export const createCoupon = async (req: Request, res: Response) => {
 export const listCoupons = async (req: Request, res: Response) => {
     try {
         const coupons = await prisma.coupon.findMany({
+            include: {
+                targetedUsers: {
+                    include: {
+                        user: {
+                            select: { phone: true, name: true }
+                        }
+                    }
+                }
+            },
             orderBy: { createdAt: "desc" },
         });
         res.json(coupons);
+
     } catch (error) {
         console.error("DEBUG: Error fetching coupons:", error);
         res.status(500).json({ message: "Error fetching coupons" });
@@ -201,11 +234,24 @@ export const updateCoupon = async (req: Request, res: Response) => {
             allowedLocations,
             allowedPincodes,
             allowedPayment,
-            userSegments
+            userSegments,
+            targetedPhoneNumbers
         } = req.body;
 
         const expiresDate = expiresAt ? new Date(expiresAt) : null;
         const validExpiresAt = (expiresDate instanceof Date && !isNaN(expiresDate.getTime())) ? expiresDate : null;
+
+        let users: { id: string }[] = [];
+        let shouldUpdateTargets = false;
+        if (targetedPhoneNumbers && Array.isArray(targetedPhoneNumbers)) {
+            shouldUpdateTargets = true;
+            if (targetedPhoneNumbers.length > 0) {
+                users = await prisma.user.findMany({
+                    where: { phone: { in: targetedPhoneNumbers.map((p: string) => p.trim()) } },
+                    select: { id: true }
+                });
+            }
+        }
 
         const coupon = await prisma.coupon.update({
             where: { id: id as string },
@@ -229,9 +275,23 @@ export const updateCoupon = async (req: Request, res: Response) => {
                 allowedLocations: allowedLocations !== undefined ? allowedLocations : undefined,
                 allowedPincodes: allowedPincodes !== undefined ? allowedPincodes : undefined,
                 allowedPayment: allowedPayment !== undefined ? allowedPayment : undefined,
-                userSegments: userSegments !== undefined ? userSegments : undefined
+                userSegments: userSegments !== undefined ? userSegments : undefined,
+                targetedUsers: shouldUpdateTargets ? {
+                    deleteMany: {},
+                    create: users.map(u => ({ userId: u.id }))
+                } : undefined
             },
+            include: {
+                targetedUsers: {
+                    include: {
+                        user: {
+                            select: { phone: true, name: true }
+                        }
+                    }
+                }
+            }
         });
+
 
         res.json(coupon);
     } catch (error) {

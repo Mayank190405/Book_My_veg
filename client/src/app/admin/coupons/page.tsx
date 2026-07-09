@@ -14,7 +14,8 @@ import {
     ShieldCheck,
     CreditCard,
     MapPin,
-    Users
+    Users,
+    Phone
 } from "lucide-react";
 import { useState, useEffect, useMemo } from "react";
 import { cn } from "@/lib/utils";
@@ -32,6 +33,7 @@ export default function AdminCoupons() {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingCoupon, setEditingCoupon] = useState<any>(null);
     const [submitting, setSubmitting] = useState(false);
+    const [modalStep, setModalStep] = useState(1);
 
     const fetchCoupons = async () => {
         setLoading(true);
@@ -65,8 +67,10 @@ export default function AdminCoupons() {
             userUsageLimit: 1,
             allowedPincodes: "",
             allowedPayment: "",
-            userSegments: ["ALL"]
+            userSegments: ["ALL"],
+            targetedPhoneNumbers: ""
         });
+        setModalStep(1);
         setIsModalOpen(true);
     };
 
@@ -80,8 +84,12 @@ export default function AdminCoupons() {
             userUsageLimit: coupon.userUsageLimit !== null ? coupon.userUsageLimit.toString() : "1",
             allowedPincodes: Array.isArray(coupon.allowedPincodes) ? coupon.allowedPincodes.join(", ") : "",
             allowedPayment: Array.isArray(coupon.allowedPayment) ? coupon.allowedPayment.join(", ") : "",
-            userSegments: Array.isArray(coupon.userSegments) ? coupon.userSegments : ["ALL"]
+            userSegments: Array.isArray(coupon.userSegments) ? coupon.userSegments : ["ALL"],
+            targetedPhoneNumbers: Array.isArray(coupon.targetedUsers) 
+                ? coupon.targetedUsers.map((tu: any) => tu.user?.phone).filter(Boolean).join(", ") 
+                : ""
         });
+        setModalStep(1);
         setIsModalOpen(true);
     };
 
@@ -98,6 +106,10 @@ export default function AdminCoupons() {
                 ? editingCoupon.allowedPayment.split(',').map((p: string) => p.trim().toUpperCase()).filter(Boolean)
                 : editingCoupon.allowedPayment || [];
 
+            const targetedPhoneNumbersArray = typeof editingCoupon.targetedPhoneNumbers === 'string'
+                ? editingCoupon.targetedPhoneNumbers.split(',').map((p: string) => p.trim()).filter(Boolean)
+                : editingCoupon.targetedPhoneNumbers || [];
+
             const payload = {
                 ...editingCoupon,
                 discountValue: editingCoupon.discountValue !== "" ? parseFloat(editingCoupon.discountValue) : 0,
@@ -107,6 +119,7 @@ export default function AdminCoupons() {
                 userUsageLimit: parseInt(editingCoupon.userUsageLimit) || 1,
                 allowedPincodes: pincodesArray,
                 allowedPayment: paymentArray,
+                targetedPhoneNumbers: targetedPhoneNumbersArray,
             };
 
             if (editingCoupon.id) {
@@ -262,6 +275,14 @@ export default function AdminCoupons() {
                                     {coupon.description && (
                                         <p className="text-[11px] font-bold text-slate-400 leading-normal uppercase">{coupon.description}</p>
                                     )}
+                                    {coupon.targetedUsers && coupon.targetedUsers.length > 0 && (
+                                        <div className="mt-2.5 p-2.5 bg-indigo-50/50 rounded-xl border border-indigo-100/50 flex flex-col gap-1">
+                                            <p className="text-[8px] font-black text-indigo-600 uppercase tracking-widest leading-none">Targeted Users</p>
+                                            <p className="text-[9px] font-bold text-indigo-700 leading-normal font-mono truncate">
+                                                {coupon.targetedUsers.map((tu: any) => tu.user?.phone).filter(Boolean).join(", ")}
+                                            </p>
+                                        </div>
+                                    )}
                                 </div>
 
                                 <div className="space-y-1 relative z-10">
@@ -314,274 +335,463 @@ export default function AdminCoupons() {
             {isModalOpen && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 md:p-6 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-300">
                     <div className="absolute inset-0" onClick={() => setIsModalOpen(false)} />
-                    <div className="bg-white w-[95vw] md:w-full max-w-5xl max-h-[90vh] overflow-y-auto rounded-3xl border border-slate-200 shadow-2xl relative z-10 animate-in zoom-in-95 duration-300">
+                    <form onSubmit={handleSave} className="bg-white w-[95vw] md:w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-3xl border border-slate-200 shadow-2xl relative z-10 animate-in zoom-in-95 duration-300 flex flex-col">
+                        {/* Header */}
                         <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
                             <div className="flex items-center gap-4">
                                 <div className="w-12 h-12 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-600 border border-emerald-100">
                                     <Ticket className="h-6 w-6" />
                                 </div>
                                 <div>
-                                    <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight italic">Coupon Configuration</h3>
-                                    <p className="text-xs text-slate-500 mt-0.5">Configure advanced promo rules, locations, user segments, and temporal limits.</p>
+                                    <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight italic">
+                                        {editingCoupon?.id ? "Edit Coupon" : "Create New Coupon"}
+                                    </h3>
+                                    <p className="text-xs text-slate-500 mt-0.5">
+                                        {editingCoupon?.id ? `Modifying coupon: ${editingCoupon.code}` : "Step-by-step assistant to create new promotional code"}
+                                    </p>
                                 </div>
                             </div>
-                            <button onClick={() => setIsModalOpen(false)} className="w-10 h-10 rounded-xl hover:bg-white flex items-center justify-center text-slate-400 hover:text-slate-900 transition-all border border-transparent hover:border-slate-200">
+                            <button type="button" onClick={() => setIsModalOpen(false)} className="w-10 h-10 rounded-xl hover:bg-white flex items-center justify-center text-slate-400 hover:text-slate-900 transition-all border border-transparent hover:border-slate-200">
                                 <X className="h-5 w-5" />
                             </button>
                         </div>
-                        
-                        <form onSubmit={handleSave} className="p-8 grid grid-cols-1 lg:grid-cols-2 gap-10">
-                            {/* Left Side: Basic Parameters */}
-                            <div className="space-y-6">
-                                <h4 className="text-xs font-black text-emerald-600 uppercase tracking-widest border-b border-slate-100 pb-2">1. Core Coupon Parameters</h4>
-                                
-                                <div className="grid grid-cols-2 gap-6">
-                                    <div className="space-y-2">
-                                        <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Coupon Code (ID)</Label>
-                                        <input 
-                                            value={editingCoupon?.code || ""}
-                                            onChange={e => setEditingCoupon({...editingCoupon, code: e.target.value.toUpperCase()})}
-                                            className="w-full h-12 bg-white border border-slate-200 rounded-xl px-4 text-base font-bold text-slate-900 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/5 transition-all tracking-widest font-mono uppercase"
-                                            placeholder="FRESH100"
-                                            required
-                                        />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Promo Type</Label>
-                                        <select 
-                                            value={editingCoupon?.type || "DISCOUNT"}
-                                            onChange={e => setEditingCoupon({...editingCoupon, type: e.target.value})}
-                                            className="w-full h-12 bg-white border border-slate-200 rounded-xl px-4 text-sm font-bold text-slate-600 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/5 transition-all"
-                                        >
-                                            <option value="DISCOUNT">DISCOUNT (Cart Flat / Percentage)</option>
-                                            <option value="ITEM_DISCOUNT">ITEM DISCOUNT (Specific Product)</option>
-                                            <option value="SPECIAL_PRICE_ITEM">SPECIAL PRICE (Tomato at ₹1, Butter at ₹1)</option>
-                                            <option value="FREE_GIFT">FREE GIFT (BOGOs, buy 3 get 1 free)</option>
-                                            <option value="CASHBACK">CASHBACK (Wallet credit)</option>
-                                        </select>
-                                    </div>
-                                </div>
 
-                                <div className="space-y-2">
-                                    <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Promo Public Description</Label>
-                                    <input 
-                                        value={editingCoupon?.description || ""}
-                                        onChange={e => setEditingCoupon({...editingCoupon, description: e.target.value})}
-                                        className="w-full h-12 bg-white border border-slate-200 rounded-xl px-4 text-sm font-medium text-slate-900 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/5 transition-all"
-                                        placeholder="Flat ₹100 OFF on orders above ₹999"
-                                        required
-                                    />
-                                </div>
-                                
-                                <div className="grid grid-cols-2 gap-6">
-                                    <div className="space-y-2">
-                                        <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Discount Yield Mode</Label>
-                                        <select 
-                                            value={editingCoupon?.discountType || "FLAT"}
-                                            onChange={e => setEditingCoupon({...editingCoupon, discountType: e.target.value})}
-                                            className="w-full h-12 bg-white border border-slate-200 rounded-xl px-4 text-sm font-bold text-slate-600 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/5 transition-all"
-                                        >
-                                            <option value="FLAT">Flat Value (₹)</option>
-                                            <option value="PERCENTAGE">Percentage (%)</option>
-                                        </select>
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Discount Yield Value</Label>
-                                        <input 
-                                            type="number"
-                                            value={editingCoupon?.discountValue || ""}
-                                            onChange={e => setEditingCoupon({...editingCoupon, discountValue: e.target.value})}
-                                            className="w-full h-12 bg-white border border-slate-200 rounded-xl px-4 text-sm font-bold text-slate-900 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/5 transition-all"
-                                            placeholder="100"
-                                            required={editingCoupon?.type === "DISCOUNT" || editingCoupon?.type === "ITEM_DISCOUNT" || editingCoupon?.type === "CASHBACK"}
-                                        />
-                                    </div>
-                                </div>
-
-                                <div className="grid grid-cols-2 gap-6">
-                                    <div className="space-y-2">
-                                        <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Minimum Order Target (₹)</Label>
-                                        <input 
-                                            type="number"
-                                            value={editingCoupon?.minOrderAmount || ""}
-                                            onChange={e => setEditingCoupon({...editingCoupon, minOrderAmount: e.target.value})}
-                                            className="w-full h-12 bg-white border border-slate-200 rounded-xl px-4 text-sm font-bold text-slate-900 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/5 transition-all"
-                                            placeholder="0"
-                                        />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Maximum Discount Cap (₹)</Label>
-                                        <input 
-                                            type="number"
-                                            value={editingCoupon?.maxDiscount || ""}
-                                            onChange={e => setEditingCoupon({...editingCoupon, maxDiscount: e.target.value})}
-                                            className="w-full h-12 bg-white border border-slate-200 rounded-xl px-4 text-sm font-bold text-slate-900 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/5 transition-all"
-                                            placeholder="Unlimited"
-                                        />
-                                    </div>
-                                </div>
-
-                                <div className="grid grid-cols-2 gap-6">
-                                    <div className="space-y-2">
-                                        <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Valid Until (Expiry)</Label>
-                                        <input 
-                                            type="date"
-                                            value={editingCoupon?.expiresAt ? format(new Date(editingCoupon.expiresAt), 'yyyy-MM-dd') : ""}
-                                            onChange={e => setEditingCoupon({...editingCoupon, expiresAt: e.target.value})}
-                                            className="w-full h-12 bg-white border border-slate-200 rounded-xl px-4 text-sm font-medium text-slate-900 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/5 transition-all"
-                                            required
-                                        />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Global Max Usage Limit</Label>
-                                        <input 
-                                            type="number"
-                                            value={editingCoupon?.usageLimit || ""}
-                                            onChange={e => setEditingCoupon({...editingCoupon, usageLimit: e.target.value})}
-                                            className="w-full h-12 bg-white border border-slate-200 rounded-xl px-4 text-sm font-bold text-slate-900 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/5 transition-all"
-                                            placeholder="Infinite"
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Right Side: Advanced Constraints & Targeting */}
-                            <div className="space-y-6">
-                                <h4 className="text-xs font-black text-emerald-600 uppercase tracking-widest border-b border-slate-100 pb-2">2. Advanced Engine Constraints & Targeting</h4>
-
-                                <div className="grid grid-cols-2 gap-6">
-                                    <div className="space-y-2">
-                                        <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1 flex items-center gap-1.5">
-                                            <Tag className="h-3 w-3 text-emerald-600" /> Reward Product ID
-                                        </Label>
-                                        <input 
-                                            value={editingCoupon?.rewardProductId || ""}
-                                            onChange={e => setEditingCoupon({...editingCoupon, rewardProductId: e.target.value})}
-                                            className="w-full h-12 bg-white border border-slate-200 rounded-xl px-4 text-xs font-medium text-slate-900 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/5 transition-all font-mono"
-                                            placeholder="Product UUID for gift/special price"
-                                            required={editingCoupon?.type === "ITEM_DISCOUNT" || editingCoupon?.type === "SPECIAL_PRICE_ITEM" || editingCoupon?.type === "FREE_GIFT"}
-                                        />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1 flex items-center gap-1.5">
-                                            <Zap className="h-3 w-3 text-amber-500" /> Special Price (₹)
-                                        </Label>
-                                        <input 
-                                            type="number"
-                                            value={editingCoupon?.specialPrice || ""}
-                                            onChange={e => setEditingCoupon({...editingCoupon, specialPrice: e.target.value})}
-                                            className="w-full h-12 bg-white border border-slate-200 rounded-xl px-4 text-sm font-bold text-slate-900 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/5 transition-all"
-                                            placeholder="1.00"
-                                            required={editingCoupon?.type === "SPECIAL_PRICE_ITEM"}
-                                        />
-                                    </div>
-                                </div>
-
-                                <div className="grid grid-cols-2 gap-6">
-                                    <div className="space-y-2">
-                                        <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1 flex items-center gap-1.5">
-                                            <MapPin className="h-3 w-3 text-red-500" /> Geofenced Pincodes
-                                        </Label>
-                                        <input 
-                                            value={editingCoupon?.allowedPincodes || ""}
-                                            onChange={e => setEditingCoupon({...editingCoupon, allowedPincodes: e.target.value})}
-                                            className="w-full h-12 bg-white border border-slate-200 rounded-xl px-4 text-xs font-medium text-slate-900 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/5 transition-all font-mono"
-                                            placeholder="400001, 400002 (comma separated)"
-                                        />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1 flex items-center gap-1.5">
-                                            <CreditCard className="h-3 w-3 text-blue-500" /> Allowed Payments
-                                        </Label>
-                                        <input 
-                                            value={editingCoupon?.allowedPayment || ""}
-                                            onChange={e => setEditingCoupon({...editingCoupon, allowedPayment: e.target.value})}
-                                            className="w-full h-12 bg-white border border-slate-200 rounded-xl px-4 text-xs font-medium text-slate-900 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/5 transition-all font-mono"
-                                            placeholder="UPI, WALLET, COD (comma separated)"
-                                        />
-                                    </div>
-                                </div>
-
-                                <div className="grid grid-cols-2 gap-6">
-                                    <div className="space-y-2">
-                                        <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Per-User Usage Limit</Label>
-                                        <input 
-                                            type="number"
-                                            value={editingCoupon?.userUsageLimit || "1"}
-                                            onChange={e => setEditingCoupon({...editingCoupon, userUsageLimit: e.target.value})}
-                                            className="w-full h-12 bg-white border border-slate-200 rounded-xl px-4 text-sm font-bold text-slate-900 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/5 transition-all"
-                                            placeholder="1"
-                                            required
-                                        />
-                                    </div>
-                                    <div className="space-y-2 flex flex-col justify-end">
-                                        <div className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-xl">
-                                            <div>
-                                                <p className="text-[10px] font-bold text-slate-700 uppercase tracking-tight">Active Status</p>
-                                                <p className="text-[8px] text-slate-400 mt-0.5 font-medium leading-none">Activate voucher now.</p>
-                                            </div>
-                                            <button 
-                                                type="button"
-                                                onClick={() => setEditingCoupon({...editingCoupon, isActive: !editingCoupon.isActive})}
-                                                className={cn(
-                                                    "w-10 h-5 rounded-full transition-all group relative flex items-center px-1 shadow-inner",
-                                                    editingCoupon?.isActive ? "bg-emerald-500 shadow-emerald-100" : "bg-slate-200 shadow-slate-100"
-                                                )}
-                                            >
-                                                <div className={cn(
-                                                    "w-3.5 h-3.5 rounded-full bg-white shadow-md transition-all",
-                                                    editingCoupon?.isActive ? "translate-x-45" : "translate-x-0"
-                                                )}
-                                                style={{
-                                                    transform: editingCoupon?.isActive ? 'translateX(18px)' : 'translateX(0px)'
-                                                }} />
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="space-y-3">
-                                    <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1 flex items-center gap-1.5">
-                                        <Users className="h-3.5 w-3.5 text-indigo-500" /> Target Loyalty Segments
-                                    </Label>
-                                    <div className="flex flex-wrap gap-2.5 p-3.5 bg-slate-50 border border-slate-200 rounded-xl">
-                                        {segmentsList.map((segment) => {
-                                            const isSelected = (editingCoupon.userSegments || []).includes(segment.id);
-                                            return (
-                                                <button
-                                                    key={segment.id}
-                                                    type="button"
-                                                    onClick={() => handleSegmentToggle(segment.id)}
-                                                    className={cn(
-                                                        "px-3 py-1.5 rounded-lg text-[9px] font-bold uppercase tracking-wider transition-all border active:scale-95",
-                                                        isSelected 
-                                                            ? "bg-slate-900 border-slate-900 text-white shadow-sm" 
-                                                            : "bg-white border-slate-200 text-slate-500 hover:border-slate-300"
-                                                    )}
-                                                >
-                                                    {segment.name}
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-
-                                <button 
-                                    disabled={submitting}
-                                    className="w-full h-14 bg-slate-900 text-white rounded-xl font-bold uppercase tracking-widest text-sm flex items-center justify-center gap-3 hover:bg-slate-800 transition-all active:scale-95 shadow-lg shadow-slate-200 mt-6"
+                        {/* Step Indicators */}
+                        <div className="px-8 py-4 border-b border-slate-100 bg-slate-50/20 flex justify-center">
+                            <div className="flex items-center gap-6 w-full max-w-xl flex-wrap justify-center">
+                                <button
+                                    type="button"
+                                    onClick={() => setModalStep(1)}
+                                    className="flex items-center gap-2 focus:outline-none"
                                 >
-                                    {submitting ? (
-                                        <Activity className="h-5 w-5 animate-spin" />
-                                    ) : (
-                                        <>
-                                            <ShieldCheck className="h-5 w-5" />
-                                            Save Coupon Configuration
-                                        </>
-                                    )}
+                                    <div className={cn(
+                                        "w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all",
+                                        modalStep === 1 ? "bg-emerald-600 text-white ring-4 ring-emerald-500/20" : modalStep > 1 ? "bg-emerald-100 text-emerald-600" : "bg-slate-100 text-slate-400"
+                                    )}>1</div>
+                                    <span className={cn("text-xs font-bold uppercase tracking-wider", modalStep >= 1 ? "text-slate-900" : "text-slate-400")}>Select Type</span>
+                                </button>
+                                
+                                <div className="flex-1 min-w-[30px] h-[2px] bg-slate-200">
+                                    <div className={cn("h-full bg-emerald-600 transition-all duration-300", modalStep >= 2 ? "w-full" : "w-0")} />
+                                </div>
+
+                                <button
+                                    type="button"
+                                    onClick={() => modalStep > 1 && setModalStep(2)}
+                                    className="flex items-center gap-2 focus:outline-none"
+                                    disabled={modalStep < 2}
+                                >
+                                    <div className={cn(
+                                        "w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all",
+                                        modalStep === 2 ? "bg-emerald-600 text-white ring-4 ring-emerald-500/20" : modalStep > 2 ? "bg-emerald-100 text-emerald-600" : "bg-slate-100 text-slate-400"
+                                    )}>2</div>
+                                    <span className={cn("text-xs font-bold uppercase tracking-wider", modalStep >= 2 ? "text-slate-900" : "text-slate-400")}>Configure</span>
+                                </button>
+
+                                <div className="flex-1 min-w-[30px] h-[2px] bg-slate-200">
+                                    <div className={cn("h-full bg-emerald-600 transition-all duration-300", modalStep >= 3 ? "w-full" : "w-0")} />
+                                </div>
+
+                                <button
+                                    type="button"
+                                    onClick={() => modalStep > 2 && setModalStep(3)}
+                                    className="flex items-center gap-2 focus:outline-none"
+                                    disabled={modalStep < 3}
+                                >
+                                    <div className={cn(
+                                        "w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all",
+                                        modalStep === 3 ? "bg-emerald-600 text-white ring-4 ring-emerald-500/20" : "bg-slate-100 text-slate-400"
+                                    )}>3</div>
+                                    <span className={cn("text-xs font-bold uppercase tracking-wider", modalStep >= 3 ? "text-slate-900" : "text-slate-400")}>Targeting</span>
                                 </button>
                             </div>
-                        </form>
-                    </div>
+                        </div>
+                        
+                        {/* Form Content */}
+                        <div className="p-8 overflow-y-auto flex-1">
+                            {/* STEP 1: Select Type */}
+                            {modalStep === 1 && (
+                                <div className="space-y-6">
+                                    <div className="text-center max-w-md mx-auto mb-4">
+                                        <h4 className="text-lg font-bold text-slate-900">What kind of promotion is this?</h4>
+                                        <p className="text-xs text-slate-400 mt-1">Select the baseline reward behavior. This determines what options will be available in the next step.</p>
+                                    </div>
+                                    
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {[
+                                            {
+                                                id: "DISCOUNT",
+                                                title: "Standard Discount",
+                                                desc: "Apply a flat amount (e.g. ₹50 off) or percentage discount (e.g. 10% off) on the total order value.",
+                                                icon: Ticket,
+                                                color: "text-emerald-600 bg-emerald-50 border-emerald-100"
+                                            },
+                                            {
+                                                id: "ITEM_DISCOUNT",
+                                                title: "Product-Specific Discount",
+                                                desc: "Apply a flat or percentage discount to a single specific item in the cart (e.g. 20% off cauliflower).",
+                                                icon: Tag,
+                                                color: "text-blue-600 bg-blue-50 border-blue-100"
+                                            },
+                                            {
+                                                id: "SPECIAL_PRICE_ITEM",
+                                                title: "Special Deal Price",
+                                                desc: "Set an exact fixed cost for a specific product when this code is entered (e.g. Get coriander for ₹1).",
+                                                icon: Zap,
+                                                color: "text-amber-600 bg-amber-50 border-amber-100"
+                                            },
+                                            {
+                                                id: "FREE_GIFT",
+                                                title: "Free Gift Reward",
+                                                desc: "Offer a selected product completely free as an added bonus item to the cart subtotal.",
+                                                icon: Plus,
+                                                color: "text-purple-600 bg-purple-50 border-purple-100"
+                                            },
+                                            {
+                                                id: "CASHBACK",
+                                                title: "Wallet Cashback",
+                                                desc: "Reward buyers with currency added directly to their virtual account wallet upon order fulfillment.",
+                                                icon: CreditCard,
+                                                color: "text-indigo-600 bg-indigo-50 border-indigo-100"
+                                            }
+                                        ].map((t) => (
+                                            <button
+                                                key={t.id}
+                                                type="button"
+                                                onClick={() => {
+                                                    setEditingCoupon({ ...editingCoupon, type: t.id });
+                                                    setModalStep(2);
+                                                }}
+                                                className={cn(
+                                                    "p-5 rounded-2xl border text-left flex gap-4 transition-all duration-300 active:scale-98 hover:shadow-md w-full",
+                                                    editingCoupon?.type === t.id 
+                                                        ? "border-slate-900 bg-slate-50/50 ring-2 ring-slate-900/5" 
+                                                        : "border-slate-200 hover:border-slate-300 bg-white"
+                                                )}
+                                            >
+                                                <div className={cn("w-12 h-12 rounded-xl flex items-center justify-center shrink-0 border", t.color)}>
+                                                    <t.icon className="h-6 w-6" />
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <h5 className="font-bold text-sm text-slate-900">{t.title}</h5>
+                                                    <p className="text-xs text-slate-500 leading-normal">{t.desc}</p>
+                                                </div>
+                                            </button>
+                                        ))}
+                                    </div>
+                                    
+                                    <div className="flex justify-end pt-4">
+                                        <button
+                                            type="button"
+                                            onClick={() => setModalStep(2)}
+                                            className="h-11 bg-slate-900 text-white px-6 rounded-xl font-bold uppercase tracking-wider text-xs hover:bg-slate-800 transition-all active:scale-95 flex items-center gap-2"
+                                        >
+                                            Next Step
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* STEP 2: Configure Coupon details */}
+                            {modalStep === 2 && (
+                                <div className="space-y-6 max-w-3xl mx-auto animate-in fade-in duration-300">
+                                    <h4 className="text-xs font-black text-emerald-600 uppercase tracking-widest border-b border-slate-100 pb-2">2. Configuration Details ({editingCoupon?.type})</h4>
+                                    
+                                    <div className="grid grid-cols-2 gap-6">
+                                        <div className="space-y-2">
+                                            <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Coupon Code (e.g. MONSOON20)</Label>
+                                            <input 
+                                                value={editingCoupon?.code || ""}
+                                                onChange={e => setEditingCoupon({...editingCoupon, code: e.target.value.toUpperCase()})}
+                                                className="w-full h-12 bg-white border border-slate-200 rounded-xl px-4 text-base font-bold text-slate-900 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/5 transition-all tracking-widest font-mono uppercase"
+                                                placeholder="SAVE50"
+                                                required
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Public Description</Label>
+                                            <input 
+                                                value={editingCoupon?.description || ""}
+                                                onChange={e => setEditingCoupon({...editingCoupon, description: e.target.value})}
+                                                className="w-full h-12 bg-white border border-slate-200 rounded-xl px-4 text-sm font-medium text-slate-900 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/5 transition-all"
+                                                placeholder="Get flat ₹50 off on orders above ₹499"
+                                                required
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {/* Fields for DISCOUNT / ITEM_DISCOUNT / CASHBACK */}
+                                    {(editingCoupon?.type === "DISCOUNT" || editingCoupon?.type === "ITEM_DISCOUNT" || editingCoupon?.type === "CASHBACK") && (
+                                        <div className="grid grid-cols-2 gap-6 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                                            <div className="space-y-2">
+                                                <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Discount Mode</Label>
+                                                <select 
+                                                    value={editingCoupon?.discountType || "FLAT"}
+                                                    onChange={e => setEditingCoupon({...editingCoupon, discountType: e.target.value})}
+                                                    className="w-full h-12 bg-white border border-slate-200 rounded-xl px-4 text-sm font-bold text-slate-600 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/5 transition-all"
+                                                >
+                                                    <option value="FLAT">Flat Cash Value (₹)</option>
+                                                    <option value="PERCENTAGE">Percentage rate (%)</option>
+                                                </select>
+                                            </div>
+                                            <div className="space-y-2">
+                                                <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Discount Value</Label>
+                                                <input 
+                                                    type="number"
+                                                    value={editingCoupon?.discountValue || ""}
+                                                    onChange={e => setEditingCoupon({...editingCoupon, discountValue: e.target.value})}
+                                                    className="w-full h-12 bg-white border border-slate-200 rounded-xl px-4 text-sm font-bold text-slate-900 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/5 transition-all"
+                                                    placeholder="50"
+                                                    required
+                                                />
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Fields for ITEM_DISCOUNT / SPECIAL_PRICE_ITEM / FREE_GIFT */}
+                                    {(editingCoupon?.type === "ITEM_DISCOUNT" || editingCoupon?.type === "SPECIAL_PRICE_ITEM" || editingCoupon?.type === "FREE_GIFT") && (
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                                            <div className="space-y-2">
+                                                <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Reward Product ID (UUID)</Label>
+                                                <input 
+                                                    value={editingCoupon?.rewardProductId || ""}
+                                                    onChange={e => setEditingCoupon({...editingCoupon, rewardProductId: e.target.value})}
+                                                    className="w-full h-12 bg-white border border-slate-200 rounded-xl px-4 text-xs font-medium text-slate-900 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/5 transition-all font-mono"
+                                                    placeholder="Enter product database ID"
+                                                    required
+                                                />
+                                            </div>
+                                            
+                                            {editingCoupon?.type === "SPECIAL_PRICE_ITEM" && (
+                                                <div className="space-y-2">
+                                                    <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Special Deal Price (₹)</Label>
+                                                    <input 
+                                                        type="number"
+                                                        value={editingCoupon?.specialPrice || ""}
+                                                        onChange={e => setEditingCoupon({...editingCoupon, specialPrice: e.target.value})}
+                                                        className="w-full h-12 bg-white border border-slate-200 rounded-xl px-4 text-sm font-bold text-slate-900 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/5 transition-all"
+                                                        placeholder="1.00"
+                                                        required
+                                                    />
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    <div className="grid grid-cols-2 gap-6">
+                                        <div className="space-y-2">
+                                            <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Minimum Order Amount (₹)</Label>
+                                            <input 
+                                                type="number"
+                                                value={editingCoupon?.minOrderAmount || ""}
+                                                onChange={e => setEditingCoupon({...editingCoupon, minOrderAmount: e.target.value})}
+                                                className="w-full h-12 bg-white border border-slate-200 rounded-xl px-4 text-sm font-bold text-slate-900 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/5 transition-all"
+                                                placeholder="0"
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Maximum Discount Cap (₹)</Label>
+                                            <input 
+                                                type="number"
+                                                value={editingCoupon?.maxDiscount || ""}
+                                                onChange={e => setEditingCoupon({...editingCoupon, maxDiscount: e.target.value})}
+                                                className="w-full h-12 bg-white border border-slate-200 rounded-xl px-4 text-sm font-bold text-slate-900 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/5 transition-all"
+                                                placeholder="No Cap"
+                                                disabled={editingCoupon?.discountType !== "PERCENTAGE"}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-6">
+                                        <div className="space-y-2">
+                                            <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Valid Until (Expiry)</Label>
+                                            <input 
+                                                type="date"
+                                                value={editingCoupon?.expiresAt ? format(new Date(editingCoupon.expiresAt), 'yyyy-MM-dd') : ""}
+                                                onChange={e => setEditingCoupon({...editingCoupon, expiresAt: e.target.value})}
+                                                className="w-full h-12 bg-white border border-slate-200 rounded-xl px-4 text-sm font-medium text-slate-900 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/5 transition-all"
+                                                required
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Global Max Usage Limit</Label>
+                                            <input 
+                                                type="number"
+                                                value={editingCoupon?.usageLimit || ""}
+                                                onChange={e => setEditingCoupon({...editingCoupon, usageLimit: e.target.value})}
+                                                className="w-full h-12 bg-white border border-slate-200 rounded-xl px-4 text-sm font-bold text-slate-900 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/5 transition-all"
+                                                placeholder="No Limit"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-6">
+                                        <div className="space-y-2">
+                                            <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Per-User Usage Limit</Label>
+                                            <input 
+                                                type="number"
+                                                value={editingCoupon?.userUsageLimit || "1"}
+                                                onChange={e => setEditingCoupon({...editingCoupon, userUsageLimit: e.target.value})}
+                                                className="w-full h-12 bg-white border border-slate-200 rounded-xl px-4 text-sm font-bold text-slate-900 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/5 transition-all"
+                                                placeholder="1"
+                                                required
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Allowed Payment Modes (Comma Sep)</Label>
+                                            <input 
+                                                value={editingCoupon?.allowedPayment || ""}
+                                                onChange={e => setEditingCoupon({...editingCoupon, allowedPayment: e.target.value})}
+                                                className="w-full h-12 bg-white border border-slate-200 rounded-xl px-4 text-sm font-semibold text-slate-900 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/5 transition-all uppercase"
+                                                placeholder="UPI, WALLET, COD"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-6">
+                                        <div className="space-y-2">
+                                            <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Geofenced Delivery Pincodes (Comma Sep)</Label>
+                                            <input 
+                                                value={editingCoupon?.allowedPincodes || ""}
+                                                onChange={e => setEditingCoupon({...editingCoupon, allowedPincodes: e.target.value})}
+                                                className="w-full h-12 bg-white border border-slate-200 rounded-xl px-4 text-sm font-semibold text-slate-900 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/5 transition-all font-mono"
+                                                placeholder="422001, 422002"
+                                            />
+                                        </div>
+                                        <div className="space-y-2 flex flex-col justify-end">
+                                            <div className="flex items-center justify-between p-3.5 bg-slate-50 border border-slate-200 rounded-xl">
+                                                <div>
+                                                    <p className="text-[10px] font-bold text-slate-700 uppercase tracking-tight">Active Status</p>
+                                                    <p className="text-[8px] text-slate-400 mt-0.5 font-medium leading-none">Activate voucher now.</p>
+                                                </div>
+                                                <button 
+                                                    type="button"
+                                                    onClick={() => setEditingCoupon({...editingCoupon, isActive: !editingCoupon.isActive})}
+                                                    className={cn(
+                                                        "w-10 h-5 rounded-full transition-all group relative flex items-center px-1 shadow-inner",
+                                                        editingCoupon?.isActive ? "bg-emerald-500 shadow-emerald-100" : "bg-slate-200 shadow-slate-100"
+                                                    )}
+                                                >
+                                                    <div className={cn(
+                                                        "w-3.5 h-3.5 rounded-full bg-white shadow-md transition-all",
+                                                        editingCoupon?.isActive ? "translate-x-45" : "translate-x-0"
+                                                    )}
+                                                    style={{
+                                                        transform: editingCoupon?.isActive ? 'translateX(18px)' : 'translateX(0px)'
+                                                    }} />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex items-center justify-between pt-6 border-t border-slate-100">
+                                        <button
+                                            type="button"
+                                            onClick={() => setModalStep(1)}
+                                            className="h-11 border border-slate-200 text-slate-600 px-6 rounded-xl font-bold uppercase tracking-wider text-xs hover:bg-slate-50 transition-all active:scale-95"
+                                        >
+                                            Back
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                if (!editingCoupon.code) return toast.error("Coupon Code is required");
+                                                if (!editingCoupon.description) return toast.error("Public Description is required");
+                                                setModalStep(3);
+                                            }}
+                                            className="h-11 bg-slate-900 text-white px-6 rounded-xl font-bold uppercase tracking-wider text-xs hover:bg-slate-800 transition-all active:scale-95"
+                                        >
+                                            Next: Target Audience
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* STEP 3: Assign to users */}
+                            {modalStep === 3 && (
+                                <div className="space-y-8 max-w-2xl mx-auto animate-in fade-in duration-300">
+                                    <div className="text-center max-w-md mx-auto mb-4">
+                                        <h4 className="text-lg font-bold text-slate-900">Step 3: Assign to Users</h4>
+                                        <p className="text-xs text-slate-400 mt-1">Configure who is eligible to redeem this coupon. You can target group segments, specific phone numbers, or both.</p>
+                                    </div>
+
+                                    {/* 1. Target Loyalty Segments */}
+                                    <div className="space-y-3">
+                                        <div className="flex items-center gap-2 border-b border-slate-100 pb-2">
+                                            <Users className="h-4 w-4 text-indigo-600" />
+                                            <h5 className="text-xs font-bold text-slate-800 uppercase tracking-widest">Assign by User Group / Loyalty Segment</h5>
+                                        </div>
+                                        <p className="text-xs text-slate-400 mt-1">Select one or more user segments that qualify for this coupon.</p>
+                                        <div className="flex flex-wrap gap-2.5 p-4 bg-slate-50 border border-slate-200 rounded-2xl">
+                                            {segmentsList.map((segment) => {
+                                                const isSelected = (editingCoupon.userSegments || []).includes(segment.id);
+                                                return (
+                                                    <button
+                                                        key={segment.id}
+                                                        type="button"
+                                                        onClick={() => handleSegmentToggle(segment.id)}
+                                                        className={cn(
+                                                            "px-3.5 py-2 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all border active:scale-95",
+                                                            isSelected 
+                                                                ? "bg-slate-900 border-slate-900 text-white shadow-sm" 
+                                                                : "bg-white border-slate-200 text-slate-500 hover:border-slate-300"
+                                                        )}
+                                                    >
+                                                        {segment.name}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+
+                                    {/* 2. Target Specific Users by Phone Numbers */}
+                                    <div className="space-y-4">
+                                        <div className="flex items-center gap-2 border-b border-slate-100 pb-2">
+                                            <Phone className="h-4 w-4 text-emerald-600" />
+                                            <h5 className="text-xs font-bold text-slate-800 uppercase tracking-widest">Assign to Specific Phone Numbers (Optional)</h5>
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">User Phone Numbers (Comma Separated)</Label>
+                                            <textarea 
+                                                value={editingCoupon?.targetedPhoneNumbers || ""}
+                                                onChange={e => setEditingCoupon({...editingCoupon, targetedPhoneNumbers: e.target.value})}
+                                                className="w-full min-h-[100px] bg-white border border-slate-200 rounded-2xl p-4 text-sm font-semibold text-slate-900 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/5 transition-all font-mono"
+                                                placeholder="9876543210, 8765432109, 7654321098"
+                                            />
+                                            <p className="text-[10px] text-slate-400 leading-normal">
+                                                Leave empty to allow all users (matching the segment above) to redeem. If phone numbers are entered, this coupon will be strictly restricted to only these registered customer accounts.
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex items-center justify-between pt-8 border-t border-slate-100">
+                                        <button
+                                            type="button"
+                                            onClick={() => setModalStep(2)}
+                                            className="h-11 border border-slate-200 text-slate-600 px-6 rounded-xl font-bold uppercase tracking-wider text-xs hover:bg-slate-50 transition-all active:scale-95"
+                                        >
+                                            Back
+                                        </button>
+                                        
+                                        <button 
+                                            type="submit"
+                                            disabled={submitting}
+                                            className="h-12 bg-emerald-600 text-white px-8 rounded-xl font-bold uppercase tracking-widest text-xs flex items-center justify-center gap-2 hover:bg-emerald-700 transition-all active:scale-95 shadow-lg shadow-emerald-100"
+                                        >
+                                            {submitting ? (
+                                                <Activity className="h-4 w-4 animate-spin" />
+                                            ) : (
+                                                <>
+                                                    <ShieldCheck className="h-4 w-4" />
+                                                    Submit & Save Coupon
+                                                </>
+                                            )}
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </form>
                 </div>
             )}
         </div>
