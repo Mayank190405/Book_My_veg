@@ -64,6 +64,6 @@
     "dotenv-cli": "^11.0.0",
     "nodemon": "^3.1.11",
     "ts-node": "^10.9.2",
-    "typescript": "^7.0.0"
+    "typescript": "^5.9.3"
   }
 }
