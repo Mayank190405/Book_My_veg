@@ -150,6 +150,8 @@ export default function AdminInventory() {
                     
                     let successCount = 0;
                     let failureCount = 0;
+                    const unmappedProducts = [];
+                    const failedUpdates = [];
                     
                     for (const row of results.data as any[]) {
                         try {
@@ -173,24 +175,39 @@ export default function AdminInventory() {
                             );
 
                             if (existing) {
-                                await api.post(`/inventory/adjust`, {
-                                    productId: existing.productId,
-                                    variantId: existing.variantId,
-                                    quantity: restockVal,
-                                    locationId: selectedStore,
-                                    type: "PURCHASE",
-                                    reason: "Bulk restock via protocol synchronization"
-                                });
-                                successCount++;
+                                try {
+                                    await api.post(`/inventory/adjust`, {
+                                        productId: existing.productId,
+                                        variantId: existing.variantId,
+                                        quantity: restockVal,
+                                        locationId: selectedStore,
+                                        type: "PURCHASE",
+                                        reason: "Bulk restock via protocol synchronization"
+                                    });
+                                    successCount++;
+                                } catch (err) {
+                                    failedUpdates.push(`${pName} (${vName})`);
+                                    failureCount++;
+                                }
                             } else {
-                                console.warn(`Node mapping failure for ${pName} [${vName}] at this location.`);
+                                unmappedProducts.push(`${pName} (${vName})`);
                                 failureCount++;
                             }
                         } catch (error) {
                             failureCount++;
                         }
                     }
-                    toast.success(`Inventory synchronization summary: ${successCount} successful restocks, ${failureCount} failed.`);
+
+                    if (successCount > 0) {
+                        toast.success(`Inventory synchronization summary: ${successCount} successful restocks.`);
+                    }
+                    if (unmappedProducts.length > 0) {
+                        toast.error(`Ingestion warning: ${unmappedProducts.length} items failed because they do not exist in the database catalog (e.g. "${unmappedProducts[0]}"). Register them first!`);
+                    }
+                    if (failedUpdates.length > 0) {
+                        toast.error(`System update failed for ${failedUpdates.length} items.`);
+                    }
+
                     fetchInventory();
                 } catch (error) {
                     toast.error("Institutional synchronization failure. Registry unification aborted.");
