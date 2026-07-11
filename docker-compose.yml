@@ -11,7 +11,7 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres_password}
       POSTGRES_DB: ${DB_NAME:-bookmyveg}
     ports:
-      - "5432:5432"
+      - "5435:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
@@ -20,7 +20,7 @@ services:
     container_name: bmv-server
     restart: always
     ports:
-      - "5000:5000"
+      - "5001:5000"
     environment:
       DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres_password}@db:5432/${DB_NAME:-bookmyveg}?schema=public
       JWT_SECRET: ${JWT_SECRET:-supersecret}
@@ -39,20 +39,20 @@ services:
     container_name: bmv-redis
     restart: always
     ports:
-      - "6379:6379"
+      - "6385:6379"
 
   client:
     build:
       context: ./client
       args:
         - INTERNAL_SERVER_URL=http://server:5000
-        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:5000/api/v1}
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:5001/api/v1}
     container_name: bmv-client
     restart: always
     ports:
-      - "3000:3000"
+      - "3001:3000"
     environment:
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:5000/api/v1}
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:5001/api/v1}
       INTERNAL_SERVER_URL: http://server:5000
       NODE_ENV: production
     depends_on:

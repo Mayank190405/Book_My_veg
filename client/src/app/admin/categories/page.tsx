@@ -51,9 +51,25 @@ export default function AdminCategories() {
         const file = e.target.files?.[0];
         if (!file) return;
 
+        // Helper to get row value case-insensitively and ignore non-alphanumeric layout symbols (spaces, BOM, underscores, hyphens)
+        const getRowVal = (row: any, targetKeys: string[]) => {
+            const keys = Object.keys(row);
+            for (const key of keys) {
+                const cleanKey = key.replace(/^\ufeff/, "").toLowerCase().replace(/[^a-z0-9]/g, "");
+                for (const targetKey of targetKeys) {
+                    const cleanTarget = targetKey.toLowerCase().replace(/[^a-z0-9]/g, "");
+                    if (cleanKey === cleanTarget) {
+                        return row[key];
+                    }
+                }
+            }
+            return undefined;
+        };
+
         Papa.parse(file, {
             header: true,
             skipEmptyLines: true,
+            transformHeader: (h) => h.replace(/^\ufeff/, "").replace(/^\uFEFF/, "").trim(),
             complete: async (results) => {
                 setSubmitting(true);
                 let success = 0;
@@ -61,14 +77,14 @@ export default function AdminCategories() {
 
                 for (const row of results.data as any[]) {
                     try {
-                        const name = row["Category Name"] || row["name"];
+                        const name = getRowVal(row, ["Category Name", "name"]);
                         if (!name) continue;
 
                         await api.post("/categories", {
                             name,
-                            slug: row["Slug"] || name.toLowerCase().replace(/ /g, "-"),
-                            icon: row["Icon"] || "Layers",
-                            sortOrder: parseInt(row["Sort Order"] || "0"),
+                            slug: getRowVal(row, ["Slug"]) || name.toLowerCase().replace(/ /g, "-"),
+                            icon: getRowVal(row, ["Icon"]) || "Layers",
+                            sortOrder: parseInt(getRowVal(row, ["Sort Order"]) || "0"),
                             isActive: true
                         });
                         success++;

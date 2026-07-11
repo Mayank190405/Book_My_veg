@@ -117,10 +117,25 @@ export default function AdminInventory() {
         const file = e.target.files?.[0];
         if (!file) return;
 
+        // Helper to get row value case-insensitively and ignore non-alphanumeric layout symbols (spaces, BOM, underscores, hyphens)
+        const getRowVal = (row: any, targetKeys: string[]) => {
+            const keys = Object.keys(row);
+            for (const key of keys) {
+                const cleanKey = key.replace(/^\ufeff/, "").toLowerCase().replace(/[^a-z0-9]/g, "");
+                for (const targetKey of targetKeys) {
+                    const cleanTarget = targetKey.toLowerCase().replace(/[^a-z0-9]/g, "");
+                    if (cleanKey === cleanTarget) {
+                        return row[key];
+                    }
+                }
+            }
+            return undefined;
+        };
+
         Papa.parse(file, {
             header: true,
             skipEmptyLines: true,
-            transformHeader: (h) => h.trim(),
+            transformHeader: (h) => h.replace(/^\ufeff/, "").replace(/^\uFEFF/, "").trim(),
             complete: async (results) => {
                 setLoading(true);
                 
@@ -138,14 +153,15 @@ export default function AdminInventory() {
                     
                     for (const row of results.data as any[]) {
                         try {
-                            const rawPName = row["Product Name"] || row["product"] || row["name"];
-                            const rawVName = row["Variant Name"] || row["variant"] || row["Variant"];
-                            const rawRestock = row["Restock Qty"] || row["quantity"] || row["RestockQty"];
+                            const rawPName = getRowVal(row, ["Product Name", "product", "name"]);
+                            const rawVName = getRowVal(row, ["Variant Name", "variant"]);
+                            const rawRestock = getRowVal(row, ["Restock Qty", "quantity", "RestockQty", "qty"]);
 
                             if (!rawPName) continue;
 
                             const pName = rawPName.toString().trim();
-                            const vName = (rawVName || "Standard").toString().trim();
+                            const vNameTrimmed = (rawVName || "").toString().trim();
+                            const vName = vNameTrimmed === "" ? "standard" : vNameTrimmed;
                             const restockVal = parseInt(rawRestock?.toString() || "0");
                             
                             if (restockVal === 0) continue;
