@@ -18,7 +18,7 @@ const nextConfig = {
     return config;
   },
   async rewrites() {
-    const serverUrl = process.env.INTERNAL_SERVER_URL || "http://localhost:5001";
+    const serverUrl = process.env.INTERNAL_SERVER_URL || "http://localhost:5000";
     return [
       {
         source: "/api/:path*",
