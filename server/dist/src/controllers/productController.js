@@ -958,7 +958,7 @@ const uploadProductImage = (req, res) => __awaiter(void 0, void 0, void 0, funct
         const ext = path.extname(file.originalname).toLowerCase();
         // Generate random secure filename to prevent path traversal / collisions
         const randomName = `${crypto.randomUUID()}${ext}`;
-        const productsUploadDir = path.join(__dirname, "../../public/uploads/products");
+        const productsUploadDir = path.join(process.cwd(), "public/uploads/products");
         if (!fs_1.default.existsSync(productsUploadDir)) {
             fs_1.default.mkdirSync(productsUploadDir, { recursive: true });
         }

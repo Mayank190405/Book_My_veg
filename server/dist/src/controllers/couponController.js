@@ -42,17 +42,25 @@ exports.createCouponSchema = zod_1.z.object({
         allowedPincodes: zod_1.z.array(zod_1.z.string()).optional(),
         allowedPayment: zod_1.z.array(zod_1.z.string()).optional(),
         userSegments: zod_1.z.array(zod_1.z.string()).optional(),
+        targetedPhoneNumbers: zod_1.z.array(zod_1.z.string()).optional(),
     }),
 });
 const createCoupon = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         console.log("DEBUG: Processing Coupon with data:", JSON.stringify(req.body, null, 2));
-        const { code, discountType, discountValue, minOrderAmount, maxDiscount, expiresAt, usageLimit, type, description, rewardProductId, rewardVariantId, specialPrice, userUsageLimit, cartRulesJson, scheduleRulesJson, allowedLocations, allowedPincodes, allowedPayment, userSegments } = req.body;
+        const { code, discountType, discountValue, minOrderAmount, maxDiscount, expiresAt, usageLimit, type, description, rewardProductId, rewardVariantId, specialPrice, userUsageLimit, cartRulesJson, scheduleRulesJson, allowedLocations, allowedPincodes, allowedPayment, userSegments, targetedPhoneNumbers } = req.body;
         const existing = yield prisma_1.default.coupon.findUnique({ where: { code } });
         if (existing)
             return res.status(409).json({ message: "Coupon code already exists" });
         const expiresDate = expiresAt ? new Date(expiresAt) : null;
         const validExpiresAt = (expiresDate instanceof Date && !isNaN(expiresDate.getTime())) ? expiresDate : null;
+        let users = [];
+        if (targetedPhoneNumbers && Array.isArray(targetedPhoneNumbers) && targetedPhoneNumbers.length > 0) {
+            users = yield prisma_1.default.user.findMany({
+                where: { phone: { in: targetedPhoneNumbers.map((p) => p.trim()) } },
+                select: { id: true }
+            });
+        }
         const coupon = yield prisma_1.default.coupon.create({
             data: {
                 code,
@@ -73,8 +81,20 @@ const createCoupon = (req, res) => __awaiter(void 0, void 0, void 0, function* (
                 allowedLocations: allowedLocations || [],
                 allowedPincodes: allowedPincodes || [],
                 allowedPayment: allowedPayment || [],
-                userSegments: userSegments || ["ALL"]
+                userSegments: userSegments || ["ALL"],
+                targetedUsers: users.length > 0 ? {
+                    create: users.map(u => ({ userId: u.id }))
+                } : undefined
             },
+            include: {
+                targetedUsers: {
+                    include: {
+                        user: {
+                            select: { phone: true, name: true }
+                        }
+                    }
+                }
+            }
         });
         res.status(201).json(coupon);
     }
@@ -87,6 +107,15 @@ exports.createCoupon = createCoupon;
 const listCoupons = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const coupons = yield prisma_1.default.coupon.findMany({
+            include: {
+                targetedUsers: {
+                    include: {
+                        user: {
+                            select: { phone: true, name: true }
+                        }
+                    }
+                }
+            },
             orderBy: { createdAt: "desc" },
         });
         res.json(coupons);
@@ -161,9 +190,20 @@ exports.validateCoupon = validateCoupon;
 const updateCoupon = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const { id } = req.params;
     try {
-        const { code, discountType, discountValue, minOrderAmount, maxDiscount, expiresAt, usageLimit, isActive, type, description, rewardProductId, rewardVariantId, specialPrice, userUsageLimit, cartRulesJson, scheduleRulesJson, allowedLocations, allowedPincodes, allowedPayment, userSegments } = req.body;
+        const { code, discountType, discountValue, minOrderAmount, maxDiscount, expiresAt, usageLimit, isActive, type, description, rewardProductId, rewardVariantId, specialPrice, userUsageLimit, cartRulesJson, scheduleRulesJson, allowedLocations, allowedPincodes, allowedPayment, userSegments, targetedPhoneNumbers } = req.body;
         const expiresDate = expiresAt ? new Date(expiresAt) : null;
         const validExpiresAt = (expiresDate instanceof Date && !isNaN(expiresDate.getTime())) ? expiresDate : null;
+        let users = [];
+        let shouldUpdateTargets = false;
+        if (targetedPhoneNumbers && Array.isArray(targetedPhoneNumbers)) {
+            shouldUpdateTargets = true;
+            if (targetedPhoneNumbers.length > 0) {
+                users = yield prisma_1.default.user.findMany({
+                    where: { phone: { in: targetedPhoneNumbers.map((p) => p.trim()) } },
+                    select: { id: true }
+                });
+            }
+        }
         const coupon = yield prisma_1.default.coupon.update({
             where: { id: id },
             data: {
@@ -186,8 +226,21 @@ const updateCoupon = (req, res) => __awaiter(void 0, void 0, void 0, function* (
                 allowedLocations: allowedLocations !== undefined ? allowedLocations : undefined,
                 allowedPincodes: allowedPincodes !== undefined ? allowedPincodes : undefined,
                 allowedPayment: allowedPayment !== undefined ? allowedPayment : undefined,
-                userSegments: userSegments !== undefined ? userSegments : undefined
+                userSegments: userSegments !== undefined ? userSegments : undefined,
+                targetedUsers: shouldUpdateTargets ? {
+                    deleteMany: {},
+                    create: users.map(u => ({ userId: u.id }))
+                } : undefined
             },
+            include: {
+                targetedUsers: {
+                    include: {
+                        user: {
+                            select: { phone: true, name: true }
+                        }
+                    }
+                }
+            }
         });
         res.json(coupon);
     }

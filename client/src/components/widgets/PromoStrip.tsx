@@ -49,7 +49,7 @@ export default function PromoStrip() {
                             {promo1.title || "FREE DELIVERY"}
                         </span>
                         <span className="text-[9px] font-bold text-emerald-800/80 mt-0.5 leading-none">
-                            {promo1.subtitle || "On orders above ₹499"}
+                            {promo1.subtitle || "On orders above ₹249"}
                         </span>
                     </div>
                 </div>

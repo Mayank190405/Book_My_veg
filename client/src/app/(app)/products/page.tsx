@@ -115,45 +115,63 @@ export default function ProductsPage() {
     return (
         <div className="pb-32">
             {/* Sticky toolbar */}
-            <div className="sticky top-0 z-30 bg-white/60 backdrop-blur-xl border-b border-black/5 shadow-sm px-5 py-4 space-y-4">
-                <div className="flex items-center gap-3">
-                    <SearchInput
-                        value={search}
-                        onChange={setSearch}
-                        placeholder="Search our fresh collection…"
-                        className="flex-1 lg:max-w-md bg-white/40 border-black/5 rounded-2xl"
-                    />
+            <div className="sticky top-[4.75rem] z-30 bg-white border-b border-black/5 shadow-sm px-5 py-4 space-y-4">
+                <div className="flex flex-col gap-3">
+                    <div className="flex items-center gap-3 w-full">
+                        <SearchInput
+                            value={search}
+                            onChange={setSearch}
+                            placeholder="Search our fresh collection…"
+                            className="flex-1 lg:max-w-md bg-white border-black/5 rounded-2xl"
+                        />
 
-                    {/* Mobile Filter Button */}
-                    <button
-                        onClick={() => setDrawerOpen(true)}
-                        className={cn(
-                            "lg:hidden flex items-center gap-2 px-4 py-2.5 rounded-2xl border text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap shadow-sm",
-                            filterCount > 0
-                                ? "bg-emerald-600 text-white border-emerald-600 shadow-emerald-200/50"
-                                : "bg-white text-emerald-950/40 border-black/5 hover:border-emerald-300"
-                        )}
-                    >
-                        <SlidersHorizontal className="h-4 w-4" />
-                        {filterCount > 0 ? `Filters (${filterCount})` : "Filter"}
-                    </button>
+                        {/* Desktop View toggle */}
+                        <div className="hidden lg:flex items-center bg-emerald-500/5 rounded-2xl p-1 gap-1 border border-emerald-500/10">
+                            <button
+                                onClick={() => setView("grid")}
+                                className={cn("p-2 rounded-xl transition-all", view === "grid" ? "bg-white shadow-sm text-emerald-600" : "text-emerald-900/20")}
+                            >
+                                <LayoutGrid className="h-4 w-4" />
+                            </button>
+                            <button
+                                onClick={() => setView("list")}
+                                className={cn("p-2 rounded-xl transition-all", view === "list" ? "bg-white shadow-sm text-emerald-600" : "text-emerald-900/20")}
+                            >
+                                <List className="h-4 w-4" />
+                            </button>
+                        </div>
+                    </div>
 
-                    <div className="flex-1 hidden lg:block" />
-
-                    {/* View toggle */}
-                    <div className="flex items-center bg-emerald-500/5 rounded-2xl p-1 gap-1 border border-emerald-500/10">
+                    <div className="flex items-center justify-between gap-3 lg:hidden">
+                        {/* Mobile Filter Button */}
                         <button
-                            onClick={() => setView("grid")}
-                            className={cn("p-2 rounded-xl transition-all", view === "grid" ? "bg-white shadow-sm text-emerald-600" : "text-emerald-900/20")}
+                            onClick={() => setDrawerOpen(true)}
+                            className={cn(
+                                "flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl border text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap shadow-sm",
+                                filterCount > 0
+                                    ? "bg-emerald-600 text-white border-emerald-600 shadow-emerald-200/50"
+                                    : "bg-white text-emerald-950/40 border-black/5 hover:border-emerald-300"
+                            )}
                         >
-                            <LayoutGrid className="h-4 w-4" />
+                            <SlidersHorizontal className="h-4 w-4" />
+                            {filterCount > 0 ? `Filters (${filterCount})` : "Filter"}
                         </button>
-                        <button
-                            onClick={() => setView("list")}
-                            className={cn("p-2 rounded-xl transition-all", view === "list" ? "bg-white shadow-sm text-emerald-600" : "text-emerald-900/20")}
-                        >
-                            <List className="h-4 w-4" />
-                        </button>
+
+                        {/* Mobile View toggle */}
+                        <div className="flex items-center bg-emerald-500/5 rounded-2xl p-1 gap-1 border border-emerald-500/10">
+                            <button
+                                onClick={() => setView("grid")}
+                                className={cn("p-2 rounded-xl transition-all", view === "grid" ? "bg-white shadow-sm text-emerald-600" : "text-emerald-900/20")}
+                            >
+                                <LayoutGrid className="h-4 w-4" />
+                            </button>
+                            <button
+                                onClick={() => setView("list")}
+                                className={cn("p-2 rounded-xl transition-all", view === "list" ? "bg-white shadow-sm text-emerald-600" : "text-emerald-900/20")}
+                            >
+                                <List className="h-4 w-4" />
+                            </button>
+                        </div>
                     </div>
                 </div>
 
@@ -240,37 +258,47 @@ export default function ProductsPage() {
                                     weightUnit={product.weightUnit}
                                     inventory={product.inventory}
                                     pricing={product.pricing}
+                                    variants={product.variants}
                                 />
                             ))}
                         </div>
                     ) : (
                         <div className="space-y-4 animate-fade-in">
-                            {displayed.map((product: any) => (
-                                <Link
-                                    key={product.id}
-                                    href={`/products/${product.id}`}
-                                    className="group flex items-center gap-6 bg-white/40 backdrop-blur-md rounded-[2.5rem] p-4 border border-white shadow-sm hover:shadow-xl hover:bg-white/60 transition-all duration-500"
-                                >
-                                    <div className="relative w-24 h-24 rounded-[2rem] overflow-hidden bg-white/80 border border-black/5 shrink-0 shadow-sm group-hover:scale-105 transition-transform duration-700 p-2">
-                                        {product.images?.[0] ? (
-                                            <Image src={product.images[0]} alt={product.name} fill className="object-contain" />
-                                        ) : (
-                                            <div className="w-full h-full flex items-center justify-center text-emerald-900/10"><Package className="h-10 w-10" /></div>
-                                        )}
-                                    </div>
-                                    <div className="flex-1 min-w-0 space-y-1">
-                                        <h3 className="font-black text-emerald-950 text-base uppercase tracking-tight line-clamp-1">{product.name}</h3>
-                                        <p className="text-[10px] text-emerald-800/40 font-black uppercase tracking-widest">{product.weightUnit || "Standard Unit"}</p>
-                                        <div className="flex items-center gap-3 pt-1">
-                                            <p className="font-black text-emerald-900 text-xl tracking-tighter tabular-nums">₹{Number(product.basePrice).toFixed(0)}</p>
-                                            <span className="text-[8px] font-black text-emerald-600 bg-emerald-500/10 px-2 py-1 rounded-lg uppercase tracking-widest border border-emerald-500/10">Best Price</span>
+                            {displayed.map((product: any) => {
+                                const hasVariants = product.variants && product.variants.length > 0;
+                                const firstVariant = hasVariants ? product.variants[0] : null;
+                                const displayPrice = firstVariant ? Number(firstVariant.price) : Number(product.basePrice);
+                                const displayWeight = firstVariant 
+                                    ? `${firstVariant.weight} ${firstVariant.weightUnit}`
+                                    : (product.weight ? `${product.weight} ${product.weightUnit || ''}` : (product.weightUnit || "Standard Unit"));
+
+                                return (
+                                    <Link
+                                        key={product.id}
+                                        href={`/products/${product.id}`}
+                                        className="group flex items-center gap-6 bg-white/40 backdrop-blur-md rounded-[2.5rem] p-4 border border-white shadow-sm hover:shadow-xl hover:bg-white/60 transition-all duration-500"
+                                    >
+                                        <div className="relative w-24 h-24 rounded-[2rem] overflow-hidden bg-white/80 border border-black/5 shrink-0 shadow-sm group-hover:scale-105 transition-transform duration-700 p-2">
+                                            {product.images?.[0] ? (
+                                                <Image src={product.images[0]} alt={product.name} fill className="object-contain" />
+                                            ) : (
+                                                <div className="w-full h-full flex items-center justify-center text-emerald-900/10"><Package className="h-10 w-10" /></div>
+                                            )}
                                         </div>
-                                    </div>
-                                    <div className="p-3 rounded-2xl bg-white border border-black/5 shadow-sm text-emerald-900 group-hover:bg-emerald-600 group-hover:text-white transition-all mr-2">
-                                        <ChevronRight className="h-5 w-5" strokeWidth={3} />
-                                    </div>
-                                </Link>
-                            ))}
+                                        <div className="flex-1 min-w-0 space-y-1">
+                                            <h3 className="font-black text-emerald-950 text-base uppercase tracking-tight line-clamp-1">{product.name}</h3>
+                                            <p className="text-[10px] text-emerald-800/40 font-black uppercase tracking-widest">{displayWeight}</p>
+                                            <div className="flex items-center gap-3 pt-1">
+                                                <p className="font-black text-emerald-900 text-xl tracking-tighter tabular-nums">₹{displayPrice.toFixed(0)}</p>
+                                                <span className="text-[8px] font-black text-emerald-600 bg-emerald-500/10 px-2 py-1 rounded-lg uppercase tracking-widest border border-emerald-500/10">Best Price</span>
+                                            </div>
+                                        </div>
+                                        <div className="p-3 rounded-2xl bg-white border border-black/5 shadow-sm text-emerald-900 group-hover:bg-emerald-600 group-hover:text-white transition-all mr-2">
+                                            <ChevronRight className="h-5 w-5" strokeWidth={3} />
+                                        </div>
+                                    </Link>
+                                );
+                            })}
                         </div>
                     )}
 

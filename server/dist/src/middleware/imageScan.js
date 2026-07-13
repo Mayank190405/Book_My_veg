@@ -13,6 +13,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.scanImageUpload = void 0;
+exports.validateMagicBytes = validateMagicBytes;
+exports.scanForThreats = scanForThreats;
 const multer_1 = __importDefault(require("multer"));
 const path_1 = __importDefault(require("path"));
 const prisma_1 = __importDefault(require("../config/prisma"));

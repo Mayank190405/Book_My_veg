@@ -523,14 +523,14 @@ export default function ProductDetailPage() {
                                         <span className="text-lg">🎁</span>
                                         <div className="space-y-0.5">
                                             <p className="font-extrabold text-slate-800 uppercase tracking-wide text-[10px]">Free Shipping</p>
-                                            <p className="leading-relaxed">Enjoy zero delivery fees on all orders placed above ₹200.</p>
+                                            <p className="leading-relaxed">Enjoy zero delivery fees on all orders placed above ₹249.</p>
                                         </div>
                                     </div>
                                     <div className="flex items-start gap-3">
                                         <span className="text-lg">🔄</span>
                                         <div className="space-y-0.5">
-                                            <p className="font-extrabold text-slate-800 uppercase tracking-wide text-[10px]">NO REFUND POLICY</p>
-                                            <p className="leading-relaxed">Due to the perishable nature of fresh organic items, we do not accept returns or offer refunds once the order is delivered.</p>
+                                            <p className="font-extrabold text-slate-800 uppercase tracking-wide text-[10px]">EXCHANGE ONLY POLICY (WITHIN 12 HRS)</p>
+                                            <p className="leading-relaxed">Due to the perishable nature of fresh vegetables and fruits, all items are non-refundable. However, we offer a 12-hour exchange policy, no questions asked, if you receive any damaged or unsatisfactory produce.</p>
                                         </div>
                                     </div>
                                 </div>

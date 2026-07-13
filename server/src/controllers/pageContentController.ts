@@ -96,11 +96,11 @@ These Terms & Conditions shall be governed by and construed in accordance with t
 - **BUSINESS CONTACT NUMBER:** +91 77968 33633`
     },
     "refund-policy": {
-        title: "Refund & Shipping Policy",
-        content: `# Refund & Shipping Policy
+        title: "Exchange & Shipping Policy",
+        content: `# Exchange & Shipping Policy
 Last Updated: June 25, 2026
 
-At **Book My Veg**, we strive to deliver the freshest quality farm produce to your doorstep. This document outlines our Shipping, Delivery, Cancellation, and Refund policies.
+At **Book My Veg**, we strive to deliver the freshest quality farm produce to your doorstep. This document outlines our Shipping, Delivery, Cancellation, and Exchange policies.
 
 ### 1. Shipping & Delivery Policy
 Since we deal in fresh, perishable farm produce, our shipping model is optimized for quick commerce:
@@ -109,16 +109,15 @@ Since we deal in fresh, perishable farm produce, our shipping model is optimized
 - **Delivery Charges:** Shipping fees are calculated dynamically based on distance and order volume and are clearly listed at checkout before payment.
 - **Verification:** To ensure secure deliveries, delivery agents may request an OTP (sent to your registered WhatsApp number) at the time of handover.
 
-### 2. Cancellation & Return Policy
+### 2. Cancellation & Exchange Policy
 - **Cancellation:** You can cancel your order at any time before it is packed or dispatched from our hub. Once dispatched, cancellations cannot be processed.
-- **100% Quality Guarantee:** We offer a no-questions-asked refund policy for fresh vegetables. If you receive produce that is damaged, sub-standard, or incorrect, you can request a return.
-- **Time Limit:** Return requests must be initiated within **24 hours** of delivery through the returns section of the application or by contacting our support.
+- **12-Hour Exchange Guarantee:** Due to the perishable nature of fresh vegetables and fruits, all items are non-refundable. However, we offer a 12-hour exchange policy, no questions asked, if you receive any damaged or unsatisfactory produce.
+- **Time Limit:** Exchange requests must be initiated within **12 hours** of delivery through the returns section of the application or by contacting our support.
 
-### 3. Refund Processing Timelines
-Once a cancellation or return is verified and approved:
-- Refunds are immediately initiated back to the source payment method (Credit/Debit Card, Netbanking, UPI, or Wallet).
-- The refunded amount will reflect in your account within **2 to 3 business days**, depending on your bank's clearance process.
-- For Cash on Delivery (COD) orders, refunds are credited to your customer wallet or via UPI transfer.
+### 3. Exchange Process
+Once an exchange request is initiated and approved:
+- A delivery executive will be assigned to collect the damaged/unsatisfactory items and hand over the fresh exchange replacement.
+- Exchanges are processed within 2-4 hours of request approval, depending on product availability.
 
 ### Merchant Legal Registration
 - **LEGAL BUSINESS NAME:** Book My Veg
