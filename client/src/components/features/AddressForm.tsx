@@ -11,6 +11,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { reverseGeocode } from "@/services/geocoding";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { useUserStore } from "@/store/useUserStore";
 
 interface AddressFormProps {
     initialData?: Address;
@@ -26,11 +27,12 @@ export default function AddressForm({ initialData, onSuccess, onCancel }: Addres
     const [loading, setLoading] = useState(false);
     const [locating, setLocating] = useState(false);
     const queryClient = useQueryClient();
+    const { user } = useUserStore();
 
     const [formData, setFormData] = useState({
         type: initialData?.type || "HOME",
-        name: initialData?.name || "",
-        phone: initialData?.phone || "",
+        name: initialData?.name || (user?.name !== "Guest" ? user?.name : "") || "",
+        phone: initialData?.phone || user?.phone || "",
         fullAddress: initialData?.fullAddress || "",
         landmark: initialData?.landmark || "",
         city: initialData?.city || "",
@@ -40,6 +42,16 @@ export default function AddressForm({ initialData, onSuccess, onCancel }: Addres
         longitude: initialData?.longitude || null,
         isDefault: initialData?.isDefault || false,
     });
+
+    useEffect(() => {
+        if (user && !initialData) {
+            setFormData(prev => ({
+                ...prev,
+                name: prev.name || (user.name !== "Guest" ? user.name : "") || "",
+                phone: prev.phone || user.phone || ""
+            }));
+        }
+    }, [user, initialData]);
 
     // Leaflet map refs
     const mapRef = useRef<HTMLDivElement>(null);
