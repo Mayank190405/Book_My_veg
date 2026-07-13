@@ -233,7 +233,7 @@ export default function AppLayout({
             <main 
                 id="main-scroll-container"
                 className={cn(
-                    "flex-1 overflow-y-auto scrollbar-hide bg-gradient-app transition-all duration-300 overscroll-contain",
+                    "flex-1 overflow-y-auto overflow-x-hidden scrollbar-hide bg-gradient-app transition-all duration-300 overscroll-contain",
                     isChat
                         ? "pt-0 pb-0"
                         : isHeaderExcluded 

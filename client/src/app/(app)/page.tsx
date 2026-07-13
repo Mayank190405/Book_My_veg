@@ -78,7 +78,7 @@ export default function Home() {
 
 
     return (
-        <div className="relative pb-32 select-none">
+        <div className="relative pb-32 select-none overflow-x-hidden w-full">
             {/* Pull to refresh indicator */}
             <div 
                 className="flex items-center justify-center transition-all duration-300 overflow-hidden bg-emerald-500/5 text-emerald-800"
