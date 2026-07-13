@@ -50,11 +50,11 @@ export default function TrendingCategories() {
     if (isLoading) {
         return (
             <div className="space-y-4">
-                <div className="flex justify-between items-center px-5">
+                <div className="flex justify-between items-center">
                     <Skeleton className="w-32 h-6 bg-slate-100" />
                     <Skeleton className="w-16 h-8 bg-slate-100 rounded-full" />
                 </div>
-                <div className="flex gap-4 overflow-hidden px-5">
+                <div className="flex gap-4 overflow-hidden">
                     {[...Array(3)].map((_, i) => (
                         <Skeleton key={i} className="w-[140px] h-[190px] rounded-3xl flex-none bg-slate-100" />
                     ))}
@@ -74,7 +74,7 @@ export default function TrendingCategories() {
     return (
         <div className="space-y-4 select-none">
             {/* Header section with Flame icon and SEE ALL button */}
-            <div className="flex items-center justify-between px-5">
+            <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                     <Flame className="h-5 w-5 text-orange-500 fill-orange-500" />
                     <h2 className="text-[17px] font-black text-[#1c2e24] tracking-wider uppercase">TRENDING NOW</h2>
@@ -88,7 +88,7 @@ export default function TrendingCategories() {
             </div>
 
             {/* Scrolling grid list of cards */}
-            <div className="flex overflow-x-auto gap-4 pb-4 -mx-5 px-5 scrollbar-hide snap-x">
+            <div className="flex overflow-x-auto gap-4 pb-4 scrollbar-hide snap-x">
                 {items.map((category: any, idx: number) => {
                     const slug = category.slug || "";
                     const meta = categoryPromoMeta[slug] || { bgColor: "bg-slate-100", borderColor: "border-slate-200/30" };

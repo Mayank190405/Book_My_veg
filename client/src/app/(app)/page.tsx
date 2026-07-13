@@ -97,10 +97,10 @@ export default function Home() {
 
             <div className="space-y-6">
                 <BannerCarousel />
-                <CategoryCircles />
-                <TrendingCategories />
                 
                 <div className="px-5 space-y-8">
+                    <CategoryCircles />
+                    <TrendingCategories />
                     <TrendingSection />
                     <PromoStrip />
                     <BuyAgain />

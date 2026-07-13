@@ -47,7 +47,7 @@ export default function BuyAgain() {
 
     return (
         <div className="space-y-5">
-            <div className="flex items-center justify-between px-1">
+            <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                     <div className="bg-emerald-500/10 p-2 rounded-xl">
                         <RefreshCw className="h-4 w-4 text-emerald-500" />
@@ -64,7 +64,7 @@ export default function BuyAgain() {
                 </Button>
             </div>
 
-            <div className="flex overflow-x-auto gap-4 pb-4 -mx-5 px-5 scrollbar-hide snap-x relative z-10">
+            <div className="flex overflow-x-auto gap-4 pb-4 scrollbar-hide snap-x relative z-10">
                 {products.map((product: any, idx: number) => (
                     <div
                         key={product.id}

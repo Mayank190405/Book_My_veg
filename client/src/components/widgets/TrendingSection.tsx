@@ -36,7 +36,7 @@ export default function TrendingSection() {
     return (
         <div className="space-y-4 select-none">
             {/* Header section with Location Pin icon and SEE ALL button */}
-            <div className="flex items-center justify-between px-5">
+            <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                     <MapPin className="h-5 w-5 text-[#0b5c3e] fill-emerald-600/20" />
                     <h2 className="text-[17px] font-black text-[#1c2e24] tracking-wider uppercase">TRENDING NEAR YOU</h2>
@@ -49,7 +49,7 @@ export default function TrendingSection() {
                 </Link>
             </div>
 
-            <div className="flex overflow-x-auto gap-4 pb-4 -mx-5 px-5 scrollbar-hide snap-x">
+            <div className="flex overflow-x-auto gap-4 pb-4 scrollbar-hide snap-x">
                 {products.slice(0, 25).map((product: any, idx: number) => (
                     <div
                         key={product.id}

@@ -56,7 +56,7 @@ export default function AllProductsSection() {
 
     return (
         <div className="space-y-8">
-            <div className="px-1">
+            <div>
                 <h2 className="text-xl font-black text-foreground tracking-tight uppercase tracking-widest leading-none mb-2">All Products 📦</h2>
                 <p className="text-[10px] font-bold text-foreground/40 uppercase tracking-widest">Freshly picked from our entire catalog</p>
             </div>
