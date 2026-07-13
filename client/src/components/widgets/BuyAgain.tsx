@@ -64,7 +64,7 @@ export default function BuyAgain() {
                 </Button>
             </div>
 
-            <div className="flex overflow-x-auto gap-4 pb-4 -mx-5 px-5 scrollbar-none snap-x relative z-10">
+            <div className="flex overflow-x-auto gap-4 pb-4 -mx-5 px-5 scrollbar-hide snap-x relative z-10">
                 {products.map((product: any, idx: number) => (
                     <div
                         key={product.id}

@@ -88,7 +88,7 @@ export default function TrendingCategories() {
             </div>
 
             {/* Scrolling grid list of cards */}
-            <div className="flex overflow-x-auto gap-4 pb-4 -mx-5 px-5 scrollbar-none snap-x">
+            <div className="flex overflow-x-auto gap-4 pb-4 -mx-5 px-5 scrollbar-hide snap-x">
                 {items.map((category: any, idx: number) => {
                     const slug = category.slug || "";
                     const meta = categoryPromoMeta[slug] || { bgColor: "bg-slate-100", borderColor: "border-slate-200/30" };

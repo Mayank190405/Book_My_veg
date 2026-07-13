@@ -32,7 +32,7 @@ export default function CategoryCircles() {
 
     if (isLoading) {
         return (
-            <div className="flex gap-5 overflow-x-auto py-2 scrollbar-none px-5">
+            <div className="flex gap-5 overflow-x-auto py-2 scrollbar-hide px-5">
                 {[...Array(6)].map((_, i) => (
                     <div key={i} className="flex flex-col items-center gap-2 flex-none">
                         <Skeleton className="w-[72px] h-[72px] rounded-2xl bg-slate-100" />
@@ -51,7 +51,7 @@ export default function CategoryCircles() {
 
     return (
         <div className="w-full py-4 select-none">
-            <div className="flex overflow-x-auto gap-5 px-5 pb-2 scrollbar-none snap-x">
+            <div className="flex overflow-x-auto gap-5 px-5 pb-2 scrollbar-hide snap-x">
                 {displayedItems.map((category: any, idx: number) => {
                     const slug = category.slug || "";
                     const style = categoryCircleMeta[slug] || pastelStyles[idx % pastelStyles.length];

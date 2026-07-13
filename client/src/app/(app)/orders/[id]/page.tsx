@@ -301,7 +301,7 @@ function OrderDetailsContent() {
                 <div className="bg-white/80 backdrop-blur-md rounded-[2.5rem] border border-white/50 shadow-[0_12px_40px_rgba(0,0,0,0.02)] overflow-hidden flex flex-col p-6 space-y-6">
                     
                     {/* Horizontal Progress Timeline at top of card */}
-                    <div className="w-full overflow-x-auto pb-2 scrollbar-none">
+                    <div className="w-full overflow-x-auto pb-2 scrollbar-hide">
                         <div className="min-w-[480px] relative pt-2 px-2">
                             {/* Connector Lines */}
                             <div className="absolute top-7 left-8 right-8 h-1.5 bg-slate-100/80 -z-0 rounded-full" />

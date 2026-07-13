@@ -49,7 +49,7 @@ export default function TrendingSection() {
                 </Link>
             </div>
 
-            <div className="flex overflow-x-auto gap-4 pb-4 -mx-5 px-5 scrollbar-none snap-x">
+            <div className="flex overflow-x-auto gap-4 pb-4 -mx-5 px-5 scrollbar-hide snap-x">
                 {products.slice(0, 25).map((product: any, idx: number) => (
                     <div
                         key={product.id}
