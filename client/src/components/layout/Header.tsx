@@ -58,18 +58,18 @@ export default function Header() {
     return (
         <header
             className={cn(
-                "fixed top-0 left-0 right-0 z-50 transition-all duration-500 px-6 flex flex-col justify-center",
+                "fixed top-0 left-0 right-0 z-50 transition-all duration-300 px-6 flex flex-col justify-center",
                 (scrolled && isHome)
                     ? "bg-white/95 backdrop-blur-3xl border-b border-slate-200/50 shadow-md pt-3 pb-3 gap-0"
                     : isHome
-                        ? "bg-white/40 backdrop-blur-md pt-6 pb-6 gap-3 border-b border-slate-100/50"
+                        ? "bg-white/95 backdrop-blur-md pt-6 pb-6 gap-3 border-b border-slate-150/50 shadow-sm"
                         : "bg-white/95 border-b border-slate-150/50 shadow-sm pt-4 pb-4 gap-0"
             )}
         >
             {/* Top Bar Wrapper */}
             <div className={cn(
-                "flex justify-between items-center transition-all duration-500 transform-gpu overflow-hidden",
-                (scrolled && isHome) ? "h-0 opacity-0 scale-95 pointer-events-none mb-0" : "h-auto opacity-100 scale-100 mb-1"
+                "flex justify-between items-center transition-all duration-300 ease-in-out overflow-hidden",
+                (scrolled && isHome) ? "h-0 opacity-0 pointer-events-none mb-0" : "h-11 opacity-100 mb-1"
             )}>
                 <LocationSelector isCompact={false} />
 
@@ -103,7 +103,7 @@ export default function Header() {
             {/* Search Bar - Full-width focused mode when scrolled or shown by default */}
             {!["/cart", "/account", "/orders"].includes(pathname) && (
                 <div className={cn(
-                    "flex items-center transition-all duration-500 transform-gpu",
+                    "flex items-center transition-all duration-300 ease-in-out",
                     ((scrolled && isHome) || showSearchByDefault)
                         ? "opacity-100 scale-100 h-14"
                         : "h-0 opacity-0 pointer-events-none scale-90 overflow-hidden"

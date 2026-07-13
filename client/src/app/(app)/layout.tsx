@@ -56,105 +56,137 @@ export default function AppLayout({
     }, [user, _hasHydrated, router]);
 
     useEffect(() => {
-        if (_hasHydrated && !location) {
-            if ("geolocation" in navigator) {
-                navigator.geolocation.getCurrentPosition(
-                    async (position) => {
-                        const { latitude, longitude } = position.coords;
-                        try {
-                            // 1. Resolve localized address context
-                            const geoResult = await getReverseGeocode(latitude, longitude);
+        if (!_hasHydrated) return;
 
-                            // 2. Fetch all stores
-                            const apiUrl = getBaseURL();
-                            const storesRes = await (await fetch(`${apiUrl}/locations`)).json();
+        const initializeStoreAndLocation = async () => {
+            try {
+                const apiUrl = getBaseURL();
+                // 1. Fetch available store locations
+                const storesRes = await (await fetch(`${apiUrl}/locations`)).json();
+                if (!storesRes || storesRes.length === 0) return;
 
-                            // 3. Filter stores to only those whose deliveryRadius covers the customer
-                            const eligible = (storesRes || [])
-                                .filter((s: any) => s.latitude && s.longitude)
-                                .map((s: any) => ({
-                                    ...s,
-                                    dist: calculateDistance(latitude, longitude, s.latitude, s.longitude)
-                                }))
-                                .filter((s: any) => !s.deliveryRadius || s.dist <= s.deliveryRadius)
-                                .sort((a: any, b: any) => a.dist - b.dist);
+                const defaultStore = storesRes[0];
 
-                            if (eligible.length === 0) {
-                                // Customer is outside ALL store delivery radii
-                                setServiceArea('out-of-range');
-                                setActiveStore(null);
-                                toast.error("We don't deliver to your area yet.");
-                            } else {
-                                // 4. Always pick nearest eligible store as active
-                                const nearest = eligible[0];
-                                setActiveStore({ id: nearest.id, slug: nearest.slug, name: nearest.name });
-                                setServiceArea('in-range');
+                const selectStore = (store: any, lat: number, lng: number, address: string, pincode: string) => {
+                    setActiveStore({ id: store.id, slug: store.slug, name: store.name });
+                    setServiceArea('in-range');
+                    setLocation({
+                        address: address || store.name,
+                        pincode: pincode || store.pincode || "422002",
+                        coords: { lat, lng }
+                    });
+                };
 
-                                // 5. Check if nearest store has stock
-                                try {
-                                    const stockRes = await fetch(`${apiUrl}/products?locationId=${nearest.id}&limit=5`);
-                                    const stockData = await stockRes.json();
-                                    const nearestHasStock = stockData.data?.some(
-                                        (p: any) => p.inventory?.some((inv: any) => Number(inv.currentStock) > 0)
-                                    );
+                // Case A: If location coordinates exist but activeStore is missing, find closest store from existing coords
+                if (location && location.coords && !activeStore) {
+                    const { lat, lng } = location.coords;
+                    const eligible = (storesRes || [])
+                        .filter((s: any) => s.latitude && s.longitude)
+                        .map((s: any) => ({
+                            ...s,
+                            dist: calculateDistance(lat, lng, Number(s.latitude), Number(s.longitude))
+                        }))
+                        .filter((s: any) => !s.deliveryRadius || s.dist <= s.deliveryRadius)
+                        .sort((a: any, b: any) => a.dist - b.dist);
 
-                                    if (!nearestHasStock && eligible.length > 1) {
-                                        // 6. Search remaining eligible stores for one with stock
-                                        setNearbyStoreWithStock(null);
-                                        for (const store of eligible.slice(1)) {
-                                            const res = await fetch(`${apiUrl}/products?locationId=${store.id}&limit=5`);
-                                            const data = await res.json();
-                                            const hasStock = data.data?.some(
-                                                (p: any) => p.inventory?.some((inv: any) => Number(inv.currentStock) > 0)
-                                            );
-                                            if (hasStock) {
-                                                setNearbyStoreWithStock({ id: store.id, slug: store.slug, name: store.name });
-                                                break;
-                                            }
-                                        }
-                                    } else {
-                                        setNearbyStoreWithStock(null);
-                                    }
-                                } catch {
-                                    // Stock check failed silently — don't block store selection
-                                }
-
-                                toast.success(`Delivering via ${nearest.name}!`);
-                            }
-
-                            if (geoResult) {
-                                const context = (geoResult as any).context || [];
-                                const serverArea = context.find((c: any) => c.id === "area")?.text;
-                                const serverPincode = context.find((c: any) => c.id === "pincode")?.text;
-
-                                const parts = geoResult.place_name.split(",");
-                                const area = serverArea || parts[0].trim();
-                                const pincodeMatch = geoResult.place_name.match(/\b\d{6}\b/);
-                                const foundPincode = serverPincode || (pincodeMatch ? pincodeMatch[0] : "");
-
-                                setLocation({
-                                    address: area,
-                                    pincode: foundPincode,
-                                    coords: { lat: latitude, lng: longitude },
-                                });
-                            } else {
-                                setLocation({
-                                    address: "Detected Location",
-                                    pincode: "",
-                                    coords: { lat: latitude, lng: longitude },
-                                });
-                            }
-                        } catch (error) {
-                            console.error("Auto location detection failed:", error);
-                        }
-                    },
-                    (error) => {
-                        console.log("Geolocation prompt dismissed or blocked:", error);
+                    if (eligible.length > 0) {
+                        selectStore(eligible[0], lat, lng, location.address, location.pincode);
+                    } else {
+                        selectStore(defaultStore, Number(defaultStore.latitude) || 19.9922, Number(defaultStore.longitude) || 73.7753, location.address, location.pincode);
                     }
-                );
+                    return;
+                }
+
+                // Case B: No activeStore and no location, or force auto connect on first visit
+                if (!activeStore || !location) {
+                    // Instantly fall back to default store so page content renders immediately
+                    selectStore(defaultStore, Number(defaultStore.latitude) || 19.9922, Number(defaultStore.longitude) || 73.7753, defaultStore.name, defaultStore.pincode);
+
+                    // Then silently request precise GPS to refine if allowed
+                    if ("geolocation" in navigator) {
+                        navigator.geolocation.getCurrentPosition(
+                            async (position) => {
+                                const { latitude, longitude } = position.coords;
+                                try {
+                                    const geoResult = await getReverseGeocode(latitude, longitude);
+                                    const eligible = (storesRes || [])
+                                        .filter((s: any) => s.latitude && s.longitude)
+                                        .map((s: any) => ({
+                                            ...s,
+                                            dist: calculateDistance(latitude, longitude, Number(s.latitude), Number(s.longitude))
+                                        }))
+                                        .filter((s: any) => !s.deliveryRadius || s.dist <= s.deliveryRadius)
+                                        .sort((a: any, b: any) => a.dist - b.dist);
+
+                                    if (eligible.length > 0) {
+                                        const nearest = eligible[0];
+                                        let area = nearest.name;
+                                        let pin = nearest.pincode || "422002";
+                                        if (geoResult) {
+                                            const context = (geoResult as any).context || [];
+                                            const serverArea = context.find((c: any) => c.id === "area")?.text;
+                                            const serverPincode = context.find((c: any) => c.id === "pincode")?.text;
+                                            const parts = geoResult.place_name.split(",");
+                                            area = serverArea || parts[0].trim();
+                                            pin = serverPincode || (geoResult.place_name.match(/\b\d{6}\b/)?.[0] || "");
+                                        }
+                                        selectStore(nearest, latitude, longitude, area, pin);
+                                        toast.success(`Delivering via ${nearest.name}`);
+                                    }
+                                } catch (err) {
+                                    console.error("Auto-geolocation refinement failed:", err);
+                                }
+                            },
+                            (error) => {
+                                console.log("Geolocation prompt dismissed, using default Nashik store:", error);
+                            },
+                            { timeout: 5000 }
+                        );
+                    }
+                }
+            } catch (err) {
+                console.error("Auto connect store error:", err);
             }
+        };
+
+        initializeStoreAndLocation();
+    }, [_hasHydrated, location, activeStore]);
+
+    // Browser session-based scroll restoration for the custom main scroll container
+    useEffect(() => {
+        const container = document.getElementById("main-scroll-container");
+        if (!container) return;
+
+        const savedPos = sessionStorage.getItem(`scroll-pos-${pathname}`);
+        if (savedPos) {
+            const targetPos = parseInt(savedPos, 10);
+            const timer1 = setTimeout(() => {
+                container.scrollTop = targetPos;
+            }, 80);
+            const timer2 = setTimeout(() => {
+                container.scrollTop = targetPos;
+            }, 300);
+
+            return () => {
+                clearTimeout(timer1);
+                clearTimeout(timer2);
+            };
+        } else {
+            container.scrollTop = 0;
         }
-    }, [_hasHydrated, setLocation, setActiveStore, setServiceArea, setNearbyStoreWithStock]);
+    }, [pathname]);
+
+    useEffect(() => {
+        const container = document.getElementById("main-scroll-container");
+        if (!container) return;
+
+        const handleScroll = () => {
+            sessionStorage.setItem(`scroll-pos-${pathname}`, container.scrollTop.toString());
+        };
+
+        container.addEventListener("scroll", handleScroll, { passive: true });
+        return () => container.removeEventListener("scroll", handleScroll);
+    }, [pathname]);
 
 
     const isChat = pathname === "/chat";
