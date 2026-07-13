@@ -232,22 +232,25 @@ export default function AppLayout({
             <WelcomeFlow />
             <main 
                 id="main-scroll-container"
-                className={cn(
-                    "flex-1 overflow-y-auto overflow-x-hidden scrollbar-hide bg-gradient-app transition-all duration-300 overscroll-contain",
-                    isChat
-                        ? "pt-0 pb-0"
-                        : isHeaderExcluded 
-                            ? "pt-0" 
-                            : pathname === "/" 
-                                ? "pt-[11.2rem]" 
-                                : pathname === "/orders"
-                                    ? "pt-[5.5rem]"
-                                    : "pt-[8rem]",
-                    !isChat && totalItems > 0 && !isHeaderExcluded ? "pb-60" : !isChat ? "pb-32" : "",
-                    !isChat && isHeaderExcluded && "pb-0"
-                )}
+                className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-hide bg-gradient-app transition-all duration-300 overscroll-contain"
             >
-                <div key={pathname} className="animate-page-transition w-full min-h-full flex flex-col">
+                <div 
+                    key={pathname} 
+                    className={cn(
+                        "animate-page-transition w-full min-h-full flex flex-col",
+                        isChat
+                            ? "pt-0 pb-0"
+                            : isHeaderExcluded 
+                                ? "pt-0" 
+                                : pathname === "/" 
+                                    ? "pt-[11.2rem]" 
+                                    : pathname === "/orders"
+                                        ? "pt-[5.5rem]"
+                                        : "pt-[8rem]",
+                        !isChat && totalItems > 0 && !isHeaderExcluded ? "pb-60" : !isChat ? "pb-32" : "",
+                        !isChat && isHeaderExcluded && "pb-0"
+                    )}
+                >
                     {children}
                 </div>
             </main>
