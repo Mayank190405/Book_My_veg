@@ -160,17 +160,22 @@ export default function AppLayout({
         const savedPos = sessionStorage.getItem(`scroll-pos-${pathname}`);
         if (savedPos) {
             const targetPos = parseInt(savedPos, 10);
-            const timer1 = setTimeout(() => {
-                container.scrollTop = targetPos;
-            }, 80);
-            const timer2 = setTimeout(() => {
-                container.scrollTop = targetPos;
-            }, 300);
+            if (targetPos > 0) {
+                let attempts = 0;
+                const intervalId = setInterval(() => {
+                    if (container) {
+                        container.scrollTop = targetPos;
+                        attempts++;
+                        
+                        // Stop trying after 20 attempts (2 seconds) or if we successfully reached the target
+                        if (attempts >= 20 || Math.abs(container.scrollTop - targetPos) < 5) {
+                            clearInterval(intervalId);
+                        }
+                    }
+                }, 100);
 
-            return () => {
-                clearTimeout(timer1);
-                clearTimeout(timer2);
-            };
+                return () => clearInterval(intervalId);
+            }
         } else {
             container.scrollTop = 0;
         }
