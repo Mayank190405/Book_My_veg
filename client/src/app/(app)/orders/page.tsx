@@ -310,7 +310,7 @@ function OrdersContent() {
             </div>
 
             {/* Flat Category Tabs matching Mockup */}
-            <div className="bg-[#f8faf9] sticky top-[4.5rem] z-40 py-3">
+            <div className="bg-[#f8faf9] sticky top-[4.75rem] z-40 py-3">
                 <div className="max-w-2xl mx-auto px-6 flex overflow-x-auto gap-3.5 scrollbar-hide">
                     {[
                         { key: "ALL", label: "All Orders" },
