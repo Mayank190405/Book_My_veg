@@ -29,15 +29,27 @@ export default function Header() {
     const unreadCount = notifications ? notifications.filter(n => !n.isRead).length : 0;
 
     useEffect(() => {
-        const scrollContainer = document.getElementById("main-scroll-container");
-        if (!scrollContainer) return;
+        let scrollContainer: HTMLElement | null = null;
+        let handleScroll: (() => void) | null = null;
 
-        const handleScroll = () => {
-            setScrolled(scrollContainer.scrollTop > 40);
+        const timer = setTimeout(() => {
+            scrollContainer = document.getElementById("main-scroll-container");
+            if (!scrollContainer) return;
+
+            handleScroll = () => {
+                setScrolled(scrollContainer!.scrollTop > 40);
+            };
+
+            scrollContainer.addEventListener("scroll", handleScroll, { passive: true });
+            handleScroll();
+        }, 100);
+
+        return () => {
+            clearTimeout(timer);
+            if (scrollContainer && handleScroll) {
+                scrollContainer.removeEventListener("scroll", handleScroll);
+            }
         };
-
-        scrollContainer.addEventListener("scroll", handleScroll, { passive: true });
-        return () => scrollContainer.removeEventListener("scroll", handleScroll);
     }, [pathname]);
 
     // Hide on specific pages where we have custom headers
@@ -60,10 +72,10 @@ export default function Header() {
             className={cn(
                 "fixed top-0 left-0 right-0 z-50 transition-all duration-300 px-6 flex flex-col justify-center",
                 (scrolled && isHome)
-                    ? "bg-white/95 backdrop-blur-3xl border-b border-slate-200/50 shadow-md pt-3 pb-3 gap-0"
+                    ? "bg-white border-b border-slate-200/50 shadow-md pt-3 pb-3 gap-0"
                     : isHome
-                        ? "bg-white/95 backdrop-blur-md pt-6 pb-6 gap-3 border-b border-slate-150/50 shadow-sm"
-                        : "bg-white/95 border-b border-slate-150/50 shadow-sm pt-4 pb-4 gap-0"
+                        ? "bg-white pt-6 pb-6 gap-3 border-b border-slate-150/50 shadow-sm"
+                        : "bg-white border-b border-slate-150/50 shadow-sm pt-4 pb-4 gap-0"
             )}
         >
             {/* Top Bar Wrapper */}
