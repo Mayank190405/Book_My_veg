@@ -10,8 +10,8 @@ const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 const outfit = Outfit({ subsets: ["latin"], variable: "--font-outfit" });
 
 export const metadata: Metadata = {
-  title: "BMV - Best Market Value",
-  description: "Your favorite local market, online.",
+  title: "Book My Veg - get fresh vegetables and fruits online in minutes",
+  description: "Order fresh vegetables and fruits online and get them delivered to your doorstep in minutes. Experience premium organic farm produce at Best Market Value.",
 };
 
 export default function RootLayout({
