@@ -26,7 +26,7 @@ export default function AppLayout({
     const { totalItems, syncWithBackend } = useCartStore();
     const pathname = usePathname();
     const router = useRouter();
-    const { user, _hasHydrated, location, setLocation, setActiveStore, setServiceArea, serviceArea, nearbyStoreWithStock, setNearbyStoreWithStock } = useUserStore();
+    const { user, _hasHydrated, location, setLocation, activeStore, setActiveStore, setServiceArea, serviceArea, nearbyStoreWithStock, setNearbyStoreWithStock } = useUserStore();
 
     useEffect(() => {
         if (_hasHydrated && user) {
