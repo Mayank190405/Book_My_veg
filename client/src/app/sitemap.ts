@@ -18,34 +18,38 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     let categoryUrls: MetadataRoute.Sitemap = [];
     try {
         const res = await fetch(`${API_URL}/categories`, { next: { revalidate: 3600 } });
-        const categories = await res.json();
-        if (Array.isArray(categories)) {
-            categoryUrls = categories.map((cat: any) => ({
-                url: `${BASE_URL}/category/${cat.id}`,
-                lastModified: new Date(cat.updatedAt || cat.createdAt || Date.now()),
-                changeFrequency: 'weekly' as const,
-                priority: 0.8,
-            }));
+        if (res.ok) {
+            const categories = await res.json();
+            if (Array.isArray(categories)) {
+                categoryUrls = categories.map((cat: any) => ({
+                    url: `${BASE_URL}/category/${cat.id}`,
+                    lastModified: new Date(cat.updatedAt || cat.createdAt || Date.now()),
+                    changeFrequency: 'weekly' as const,
+                    priority: 0.8,
+                }));
+            }
         }
     } catch (err) {
-        console.error('Failed to fetch categories for sitemap:', err);
+        console.warn('Skipping category sitemap generation during static build:', err instanceof Error ? err.message : err);
     }
 
     let productUrls: MetadataRoute.Sitemap = [];
     try {
         const res = await fetch(`${API_URL}/products?limit=500`, { next: { revalidate: 3600 } });
-        const data = await res.json();
-        const products = data.data || [];
-        if (Array.isArray(products)) {
-            productUrls = products.map((prod: any) => ({
-                url: `${BASE_URL}/products/${prod.id}`,
-                lastModified: new Date(prod.updatedAt || prod.createdAt || Date.now()),
-                changeFrequency: 'daily' as const,
-                priority: 0.8,
-            }));
+        if (res.ok) {
+            const data = await res.json();
+            const products = data?.data || [];
+            if (Array.isArray(products)) {
+                productUrls = products.map((prod: any) => ({
+                    url: `${BASE_URL}/products/${prod.id}`,
+                    lastModified: new Date(prod.updatedAt || prod.createdAt || Date.now()),
+                    changeFrequency: 'daily' as const,
+                    priority: 0.8,
+                }));
+            }
         }
     } catch (err) {
-        console.error('Failed to fetch products for sitemap:', err);
+        console.warn('Skipping product sitemap generation during static build:', err instanceof Error ? err.message : err);
     }
 
     return [...staticUrls, ...categoryUrls, ...productUrls];
