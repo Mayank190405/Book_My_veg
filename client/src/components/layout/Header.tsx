@@ -81,7 +81,7 @@ export default function Header() {
             {/* Top Bar Wrapper */}
             <div className={cn(
                 "flex justify-between items-center transition-all duration-300 ease-in-out overflow-hidden",
-                (scrolled && isHome) ? "h-0 opacity-0 pointer-events-none mb-0" : "h-11 opacity-100 mb-1"
+                (scrolled && isHome) ? "h-0 opacity-0 pointer-events-none mb-0" : "h-14 opacity-100 mb-1"
             )}>
                 <LocationSelector isCompact={false} />
 

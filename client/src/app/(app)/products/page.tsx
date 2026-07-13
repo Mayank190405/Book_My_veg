@@ -115,7 +115,7 @@ export default function ProductsPage() {
     return (
         <div className="pb-32">
             {/* Sticky toolbar */}
-            <div className="sticky top-[4.75rem] z-30 bg-white border-b border-black/5 shadow-sm px-5 py-4 space-y-4">
+            <div className="sticky top-[5.5rem] z-30 bg-white border-b border-black/5 shadow-sm px-5 py-4 space-y-4">
                 <div className="flex flex-col gap-3">
                     <div className="flex items-center gap-3 w-full">
                         <SearchInput
