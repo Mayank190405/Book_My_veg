@@ -169,3 +169,49 @@ export const deleteLocation = async (req: Request, res: Response) => {
         res.status(500).json({ error: error.message });
     }
 };
+
+export const getSeoSitemapData = async (_req: Request, res: Response) => {
+    try {
+        const locations = await prisma.location.findMany({
+            select: { id: true, slug: true, name: true, address: true }
+        });
+
+        const categories = await prisma.category.findMany({
+            select: { id: true, slug: true, name: true }
+        });
+
+        const products = await prisma.product.findMany({
+            select: { id: true, name: true, createdAt: true, updatedAt: true }
+        });
+
+        const popular = await prisma.searchHistory.groupBy({
+            by: ["query"],
+            _sum: { count: true },
+            orderBy: { _sum: { count: "desc" } },
+            take: 30,
+        });
+        let popularSearches = popular.map(p => p.query);
+        if (popularSearches.length === 0) {
+            popularSearches = ["Organic Potato", "Fresh Onion", "Alphonso Mango", "Mint Leaves", "Green Chili", "Desi Ghee"];
+        }
+
+        const addresses = await prisma.address.findMany({
+            select: { city: true, pincode: true, fullAddress: true }
+        });
+
+        // Filter and get distinct pincodes and cities
+        const uniqueCities = Array.from(new Set(addresses.map(a => a.city).filter(Boolean)));
+        const uniquePincodes = Array.from(new Set(addresses.map(a => a.pincode).filter(Boolean)));
+
+        res.status(200).json({
+            locations,
+            categories,
+            products,
+            popularSearches,
+            uniqueCities,
+            uniquePincodes
+        });
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+};

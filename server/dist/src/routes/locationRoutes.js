@@ -4,6 +4,7 @@ const express_1 = require("express");
 const locationController_1 = require("../controllers/locationController");
 const router = (0, express_1.Router)();
 router.get("/", locationController_1.getLocations);
+router.get("/seo-data", locationController_1.getSeoSitemapData);
 router.get("/:id", locationController_1.getLocationById);
 router.get("/slug/:slug", locationController_1.getLocationBySlug);
 router.post("/", locationController_1.createLocation);

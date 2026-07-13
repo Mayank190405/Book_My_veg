@@ -23,7 +23,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deleteLocation = exports.updateLocation = exports.createLocation = exports.getLocationBySlug = exports.getLocations = exports.getLocationById = void 0;
+exports.getSeoSitemapData = exports.deleteLocation = exports.updateLocation = exports.createLocation = exports.getLocationBySlug = exports.getLocations = exports.getLocationById = void 0;
 const prisma_1 = __importDefault(require("../config/prisma"));
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const getLocationById = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
@@ -184,3 +184,44 @@ const deleteLocation = (req, res) => __awaiter(void 0, void 0, void 0, function*
     }
 });
 exports.deleteLocation = deleteLocation;
+const getSeoSitemapData = (_req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const locations = yield prisma_1.default.location.findMany({
+            select: { id: true, slug: true, name: true, address: true }
+        });
+        const categories = yield prisma_1.default.category.findMany({
+            select: { id: true, slug: true, name: true }
+        });
+        const products = yield prisma_1.default.product.findMany({
+            select: { id: true, name: true, createdAt: true, updatedAt: true }
+        });
+        const popular = yield prisma_1.default.searchHistory.groupBy({
+            by: ["query"],
+            _sum: { count: true },
+            orderBy: { _sum: { count: "desc" } },
+            take: 30,
+        });
+        let popularSearches = popular.map(p => p.query);
+        if (popularSearches.length === 0) {
+            popularSearches = ["Organic Potato", "Fresh Onion", "Alphonso Mango", "Mint Leaves", "Green Chili", "Desi Ghee"];
+        }
+        const addresses = yield prisma_1.default.address.findMany({
+            select: { city: true, pincode: true, fullAddress: true }
+        });
+        // Filter and get distinct pincodes and cities
+        const uniqueCities = Array.from(new Set(addresses.map(a => a.city).filter(Boolean)));
+        const uniquePincodes = Array.from(new Set(addresses.map(a => a.pincode).filter(Boolean)));
+        res.status(200).json({
+            locations,
+            categories,
+            products,
+            popularSearches,
+            uniqueCities,
+            uniquePincodes
+        });
+    }
+    catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+exports.getSeoSitemapData = getSeoSitemapData;

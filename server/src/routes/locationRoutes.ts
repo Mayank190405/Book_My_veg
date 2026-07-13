@@ -5,12 +5,14 @@ import {
     createLocation,
     updateLocation,
     getLocationBySlug,
-    deleteLocation
+    deleteLocation,
+    getSeoSitemapData
 } from "../controllers/locationController";
 
 const router = Router();
 
 router.get("/", getLocations);
+router.get("/seo-data", getSeoSitemapData);
 router.get("/:id", getLocationById);
 router.get("/slug/:slug", getLocationBySlug);
 router.post("/", createLocation);
