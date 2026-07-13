@@ -78,7 +78,7 @@ export default function CategoryCircles() {
                             </div>
 
                             {/* Label */}
-                            <span className="text-[9px] font-black text-center text-[#1c2e24]/80 mt-2.5 tracking-wider uppercase leading-tight line-clamp-2 h-[24px] max-w-[76px] group-hover:text-[#0b5c3e] transition-colors">
+                            <span className="text-[9px] font-black text-center text-[#1c2e24]/80 dark:text-emerald-100/80 mt-2.5 tracking-wider uppercase leading-tight line-clamp-2 h-[24px] max-w-[76px] group-hover:text-[#0b5c3e] dark:group-hover:text-emerald-300 transition-colors">
                                 {category.name}
                             </span>
                         </Link>

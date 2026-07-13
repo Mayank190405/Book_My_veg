@@ -115,27 +115,27 @@ export default function ProductsPage() {
     return (
         <div className="pb-32">
             {/* Sticky toolbar */}
-            <div className="sticky top-[5.5rem] z-30 bg-white border-b border-black/5 shadow-sm px-5 py-4 space-y-4">
+            <div className="sticky top-[5.5rem] z-30 bg-white dark:bg-[#061512] border-b border-black/5 dark:border-white/5 shadow-sm px-5 py-4 space-y-4">
                 <div className="flex flex-col gap-3">
                     <div className="flex items-center gap-3 w-full">
                         <SearchInput
                             value={search}
                             onChange={setSearch}
                             placeholder="Search our fresh collection…"
-                            className="flex-1 lg:max-w-md bg-white border-black/5 rounded-2xl"
+                            className="flex-1 lg:max-w-md bg-white dark:bg-[#0b1c19] border-black/5 dark:border-white/10 dark:text-white rounded-2xl"
                         />
 
                         {/* Desktop View toggle */}
-                        <div className="hidden lg:flex items-center bg-emerald-500/5 rounded-2xl p-1 gap-1 border border-emerald-500/10">
+                        <div className="hidden lg:flex items-center bg-emerald-500/5 dark:bg-emerald-950/20 rounded-2xl p-1 gap-1 border border-emerald-500/10 dark:border-emerald-500/15">
                             <button
                                 onClick={() => setView("grid")}
-                                className={cn("p-2 rounded-xl transition-all", view === "grid" ? "bg-white shadow-sm text-emerald-600" : "text-emerald-900/20")}
+                                className={cn("p-2 rounded-xl transition-all", view === "grid" ? "bg-white dark:bg-emerald-900/30 shadow-sm text-emerald-600 dark:text-emerald-300" : "text-emerald-900/20 dark:text-white/20")}
                             >
                                 <LayoutGrid className="h-4 w-4" />
                             </button>
                             <button
                                 onClick={() => setView("list")}
-                                className={cn("p-2 rounded-xl transition-all", view === "list" ? "bg-white shadow-sm text-emerald-600" : "text-emerald-900/20")}
+                                className={cn("p-2 rounded-xl transition-all", view === "list" ? "bg-white dark:bg-emerald-900/30 shadow-sm text-emerald-600 dark:text-emerald-300" : "text-emerald-900/20 dark:text-white/20")}
                             >
                                 <List className="h-4 w-4" />
                             </button>
@@ -150,7 +150,7 @@ export default function ProductsPage() {
                                 "flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl border text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap shadow-sm",
                                 filterCount > 0
                                     ? "bg-emerald-600 text-white border-emerald-600 shadow-emerald-200/50"
-                                    : "bg-white text-emerald-950/40 border-black/5 hover:border-emerald-300"
+                                    : "bg-white dark:bg-[#0b1c19] text-emerald-950/40 dark:text-white/40 border-black/5 dark:border-white/10 hover:border-emerald-300"
                             )}
                         >
                             <SlidersHorizontal className="h-4 w-4" />
@@ -158,16 +158,16 @@ export default function ProductsPage() {
                         </button>
 
                         {/* Mobile View toggle */}
-                        <div className="flex items-center bg-emerald-500/5 rounded-2xl p-1 gap-1 border border-emerald-500/10">
+                        <div className="flex items-center bg-emerald-500/5 dark:bg-emerald-950/20 rounded-2xl p-1 gap-1 border border-emerald-500/10 dark:border-emerald-500/15">
                             <button
                                 onClick={() => setView("grid")}
-                                className={cn("p-2 rounded-xl transition-all", view === "grid" ? "bg-white shadow-sm text-emerald-600" : "text-emerald-900/20")}
+                                className={cn("p-2 rounded-xl transition-all", view === "grid" ? "bg-white dark:bg-emerald-900/30 shadow-sm text-emerald-600 dark:text-emerald-300" : "text-emerald-900/20 dark:text-white/20")}
                             >
                                 <LayoutGrid className="h-4 w-4" />
                             </button>
                             <button
                                 onClick={() => setView("list")}
-                                className={cn("p-2 rounded-xl transition-all", view === "list" ? "bg-white shadow-sm text-emerald-600" : "text-emerald-900/20")}
+                                className={cn("p-2 rounded-xl transition-all", view === "list" ? "bg-white dark:bg-emerald-900/30 shadow-sm text-emerald-600 dark:text-emerald-300" : "text-emerald-900/20 dark:text-white/20")}
                             >
                                 <List className="h-4 w-4" />
                             </button>

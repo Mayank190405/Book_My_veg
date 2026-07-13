@@ -72,10 +72,10 @@ export default function Header() {
             className={cn(
                 "fixed top-0 left-0 right-0 z-50 transition-all duration-300 px-6 flex flex-col justify-center",
                 (scrolled && isHome)
-                    ? "bg-white border-b border-slate-200/50 shadow-md pt-3 pb-3 gap-0"
+                    ? "bg-white dark:bg-[#061512] border-b border-slate-200/50 dark:border-white/5 shadow-md pt-3 pb-3 gap-0"
                     : isHome
-                        ? "bg-white pt-6 pb-6 gap-3 border-b border-slate-150/50 shadow-sm"
-                        : "bg-white border-b border-slate-150/50 shadow-sm pt-4 pb-4 gap-0"
+                        ? "bg-white dark:bg-[#061512] pt-6 pb-6 gap-3 border-b border-slate-150/50 dark:border-white/5 shadow-sm"
+                        : "bg-white dark:bg-[#061512] border-b border-slate-150/50 dark:border-white/5 shadow-sm pt-4 pb-4 gap-0"
             )}
         >
             {/* Top Bar Wrapper */}
@@ -87,7 +87,7 @@ export default function Header() {
 
                 <div className="flex items-center gap-2">
                     <button
-                        className="w-10 h-10 rounded-full bg-[#f4fbf7] hover:bg-emerald-50 border border-emerald-500/10 text-[#0b5c3e] flex items-center justify-center transition-all shadow-sm active:scale-90"
+                        className="w-10 h-10 rounded-full bg-[#f4fbf7] hover:bg-emerald-50 border border-emerald-500/10 text-[#0b5c3e] dark:bg-emerald-950/20 dark:border-emerald-500/15 dark:text-emerald-400 flex items-center justify-center transition-all shadow-sm active:scale-90"
                         onClick={() => setIsSearchOpen(true)}
                     >
                         <Search className="h-4 w-4 stroke-[2.5]" />
@@ -95,17 +95,17 @@ export default function Header() {
 
                     <button
                         onClick={() => setNotificationsOpen(true)}
-                        className="w-10 h-10 rounded-full bg-[#f4fbf7] hover:bg-emerald-50 border border-emerald-500/10 text-[#0b5c3e] flex items-center justify-center transition-all shadow-sm active:scale-90 relative cursor-pointer"
+                        className="w-10 h-10 rounded-full bg-[#f4fbf7] hover:bg-emerald-50 border border-emerald-500/10 text-[#0b5c3e] dark:bg-emerald-950/20 dark:border-emerald-500/15 dark:text-emerald-400 flex items-center justify-center transition-all shadow-sm active:scale-90 relative cursor-pointer"
                     >
                         <Bell className="h-4 w-4 stroke-[2.5]" />
                         {unreadCount > 0 && (
-                            <span className="absolute top-2.5 right-2.5 w-2.5 h-2.5 bg-emerald-600 border border-white rounded-full shadow-sm animate-pulse" />
+                            <span className="absolute top-2.5 right-2.5 w-2.5 h-2.5 bg-emerald-600 border border-white dark:border-[#061512] rounded-full shadow-sm animate-pulse" />
                         )}
                     </button>
 
                     <Link
                         href={!_hasHydrated ? "/login" : (user && user.name !== "Guest" ? "/account" : "/login")}
-                        className="w-10 h-10 rounded-full bg-[#f4fbf7] hover:bg-emerald-50 border border-emerald-500/10 text-[#0b5c3e] flex items-center justify-center transition-all shadow-sm active:scale-90"
+                        className="w-10 h-10 rounded-full bg-[#f4fbf7] hover:bg-emerald-50 border border-emerald-500/10 text-[#0b5c3e] dark:bg-emerald-950/20 dark:border-emerald-500/15 dark:text-emerald-400 flex items-center justify-center transition-all shadow-sm active:scale-90"
                     >
                         <User className="h-4 w-4 stroke-[2.5]" />
                     </Link>

@@ -50,7 +50,7 @@ export default function BuyAgain() {
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                     <div className="bg-emerald-500/10 p-2 rounded-xl">
-                        <RefreshCw className="h-4 w-4 text-emerald-500" />
+                        <RefreshCw className="h-4 w-4 text-emerald-500 dark:text-emerald-400" />
                     </div>
                     <h2 className="text-xl font-black text-foreground tracking-tight uppercase tracking-widest leading-none italic">Buy it again</h2>
                 </div>
@@ -58,7 +58,7 @@ export default function BuyAgain() {
                     variant="ghost"
                     size="sm"
                     onClick={handleReorderAll}
-                    className="text-emerald-600 hover:text-emerald-900 hover:bg-emerald-50 text-[10px] font-black uppercase tracking-widest h-8 px-4 rounded-full border border-emerald-500/10"
+                    className="text-emerald-600 dark:text-emerald-400 hover:text-emerald-950 dark:hover:text-emerald-350 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 text-[10px] font-black uppercase tracking-widest h-8 px-4 rounded-full border border-emerald-500/10 dark:border-emerald-500/15"
                 >
                     Reorder All
                 </Button>

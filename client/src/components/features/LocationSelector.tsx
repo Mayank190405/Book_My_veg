@@ -326,26 +326,26 @@ export default function LocationSelector({ isCompact }: LocationSelectorProps) {
                 <div className="flex items-center gap-3 cursor-pointer active:scale-95 transition-all duration-500 group select-none">
                     {!isCompact && (
                         <div className="">
-                            <MapPin className="h-8 w-8 stroke-[2.5] text-emerald-800" />
+                            <MapPin className="h-8 w-8 stroke-[2.5] text-emerald-800 dark:text-emerald-400" />
                         </div>
                     )}
                     
                     <div className="flex flex-col text-left">
                         {!isCompact && (
-                            <span className="text-[9px] font-black uppercase tracking-wider text-emerald-700 leading-none">DELIVERING TO</span>
+                            <span className="text-[9px] font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-400 leading-none">DELIVERING TO</span>
                         )}
                         <div className="flex items-center gap-1 mt-1">
                             <h2 className={cn(
-                                "font-extrabold text-slate-700 leading-none tracking-tight group-hover:text-emerald-700 transition-colors flex items-center gap-1",
+                                "font-extrabold text-slate-700 dark:text-slate-200 leading-none tracking-tight group-hover:text-emerald-700 dark:group-hover:text-emerald-400 transition-colors flex items-center gap-1",
                                 isCompact ? "text-sm" : "text-base"
                             )}>
-                                {isCompact && <MapPin className="inline h-4 w-4 mb-0.5 text-emerald-700" />}
+                                {isCompact && <MapPin className="inline h-4 w-4 mb-0.5 text-emerald-700 dark:text-emerald-400" />}
                                 {location?.address === "Select Location" || !location?.address ? "Set Location" : location.address}
                             </h2>
-                            <ChevronDown className={cn("text-emerald-700 stroke-[3] shrink-0", isCompact ? "h-3.5 w-3.5 text-slate-400" : "h-4.5 w-4.5")} />
+                            <ChevronDown className={cn("text-emerald-700 dark:text-emerald-400 stroke-[3] shrink-0", isCompact ? "h-3.5 w-3.5 text-slate-400 dark:text-white/40" : "h-4.5 w-4.5")} />
                         </div>
                         {!isCompact && (
-                            <span className="text-[9px] font-black tracking-wider uppercase text-emerald-700 leading-none mt-0.5">
+                            <span className="text-[9px] font-black tracking-wider uppercase text-emerald-700 dark:text-emerald-400/80 leading-none mt-0.5">
                                 ZONE - {location?.pincode || "422002"}
                             </span>
                         )}

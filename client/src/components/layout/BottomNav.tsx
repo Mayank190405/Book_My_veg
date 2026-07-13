@@ -21,7 +21,7 @@ export default function BottomNav() {
 
   return (
     <div className="fixed bottom-4 left-0 right-0 z-50 flex justify-center px-4">
-      <div className="relative w-full max-w-md bg-white rounded-[32px] shadow-[0_12px_40px_rgba(0,0,0,0.15)] border border-gray-100">
+      <div className="relative w-full max-w-md bg-white dark:bg-[#0b1c19] rounded-[32px] shadow-[0_12px_40px_rgba(0,0,0,0.15)] border border-gray-100 dark:border-emerald-950/40">
 
         {/* Active Indicator */}
         <div className="absolute top-0 left-0 w-full flex justify-around">
@@ -56,14 +56,14 @@ export default function BottomNav() {
                     strokeWidth={2.3}
                     className={cn(
                       active
-                        ? "text-[#0B7A53]"
-                        : "text-gray-400"
+                        ? "text-[#0B7A53] dark:text-emerald-400"
+                        : "text-gray-400 dark:text-white/40"
                     )}
                   />
 
                   {item.label === "CART" &&
                     items.length > 0 && (
-                      <span className="absolute -top-2 -right-2 h-4 min-w-[16px] rounded-full bg-[#0B7A53] text-white text-[9px] font-bold flex items-center justify-center px-1">
+                      <span className="absolute -top-2 -right-2 h-4 min-w-[16px] rounded-full bg-[#0B7A53] dark:bg-emerald-500 text-white dark:text-[#061512] text-[9px] font-bold flex items-center justify-center px-1">
                         {items.length}
                       </span>
                     )}
@@ -73,8 +73,8 @@ export default function BottomNav() {
                   className={cn(
                     "text-[10px] tracking-[0.18em] font-bold",
                     active
-                      ? "text-[#0B7A53]"
-                      : "text-gray-400"
+                      ? "text-[#0B7A53] dark:text-emerald-400"
+                      : "text-gray-400 dark:text-white/40"
                   )}
                 >
                   {item.label}

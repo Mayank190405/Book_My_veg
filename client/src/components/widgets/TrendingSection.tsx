@@ -38,12 +38,12 @@ export default function TrendingSection() {
             {/* Header section with Location Pin icon and SEE ALL button */}
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                    <MapPin className="h-5 w-5 text-[#0b5c3e] fill-emerald-600/20" />
-                    <h2 className="text-[17px] font-black text-[#1c2e24] tracking-wider uppercase">TRENDING NEAR YOU</h2>
+                    <MapPin className="h-5 w-5 text-[#0b5c3e] dark:text-emerald-400 fill-emerald-600/20" />
+                    <h2 className="text-[17px] font-black text-[#1c2e24] dark:text-emerald-100 tracking-wider uppercase">TRENDING NEAR YOU</h2>
                 </div>
                 <Link
                     href="/products"
-                    className="text-[10px] font-black text-[#0b5c3e] uppercase tracking-widest border border-emerald-600/35 hover:bg-emerald-50 px-4 py-2 rounded-full transition-all active:scale-95 shadow-sm"
+                    className="text-[10px] font-black text-[#0b5c3e] dark:text-emerald-400 uppercase tracking-widest border border-emerald-600/35 dark:border-emerald-500/30 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 px-4 py-2 rounded-full transition-all active:scale-95 shadow-sm"
                 >
                     SEE ALL
                 </Link>
