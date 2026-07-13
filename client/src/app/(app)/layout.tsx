@@ -60,6 +60,9 @@ export default function AppLayout({
 
         const initializeStoreAndLocation = async () => {
             try {
+                // Early return if active store and location coords are already resolved in client state
+                if (activeStore && location && location.coords) return;
+
                 const apiUrl = getBaseURL();
                 // 1. Fetch available store locations
                 const storesRes = await (await fetch(`${apiUrl}/locations`)).json();
