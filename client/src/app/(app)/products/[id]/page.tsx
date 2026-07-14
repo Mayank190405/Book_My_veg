@@ -10,9 +10,9 @@ import { useCartStore } from "@/store/useCartStore";
 import { useUserStore } from "@/store/useUserStore";
 import { useWishlistStore } from "@/store/useWishlistStore";
 import { Skeleton } from "@/components/ui/skeleton";
-import { 
-    ArrowLeft, ShoppingCart, Minus, Plus, Package, Info, ChevronRight, 
-    Sparkles, Hourglass, Shield, Globe, Calendar, Flame, Activity, Heart, 
+import {
+    ArrowLeft, ShoppingCart, Minus, Plus, Package, Info, ChevronRight,
+    Sparkles, Hourglass, Shield, Globe, Calendar, Flame, Activity, Heart,
     Check, Star, ChevronDown, ChevronUp, MapPin, Leaf
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -46,19 +46,19 @@ function getStock(product: any, activeStoreId?: string): { total: number; isLow:
     }
 
     if (!allInventory.length) return { total: 0, isLow: false };
-    
+
     let relevantInventory = allInventory;
     if (activeStoreId) {
         relevantInventory = allInventory.filter((inv: any) => inv.locationId === activeStoreId);
     }
-    
+
     if (relevantInventory.length === 0) return { total: 0, isLow: false };
 
     const total = relevantInventory.reduce((acc: number, inv: any) => acc + Number(inv.currentStock), 0);
-    const isLow = relevantInventory.some((inv: any) => 
+    const isLow = relevantInventory.some((inv: any) =>
         Number(inv.currentStock) <= Number(inv.thresholdStock) && Number(inv.currentStock) > 0
     );
-    
+
     return { total, isLow };
 }
 
@@ -118,8 +118,8 @@ export default function ProductDetailPage() {
 
     const currentPrice = selectedVariant ? Number(selectedVariant.price) : Number(product.basePrice);
     const currentPricing = selectedVariant?.pricing || product.pricing;
-    const currentWeight = selectedVariant 
-        ? selectedVariant.name 
+    const currentWeight = selectedVariant
+        ? selectedVariant.name
         : (product.weight ? `${product.weight} ${product.weightUnit || ''}` : product.weightUnit);
 
     const cartItem = items.find((i) => i.productId === id && i.variantId === (selectedVariantId || undefined));
@@ -142,15 +142,15 @@ export default function ProductDetailPage() {
         addItem({
             productId: id,
             variantId: selectedVariantId || undefined,
-            name: selectedVariant 
-                ? `${product.name} (${selectedVariant.name})` 
+            name: selectedVariant
+                ? `${product.name} (${selectedVariant.name})`
                 : (product.weight ? `${product.name} (${product.weight} ${product.weightUnit || ''})` : product.name),
             price: finalPrice,
             image: images[0],
             quantity: 1,
             metadata: { ripeness: ripeness === 1 ? 'Raw' : ripeness === 5 ? 'Ripe' : 'Balanced', level: ripeness }
         });
-        
+
         import("sonner").then(({ toast }) => {
             toast.success(`${product.name} added to cart`, {
                 description: "Freshly added to your basket",
@@ -168,20 +168,20 @@ export default function ProductDetailPage() {
 
     return (
         <div className="min-h-screen bg-white pb-48 selection:bg-emerald-500/20">
-            
+
             {/* Top rounded green dome wrapper container matching exact mockup Screen 1 */}
             <div className="w-full bg-gradient-to-b from-[#e8f6f0] to-[#f4faf7] rounded-b-[3.5rem] pb-8 pt-12 relative overflow-hidden shadow-sm max-w-xl mx-auto">
-                
+
                 {/* Top buttons inside dome container */}
                 <div className="px-6 flex items-center justify-between relative z-40 mb-2">
-                    <button 
-                        onClick={() => router.back()} 
+                    <button
+                        onClick={() => router.back()}
                         className="w-12 h-12 rounded-full bg-white border border-slate-100 flex items-center justify-center text-slate-500 hover:text-[#0B7A53] shadow-sm active:scale-95 shrink-0"
                     >
                         <ArrowLeft className="h-5 w-5" />
                     </button>
                     <div className="relative shrink-0">
-                        <button 
+                        <button
                             onClick={() => router.push('/cart')}
                             className="w-12 h-12 rounded-full bg-white border border-slate-100 flex items-center justify-center text-slate-500 hover:text-[#0B7A53] shadow-sm active:scale-95"
                         >
@@ -262,7 +262,7 @@ export default function ProductDetailPage() {
 
             {/* Scrollable details on white background matching Screen 1 & 2 */}
             <div className="max-w-xl mx-auto px-6 pt-6 space-y-6">
-                
+
                 {/* 1. Category Badge */}
                 <div className="text-left">
                     <span className="text-[10px] font-black text-[#0B7A53] bg-[#edfcf6] border border-[#c8f7e3] rounded-full px-4.5 py-1.5 inline-flex items-center gap-1.5 uppercase tracking-wider">
@@ -287,8 +287,8 @@ export default function ProductDetailPage() {
                     <div className="flex items-center gap-1.5 text-[11.5px] font-black text-slate-500 uppercase tracking-wider">
                         <Star className="h-4.5 w-4.5 fill-amber-400 text-amber-400" />
                         <span>
-                            {avgRating 
-                                ? `${avgRating} (${reviewsCount} ${reviewsCount === 1 ? 'REVIEW' : 'REVIEWS'})` 
+                            {avgRating
+                                ? `${avgRating} (${reviewsCount} ${reviewsCount === 1 ? 'REVIEW' : 'REVIEWS'})`
                                 : "No reviews yet"}
                         </span>
                     </div>
@@ -309,8 +309,8 @@ export default function ProductDetailPage() {
                                         onClick={() => setSelectedVariantId(v.id)}
                                         className={cn(
                                             "w-full flex items-center justify-between px-6 h-14 rounded-2xl border-2 transition-all duration-300 active:scale-[0.99] bg-white",
-                                            active 
-                                                ? "border-[#0B7A53] bg-emerald-50/5 shadow-sm" 
+                                            active
+                                                ? "border-[#0B7A53] bg-emerald-50/5 shadow-sm"
                                                 : "border-slate-200 hover:border-slate-350"
                                         )}
                                     >
@@ -358,6 +358,45 @@ export default function ProductDetailPage() {
                     <span className="text-[9.5px] font-bold text-[#0B7A53] bg-[#edfcf6] px-3.5 py-1.5 rounded-full uppercase tracking-wider">
                         Inclusive of all taxes
                     </span>
+                </div>
+
+                {/* Inline Add to Cart / Quantity controls */}
+                <div className="w-full">
+                    {qty === 0 ? (
+                        <button
+                            onClick={handleAdd}
+                            disabled={isOutOfStock}
+                            className={cn(
+                                "w-full py-5 rounded-[2rem] text-sm font-black uppercase tracking-wider flex items-center justify-center gap-3 transition-all active:scale-[0.98] shadow-md border-2",
+                                isOutOfStock
+                                    ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
+                                    : "bg-[#0B7A53] text-white border-[#0B7A53] hover:bg-[#096645] hover:border-[#096645]"
+                            )}
+                        >
+                            <Plus className="h-4.5 w-4.5" strokeWidth={4} />
+                            {isOutOfStock ? "Out of Stock" : "Add to Cart"}
+                        </button>
+                    ) : (
+                        <div className="w-full flex items-center justify-between bg-[#edfcf6] border border-[#c8f7e3] rounded-[2rem] p-2.5 shadow-sm">
+                            <button
+                                onClick={() => updateQuantity(id, qty - 1, selectedVariantId || undefined)}
+                                className="w-12 h-12 flex items-center justify-center bg-white text-[#0B7A53] hover:bg-emerald-50 active:scale-95 transition-all rounded-full shadow-sm"
+                            >
+                                <Minus className="h-4.5 w-4.5" strokeWidth={4} />
+                            </button>
+                            <div className="flex flex-col items-center">
+                                <span className="text-lg font-black text-[#0B7A53] leading-none">{qty}</span>
+                                <span className="text-[8px] font-bold text-[#0B7A53]/70 uppercase tracking-wider mt-0.5">In Cart</span>
+                            </div>
+                            <button
+                                onClick={() => updateQuantity(id, qty + 1, selectedVariantId || undefined)}
+                                disabled={stock > 0 && qty >= stock}
+                                className="w-12 h-12 flex items-center justify-center bg-white text-[#0B7A53] hover:bg-emerald-50 active:scale-95 transition-all rounded-full shadow-sm disabled:opacity-40"
+                            >
+                                <Plus className="h-4.5 w-4.5" strokeWidth={4} />
+                            </button>
+                        </div>
+                    )}
                 </div>
 
                 {/* 7. Buyer Preference Slider */}
@@ -415,7 +454,7 @@ export default function ProductDetailPage() {
 
                 {/* 10. Specifications Accordions (Details, Nutrition, Delivery & Returns) */}
                 <div className="space-y-3 bg-white border border-slate-100 rounded-[2.25rem] p-5 shadow-sm">
-                    
+
                     {/* Accordion 1: Product Details */}
                     <div className="border-b border-slate-100/70 pb-3">
                         <button
@@ -486,7 +525,7 @@ export default function ProductDetailPage() {
                                                         <span className="text-[#0B7A53]">{val}</span>
                                                     </div>
                                                     <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden shadow-inner">
-                                                        <div 
+                                                        <div
                                                             className="bg-[#0B7A53] h-full rounded-full transition-all duration-500"
                                                             style={{ width: `${pct}%` }}
                                                         />
@@ -587,7 +626,7 @@ export default function ProductDetailPage() {
                         )}
                     >
                         <Plus className="h-4.5 w-4.5" strokeWidth={4} />
-                        {isOutOfStock ? "Out of Stock" : "Add to Basket"}
+                        {isOutOfStock ? "Out of Stock" : "Add to Cart"}
                     </button>
                 ) : (
                     <div className="flex-1 flex items-center gap-2">

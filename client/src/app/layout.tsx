@@ -12,6 +12,11 @@ const outfit = Outfit({ subsets: ["latin"], variable: "--font-outfit" });
 export const metadata: Metadata = {
   title: "Book My Veg - get fresh vegetables and fruits online in minutes",
   description: "Order fresh vegetables and fruits online and get them delivered to your doorstep in minutes. Experience premium organic farm produce at Best Market Value.",
+  icons: {
+    icon: "/icon.jpeg",
+    shortcut: "/icon.jpeg",
+    apple: "/icon.jpeg",
+  },
 };
 
 export default function RootLayout({
