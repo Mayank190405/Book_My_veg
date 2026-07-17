@@ -152,7 +152,7 @@ export const initiatePayment = async (req: AuthenticatedRequest, res: Response) 
                     throw new Error(easebuzzRes.data?.message || "Failed to get payment link from Easebuzz service");
                 }
             } catch (easebuzzError: any) {
-                logger.error(`[Payment] Easebuzz initiation failed, falling back to mock gateway. Error: ${easebuzzError.message}`);
+                logger.error(`[Payment] Easebuzz initiation failed, falling back to mock gateway. Error: ${easebuzzError.message}, Data: ${JSON.stringify(easebuzzError.response?.data)}`);
                 return res.json({
                     orderId: order.id,
                     paymentLink: `${baseUrl.replace(/\/$/, "")}/payment/mock-gateway?orderId=${order.id}&amount=${amount}`,
@@ -257,7 +257,7 @@ export const generatePaymentLink = async (req: AuthenticatedRequest, res: Respon
                     throw new Error(easebuzzRes.data?.message || "Failed to get payment link from Easebuzz service");
                 }
             } catch (easebuzzError: any) {
-                logger.error(`[Payment] Easebuzz generation failed, falling back to mock gateway. Error: ${easebuzzError.message}`);
+                logger.error(`[Payment] Easebuzz generation failed, falling back to mock gateway. Error: ${easebuzzError.message}, Data: ${JSON.stringify(easebuzzError.response?.data)}`);
                 return res.json({
                     paymentLink: `${baseUrl.replace(/\/$/, "")}/payment/mock-gateway?orderId=${orderId}&amount=${order.totalAmount}`,
                 });
