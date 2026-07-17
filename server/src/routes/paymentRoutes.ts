@@ -1,11 +1,12 @@
 import { Router } from "express";
 import { authenticate, authorize } from "../middleware/auth";
-import { initiatePayment, verifyPayment, refundPayment, handleWebhook, getOrderStatus, generatePaymentLink } from "../controllers/paymentController";
+import { initiatePayment, verifyPayment, refundPayment, handleWebhook, getOrderStatus, generatePaymentLink, handleEasebuzzCallback } from "../controllers/paymentController";
 
 const router = Router();
 
 // Webhook (No auth, validated by signature) - Must be before auth middleware if using router.use
 router.post("/webhook", handleWebhook);
+router.post("/easebuzz/callback", handleEasebuzzCallback);
 
 router.use(authenticate);
 

@@ -101,6 +101,7 @@ app.use("/uploads", express.static(path.join(process.cwd(), "public/uploads"), {
     }
 }));
 app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use(cookieParser());
 app.use(requestLogger); // Request logging
 

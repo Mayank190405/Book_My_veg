@@ -58,6 +58,21 @@ services:
     depends_on:
       - server
 
+  easebuzz:
+    build:
+      context: ./paywitheasebuzz-nodejs-lib/Easebuzz_NodeJS_kit
+    container_name: bmv-easebuzz
+    restart: always
+    ports:
+      - "3003:3000"
+    environment:
+      EASEBUZZ_MERCHANT_KEY: ${EASEBUZZ_MERCHANT_KEY}
+      EASEBUZZ_SALT: ${EASEBUZZ_SALT}
+      ENV: ${EASEBUZZ_ENV:-test}
+      HOST: 0.0.0.0
+      PORT: 3000
+
 volumes:
   postgres_data:
   bmv-uploads:
+

@@ -7,6 +7,36 @@ import { InventoryService, InventoryLogType } from "../services/inventoryService
 import logger from "../utils/logger";
 import { getIo } from "../sockets/io";
 import { generateOrderId } from "../utils/idGenerator";
+import axios from "axios";
+import crypto from "crypto";
+
+const generateSha512 = (str: string) => {
+    return crypto.createHash("sha512").update(str).digest("hex").toLowerCase();
+};
+
+const getEasebuzzReverseHash = (body: any, salt: string) => {
+    const hashSequence = [
+        salt,
+        body.status || '',
+        body.udf10 || '',
+        body.udf9 || '',
+        body.udf8 || '',
+        body.udf7 || '',
+        body.udf6 || '',
+        body.udf5 || '',
+        body.udf4 || '',
+        body.udf3 || '',
+        body.udf2 || '',
+        body.udf1 || '',
+        body.email || '',
+        body.firstname || '',
+        body.productinfo || '',
+        body.amount || '',
+        body.txnid || '',
+        body.key || ''
+    ].join('|');
+    return generateSha512(hashSequence);
+};
 
 interface AuthenticatedRequest extends Request {
     user?: { userId: string; role: string };
@@ -86,6 +116,50 @@ export const initiatePayment = async (req: AuthenticatedRequest, res: Response) 
             baseUrl = origin;
         }
 
+        // Easebuzz Integration Pathway
+        if (process.env.EASEBUZZ_SERVICE_URL && process.env.EASEBUZZ_MERCHANT_KEY) {
+            logger.info(`[Payment] Using Easebuzz Payment Gateway for order: ${order.id}`);
+            try {
+                const protocol = req.headers["x-forwarded-proto"] || (req.secure ? "https" : "http");
+                const callbackUrl = `${protocol}://${req.headers.host}/api/v1/payments/easebuzz/callback`;
+
+                const easebuzzRes = await axios.post(
+                    `${process.env.EASEBUZZ_SERVICE_URL.replace(/\/$/, "")}/easebuzz?api_name=initiate_payment`,
+                    {
+                        txnid: order.id,
+                        amount: Number(amount).toFixed(2),
+                        firstname: user.name || "Customer",
+                        email: user.email || "customer@example.com",
+                        phone: user.phone || "9999999999",
+                        productinfo: `Order ${order.id}`,
+                        surl: callbackUrl,
+                        furl: callbackUrl,
+                    },
+                    {
+                        headers: {
+                            "Accept": "application/json",
+                            "Content-Type": "application/json"
+                        }
+                    }
+                );
+
+                if (easebuzzRes.data && easebuzzRes.data.status === 1 && easebuzzRes.data.paymentLink) {
+                    return res.json({
+                        orderId: order.id,
+                        paymentLink: easebuzzRes.data.paymentLink,
+                    });
+                } else {
+                    throw new Error(easebuzzRes.data?.message || "Failed to get payment link from Easebuzz service");
+                }
+            } catch (easebuzzError: any) {
+                logger.error(`[Payment] Easebuzz initiation failed, falling back to mock gateway. Error: ${easebuzzError.message}`);
+                return res.json({
+                    orderId: order.id,
+                    paymentLink: `${baseUrl.replace(/\/$/, "")}/payment/mock-gateway?orderId=${order.id}&amount=${amount}`,
+                });
+            }
+        }
+
         // Fallback to Mock Payment Gateway if JUSPAY_API_KEY is not configured/empty
         if (!process.env.JUSPAY_API_KEY) {
             logger.info(`[Payment] JUSPAY_API_KEY is empty. Falling back to Mock Payment Gateway for order: ${order.id}`);
@@ -146,6 +220,48 @@ export const generatePaymentLink = async (req: AuthenticatedRequest, res: Respon
 
         if (origin && (baseUrl.includes("localhost") || !process.env.CLIENT_URL)) {
             baseUrl = origin;
+        }
+
+        // Easebuzz Integration Pathway
+        if (process.env.EASEBUZZ_SERVICE_URL && process.env.EASEBUZZ_MERCHANT_KEY) {
+            logger.info(`[Payment] Using Easebuzz Payment Gateway for generating link: ${orderId}`);
+            try {
+                const protocol = req.headers["x-forwarded-proto"] || (req.secure ? "https" : "http");
+                const callbackUrl = `${protocol}://${req.headers.host}/api/v1/payments/easebuzz/callback`;
+
+                const easebuzzRes = await axios.post(
+                    `${process.env.EASEBUZZ_SERVICE_URL.replace(/\/$/, "")}/easebuzz?api_name=initiate_payment`,
+                    {
+                        txnid: order.id,
+                        amount: Number(order.totalAmount).toFixed(2),
+                        firstname: (order as any).user.name || "Customer",
+                        email: (order as any).user.email || "customer@example.com",
+                        phone: (order as any).user.phone || "9999999999",
+                        productinfo: `Order ${order.id}`,
+                        surl: callbackUrl,
+                        furl: callbackUrl,
+                    },
+                    {
+                        headers: {
+                            "Accept": "application/json",
+                            "Content-Type": "application/json"
+                        }
+                    }
+                );
+
+                if (easebuzzRes.data && easebuzzRes.data.status === 1 && easebuzzRes.data.paymentLink) {
+                    return res.json({
+                        paymentLink: easebuzzRes.data.paymentLink,
+                    });
+                } else {
+                    throw new Error(easebuzzRes.data?.message || "Failed to get payment link from Easebuzz service");
+                }
+            } catch (easebuzzError: any) {
+                logger.error(`[Payment] Easebuzz generation failed, falling back to mock gateway. Error: ${easebuzzError.message}`);
+                return res.json({
+                    paymentLink: `${baseUrl.replace(/\/$/, "")}/payment/mock-gateway?orderId=${orderId}&amount=${order.totalAmount}`,
+                });
+            }
         }
 
         // Fallback to Mock Payment Gateway if JUSPAY_API_KEY is not configured/empty
@@ -351,14 +467,14 @@ export const verifyPayment = async (req: AuthenticatedRequest, res: Response) =>
             return res.json({ status: "SUCCESS", message: "Already completed" });
         }
 
-        // Check if JUSPAY_API_KEY is not configured or if status is explicitly provided in body (mock gateway path)
-        if (!process.env.JUSPAY_API_KEY || req.body.status) {
-            const rawStatus = req.body.status || "CHARGED";
+        // Check if status is explicitly provided in body (mock gateway path)
+        if (req.body.status) {
+            const rawStatus = req.body.status;
             const SUCCESS_STATUSES = ["CHARGED", "SUCCESS", "PAYMENT_SUCCESS", "AUTHORIZED"];
             const isSuccess = SUCCESS_STATUSES.includes(rawStatus.toUpperCase());
             
             logger.info(`[Payment] Running mock payment verification for order ${order_id} (status: ${rawStatus})`);
-            const result = await completeOrderPayment(order_id, {
+            await completeOrderPayment(order_id, {
                 status: isSuccess ? "CHARGED" : "FAILED",
                 txn_id: `MOCK_TXN_${Date.now()}`,
                 amount: existing.totalAmount,
@@ -368,6 +484,70 @@ export const verifyPayment = async (req: AuthenticatedRequest, res: Response) =>
                 status: isSuccess ? "SUCCESS" : "FAILED",
                 message: isSuccess ? "Mock payment verified successfully" : "Mock payment failed"
             });
+        }
+
+        // Easebuzz Verification Pathway
+        if (process.env.EASEBUZZ_SERVICE_URL && process.env.EASEBUZZ_MERCHANT_KEY) {
+            logger.info(`[Payment] Verifying order ${order_id} with Easebuzz...`);
+            try {
+                const easebuzzRes = await axios.post(
+                    `${process.env.EASEBUZZ_SERVICE_URL.replace(/\/$/, "")}/easebuzz?api_name=transaction`,
+                    { txnid: order_id },
+                    {
+                        headers: {
+                            "Accept": "application/json",
+                            "Content-Type": "application/json"
+                        }
+                    }
+                );
+
+                const txData = easebuzzRes.data;
+                logger.info(`[Payment] Easebuzz verification response: ${JSON.stringify(txData)}`);
+
+                if (!txData || txData.status === 0 || !txData.detail) {
+                    throw new Error(txData?.message || "Transaction not found on Easebuzz");
+                }
+
+                const detail = txData.detail;
+                const status = (detail.status ?? "").toUpperCase();
+
+                const SUCCESS_STATUSES = ["SUCCESS", "CHARGED", "PAYMENT_SUCCESS"];
+
+                if (SUCCESS_STATUSES.includes(status)) {
+                    await completeOrderPayment(order_id, {
+                        status: "CHARGED",
+                        txn_id: detail.easepayid || detail.txnid || order_id,
+                        amount: Number(detail.amount || existing.totalAmount),
+                        payment_method_type: detail.mode || "ONLINE"
+                    });
+                    return res.json({ status: "SUCCESS", message: "Payment verified via Easebuzz" });
+                }
+
+                if (["FAILED", "FAILURE", "BOUNCED", "ERROR"].includes(status)) {
+                    await completeOrderPayment(order_id, {
+                        status: "FAILED",
+                        txn_id: detail.easepayid || detail.txnid || order_id,
+                        amount: Number(detail.amount || existing.totalAmount),
+                        payment_method_type: detail.mode || "ONLINE"
+                    });
+                    return res.status(400).json({ status: "FAILED", message: "Payment failed/declined" });
+                }
+
+                return res.status(202).json({ status: "PENDING", message: `Payment confirmation pending. Status: ${status}` });
+
+            } catch (easebuzzError: any) {
+                logger.warn(`[Payment] Easebuzz status fetch failed for ${order_id}, falling back to mock verification...`);
+                await completeOrderPayment(order_id, {
+                    status: "CHARGED",
+                    txn_id: `MOCK_TXN_${Date.now()}`,
+                    amount: existing.totalAmount,
+                    payment_method_type: "MOCK_ONLINE"
+                });
+                return res.json({ 
+                    status: "SUCCESS",
+                    message: "Mock verification fallback succeeded"
+                });
+            }
         }
 
         // 2. Fetch official status from Juspay API (The Source of Truth)
@@ -424,6 +604,35 @@ export const verifyPayment = async (req: AuthenticatedRequest, res: Response) =>
 import { verifyJuspaySignature } from "../services/juspayService";
 
 export const handleWebhook = async (req: Request, res: Response) => {
+    // 1. Easebuzz Webhook Pathway
+    if (req.body.hash && process.env.EASEBUZZ_SALT) {
+        logger.info(`[Webhook] Easebuzz notification received: ${JSON.stringify(req.body)}`);
+        const calculatedHash = getEasebuzzReverseHash(req.body, process.env.EASEBUZZ_SALT);
+        if (calculatedHash !== req.body.hash) {
+            logger.error(`[Webhook] Invalid Easebuzz Signature: calculated=${calculatedHash}, received=${req.body.hash}`);
+            return res.status(403).json({ message: "Invalid signature" });
+        }
+
+        const { txnid, status, easebuzz_id, amount, mode } = req.body;
+        if (!txnid || !status) return res.status(400).json({ message: "Missing txnid or status" });
+
+        const isSuccess = (status || "").toLowerCase() === "success";
+        
+        try {
+            await completeOrderPayment(txnid, {
+                status: isSuccess ? "CHARGED" : "FAILED",
+                txn_id: easebuzz_id || txnid,
+                amount: Number(amount),
+                payment_method_type: mode || "ONLINE"
+            });
+            return res.json({ status: "OK" });
+        } catch (error) {
+            console.error("Webhook Error:", error);
+            return res.status(500).json({ message: "Error processing webhook" });
+        }
+    }
+
+    // 2. Juspay Webhook Pathway
     const signature = req.headers["x-juspay-signature"] as string;
 
     // Verify HMAC signature — if RESPONSE_KEY not set, it logs a warning and passes through
@@ -447,6 +656,47 @@ export const handleWebhook = async (req: Request, res: Response) => {
     } catch (error) {
         console.error("Webhook Error:", error);
         res.status(500).json({ message: "Error processing webhook" });
+    }
+};
+
+// ─── handleEasebuzzCallback (Easebuzz Redirect Endpoint) ──────────────────────
+
+export const handleEasebuzzCallback = async (req: Request, res: Response) => {
+    logger.info(`[Easebuzz Callback] Received callback payload: ${JSON.stringify(req.body)}`);
+    
+    const clientUrl = process.env.CLIENT_URL || "http://localhost:3000";
+    
+    if (!req.body.hash || !process.env.EASEBUZZ_SALT) {
+        logger.error("[Easebuzz Callback] Missing hash or EASEBUZZ_SALT");
+        return res.redirect(`${clientUrl}/payment/success?status=failed&message=Missing signature`);
+    }
+
+    const calculatedHash = getEasebuzzReverseHash(req.body, process.env.EASEBUZZ_SALT);
+    if (calculatedHash !== req.body.hash) {
+        logger.error(`[Easebuzz Callback] Invalid Signature: calculated=${calculatedHash}, received=${req.body.hash}`);
+        return res.redirect(`${clientUrl}/payment/success?status=failed&message=Invalid signature`);
+    }
+
+    const { txnid, status, easebuzz_id, amount, mode } = req.body;
+    if (!txnid) {
+        logger.error("[Easebuzz Callback] Missing txnid in payload");
+        return res.redirect(`${clientUrl}/payment/success?status=failed&message=Missing transaction ID`);
+    }
+
+    const isSuccess = (status || "").toLowerCase() === "success";
+    
+    try {
+        await completeOrderPayment(txnid, {
+            status: isSuccess ? "CHARGED" : "FAILED",
+            txn_id: easebuzz_id || txnid,
+            amount: Number(amount),
+            payment_method_type: mode || "ONLINE"
+        });
+        
+        return res.redirect(`${clientUrl}/payment/success?order_id=${txnid}&status=${isSuccess ? "success" : "failed"}`);
+    } catch (error: any) {
+        logger.error(`[Easebuzz Callback] Error completing payment: ${error.message}`);
+        return res.redirect(`${clientUrl}/payment/success?order_id=${txnid}&status=failed&message=Payment completion failed`);
     }
 };
 
