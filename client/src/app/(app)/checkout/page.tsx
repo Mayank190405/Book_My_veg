@@ -98,7 +98,44 @@ export default function CheckoutPage() {
             if (method === "ONLINE") {
                 try {
                     const payRes = await api.post(`/payments/${order.id}/generate-link`);
-                    if (payRes.data?.paymentLink) {
+                    
+                    if (payRes.data?.iframe && payRes.data?.accessKey) {
+                        const triggerIframeCheckout = () => {
+                            const EasebuzzCheckout = (window as any).EasebuzzCheckout;
+                            if (EasebuzzCheckout) {
+                                const checkoutObj = new EasebuzzCheckout(payRes.data.key, payRes.data.env);
+                                const options = {
+                                    access_key: payRes.data.accessKey,
+                                    onResponse: (response: any) => {
+                                        console.log("[Easebuzz Iframe Response]", response);
+                                        const isSuccess = response.status === "success";
+                                        router.push(`/payment/success?order_id=${order.id}&status=${isSuccess ? "success" : "failed"}`);
+                                    }
+                                };
+                                checkoutObj.initiatePayment(options);
+                            } else {
+                                toast.error("Easebuzz Checkout SDK failed to load");
+                                router.push(`/orders?success=true`);
+                            }
+                        };
+
+                        if (!(window as any).EasebuzzCheckout) {
+                            const script = document.createElement("script");
+                            script.src = payRes.data.env === "prod" 
+                                ? "https://pay.easebuzz.in/ebapi/easebuzz-checkout/easebuzz-checkout.js"
+                                : "https://testpay.easebuzz.in/ebapi/easebuzz-checkout/easebuzz-checkout.js";
+                            script.async = true;
+                            script.onload = triggerIframeCheckout;
+                            script.onerror = () => {
+                                toast.error("Failed to load Easebuzz script");
+                                router.push(`/orders?success=true`);
+                            };
+                            document.body.appendChild(script);
+                        } else {
+                            triggerIframeCheckout();
+                        }
+                        return; // Halt redirect to allow iframe overlay to handle it
+                    } else if (payRes.data?.paymentLink) {
                         window.location.href = payRes.data.paymentLink;
                         return;
                     }
