@@ -66,9 +66,7 @@ export default function PaymentButton({ amount, address, items, className }: Pay
 
                 if (!(window as any).EasebuzzCheckout) {
                     const script = document.createElement("script");
-                    script.src = data.env === "prod" 
-                        ? "https://pay.easebuzz.in/ebapi/easebuzz-checkout/easebuzz-checkout.js"
-                        : "https://testpay.easebuzz.in/ebapi/easebuzz-checkout/easebuzz-checkout.js";
+                    script.src = "https://ebz-static.s3.ap-south-1.amazonaws.com/easecheckout/v2.0.0/easebuzz-checkout-v2.min.js";
                     script.async = true;
                     script.onload = triggerIframeCheckout;
                     script.onerror = () => {
