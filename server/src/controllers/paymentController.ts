@@ -38,6 +38,15 @@ const getEasebuzzReverseHash = (body: any, salt: string) => {
     return generateSha512(hashSequence);
 };
 
+const sanitizePhone = (phone: string | null | undefined): string => {
+    if (!phone) return "9999999999";
+    const digits = phone.replace(/\D/g, "");
+    if (digits.startsWith("91") && digits.length === 12) {
+        return digits.substring(2);
+    }
+    return digits || "9999999999";
+};
+
 interface AuthenticatedRequest extends Request {
     user?: { userId: string; role: string };
 }
@@ -130,7 +139,7 @@ export const initiatePayment = async (req: AuthenticatedRequest, res: Response) 
                         amount: Number(amount).toFixed(2),
                         firstname: user.name || "Customer",
                         email: user.email || "customer@example.com",
-                        phone: user.phone || "9999999999",
+                        phone: sanitizePhone(user.phone),
                         productinfo: `Order ${order.id}`,
                         surl: callbackUrl,
                         furl: callbackUrl,
@@ -236,7 +245,7 @@ export const generatePaymentLink = async (req: AuthenticatedRequest, res: Respon
                         amount: Number(order.totalAmount).toFixed(2),
                         firstname: (order as any).user.name || "Customer",
                         email: (order as any).user.email || "customer@example.com",
-                        phone: (order as any).user.phone || "9999999999",
+                        phone: sanitizePhone((order as any).user.phone),
                         productinfo: `Order ${order.id}`,
                         surl: callbackUrl,
                         furl: callbackUrl,
