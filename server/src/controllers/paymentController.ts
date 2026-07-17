@@ -132,14 +132,18 @@ export const initiatePayment = async (req: AuthenticatedRequest, res: Response) 
                 const protocol = req.headers["x-forwarded-proto"] || (req.secure ? "https" : "http");
                 const callbackUrl = `${protocol}://${req.headers.host}/api/v1/payments/easebuzz/callback`;
 
+                const addressObj = address as any;
+                const customerName = addressObj?.name || user.name || "Customer";
+                const customerPhone = addressObj?.phone || user.phone || "9999999999";
+
                 const easebuzzRes = await axios.post(
                     `${process.env.EASEBUZZ_SERVICE_URL.replace(/\/$/, "")}/easebuzz?api_name=initiate_payment`,
                     {
                         txnid: order.id,
                         amount: Number(amount).toFixed(2),
-                        firstname: user.name || "Customer",
+                        firstname: customerName,
                         email: user.email || "customer@example.com",
-                        phone: sanitizePhone(user.phone),
+                        phone: sanitizePhone(customerPhone),
                         productinfo: `Order ${order.id}`,
                         surl: callbackUrl,
                         furl: callbackUrl,
@@ -238,14 +242,18 @@ export const generatePaymentLink = async (req: AuthenticatedRequest, res: Respon
                 const protocol = req.headers["x-forwarded-proto"] || (req.secure ? "https" : "http");
                 const callbackUrl = `${protocol}://${req.headers.host}/api/v1/payments/easebuzz/callback`;
 
+                const addressObj = order.shippingAddress as any;
+                const customerName = addressObj?.name || (order as any).user.name || "Customer";
+                const customerPhone = addressObj?.phone || (order as any).user.phone || "9999999999";
+
                 const easebuzzRes = await axios.post(
                     `${process.env.EASEBUZZ_SERVICE_URL.replace(/\/$/, "")}/easebuzz?api_name=initiate_payment`,
                     {
                         txnid: order.id,
                         amount: Number(order.totalAmount).toFixed(2),
-                        firstname: (order as any).user.name || "Customer",
+                        firstname: customerName,
                         email: (order as any).user.email || "customer@example.com",
-                        phone: sanitizePhone((order as any).user.phone),
+                        phone: sanitizePhone(customerPhone),
                         productinfo: `Order ${order.id}`,
                         surl: callbackUrl,
                         furl: callbackUrl,
