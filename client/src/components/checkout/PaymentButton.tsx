@@ -35,7 +35,7 @@ export default function PaymentButton({ amount, address, items, className }: Pay
         setLoading(true);
 
         try {
-            // Initiate Payment (Create DB Order + Juspay Session)
+            // Initiate Payment (Create DB Order + Payment Session)
             const { data } = await api.post("/payments/initiate", {
                 amount,
                 address,
@@ -43,13 +43,49 @@ export default function PaymentButton({ amount, address, items, className }: Pay
                 locationId: activeStore?.id
             });
 
-            if (data.paymentLink) {
+            if (data.iframe && data.accessKey) {
+                const triggerIframeCheckout = () => {
+                    const EasebuzzCheckout = (window as any).EasebuzzCheckout;
+                    if (EasebuzzCheckout) {
+                        const checkoutObj = new EasebuzzCheckout(data.key, data.env);
+                        const options = {
+                            access_key: data.accessKey,
+                            onResponse: (response: any) => {
+                                console.log("[Easebuzz Iframe Response]", response);
+                                const isSuccess = response.status === "success";
+                                const orderIdVal = data.orderId || data.id;
+                                router.push(`/payment/success?order_id=${orderIdVal}&status=${isSuccess ? "success" : "failed"}`);
+                            }
+                        };
+                        checkoutObj.initiatePayment(options);
+                    } else {
+                        toast.error("Easebuzz Checkout SDK failed to load");
+                        setLoading(false);
+                    }
+                };
+
+                if (!(window as any).EasebuzzCheckout) {
+                    const script = document.createElement("script");
+                    script.src = data.env === "prod" 
+                        ? "https://pay.easebuzz.in/ebapi/easebuzz-checkout/easebuzz-checkout.js"
+                        : "https://testpay.easebuzz.in/ebapi/easebuzz-checkout/easebuzz-checkout.js";
+                    script.async = true;
+                    script.onload = triggerIframeCheckout;
+                    script.onerror = () => {
+                        toast.error("Failed to load Easebuzz script");
+                        setLoading(false);
+                    };
+                    document.body.appendChild(script);
+                } else {
+                    triggerIframeCheckout();
+                }
+            } else if (data.paymentLink) {
                 // BACKUP: Store orderId in localStorage in case query params get stripped on redirect
                 if (data.orderId || data.id) {
                     localStorage.setItem("last_order_id", data.orderId || data.id);
                 }
 
-                // Redirect user to Juspay Web Checkout
+                // Redirect user to Hosted Checkout
                 window.location.href = data.paymentLink;
             } else {
                 toast.error("Failed to initiate payment");
