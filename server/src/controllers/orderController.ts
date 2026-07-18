@@ -263,6 +263,30 @@ export const updateOrderStatus = async (req: AuthenticatedRequest, res: Response
             }
         });
 
+        // Automatically complete COD payment and mark order paid when status is DELIVERED
+        if (status === "DELIVERED") {
+            const pendingCodPayment = await prisma.payment.findFirst({
+                where: { orderId: id as string, method: "COD", status: "PENDING" }
+            });
+            if (pendingCodPayment) {
+                await prisma.$transaction([
+                    prisma.payment.update({
+                        where: { id: pendingCodPayment.id },
+                        data: { status: "SUCCESS", transactionId: `DELIVERED_${Date.now()}` }
+                    }),
+                    prisma.order.update({
+                        where: { id: id as string },
+                        data: { isPaid: true, paymentStatus: "COMPLETED" }
+                    })
+                ]);
+            } else {
+                await prisma.order.update({
+                    where: { id: id as string },
+                    data: { isPaid: true, paymentStatus: "COMPLETED" }
+                });
+            }
+        }
+
         // Create Audit Log
         await (prisma.auditLog.create as any)({
             data: {

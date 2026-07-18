@@ -1,4 +1,5 @@
 import { CouponError } from "../utils/errors";
+import { calculateUserTrustScore } from "./paymentEligibilityService";
 
 export interface CartItemInput {
     productId: string;
@@ -150,6 +151,17 @@ export const couponService = {
         // ── 8. Cart Rules & Combo Validation ────────────────────────
         if (coupon.cartRulesJson) {
             const rules = coupon.cartRulesJson as any;
+            
+            // Trust Score Verification
+            if (rules.minTrustScore !== undefined && rules.minTrustScore !== null) {
+                if (!userId) {
+                    throw new CouponError("Please log in to apply this coupon.");
+                }
+                const trustScore = await calculateUserTrustScore(tx, userId);
+                if (trustScore < Number(rules.minTrustScore)) {
+                    throw new CouponError(`This coupon requires a minimum trust score of ${rules.minTrustScore}%. Your current trust score is ${trustScore}%.`);
+                }
+            }
             
             // Category Spend Checks (e.g. Dairy orders above ₹499)
             if (rules.requireCategorySpend) {

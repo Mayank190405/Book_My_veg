@@ -68,7 +68,8 @@ export default function AdminCoupons() {
             allowedPincodes: "",
             allowedPayment: "",
             userSegments: ["ALL"],
-            targetedPhoneNumbers: ""
+            targetedPhoneNumbers: "",
+            minTrustScore: ""
         });
         setModalStep(1);
         setIsModalOpen(true);
@@ -87,6 +88,9 @@ export default function AdminCoupons() {
             userSegments: Array.isArray(coupon.userSegments) ? coupon.userSegments : ["ALL"],
             targetedPhoneNumbers: Array.isArray(coupon.targetedUsers) 
                 ? coupon.targetedUsers.map((tu: any) => tu.user?.phone).filter(Boolean).join(", ") 
+                : "",
+            minTrustScore: coupon.cartRulesJson && (coupon.cartRulesJson as any).minTrustScore !== undefined && (coupon.cartRulesJson as any).minTrustScore !== null
+                ? (coupon.cartRulesJson as any).minTrustScore.toString()
                 : ""
         });
         setModalStep(1);
@@ -110,6 +114,13 @@ export default function AdminCoupons() {
                 ? editingCoupon.targetedPhoneNumbers.split(',').map((p: string) => p.trim()).filter(Boolean)
                 : editingCoupon.targetedPhoneNumbers || [];
 
+            const cartRules = editingCoupon.cartRulesJson ? { ...(editingCoupon.cartRulesJson as any) } : {};
+            if (editingCoupon.minTrustScore !== undefined && editingCoupon.minTrustScore !== "") {
+                cartRules.minTrustScore = parseInt(editingCoupon.minTrustScore) || null;
+            } else {
+                delete cartRules.minTrustScore;
+            }
+
             const payload = {
                 ...editingCoupon,
                 discountValue: editingCoupon.discountValue !== "" ? parseFloat(editingCoupon.discountValue) : 0,
@@ -120,6 +131,7 @@ export default function AdminCoupons() {
                 allowedPincodes: pincodesArray,
                 allowedPayment: paymentArray,
                 targetedPhoneNumbers: targetedPhoneNumbersArray,
+                cartRulesJson: Object.keys(cartRules).length > 0 ? cartRules : null,
             };
 
             if (editingCoupon.id) {
@@ -271,6 +283,11 @@ export default function AdminCoupons() {
                                                 {coupon.isActive ? "Redeemable" : "Suspended"}
                                             </span>
                                         </div>
+                                        {coupon.cartRulesJson && (coupon.cartRulesJson as any).minTrustScore !== undefined && (coupon.cartRulesJson as any).minTrustScore !== null && (
+                                            <div className="flex items-center gap-1 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded text-[9px] font-black text-amber-700 uppercase tracking-wider">
+                                                ★ Min Trust: {(coupon.cartRulesJson as any).minTrustScore}%
+                                            </div>
+                                        )}
                                     </div>
                                     {coupon.description && (
                                         <p className="text-[11px] font-bold text-slate-400 leading-normal uppercase">{coupon.description}</p>
@@ -648,7 +665,7 @@ export default function AdminCoupons() {
                                         </div>
                                     </div>
 
-                                    <div className="grid grid-cols-2 gap-6">
+                                    <div className="grid grid-cols-3 gap-6">
                                         <div className="space-y-2">
                                             <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Geofenced Delivery Pincodes (Comma Sep)</Label>
                                             <input 
@@ -656,6 +673,18 @@ export default function AdminCoupons() {
                                                 onChange={e => setEditingCoupon({...editingCoupon, allowedPincodes: e.target.value})}
                                                 className="w-full h-12 bg-white border border-slate-200 rounded-xl px-4 text-sm font-semibold text-slate-900 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/5 transition-all font-mono"
                                                 placeholder="422001, 422002"
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Min Trust Score Required (%)</Label>
+                                            <input 
+                                                type="number"
+                                                value={editingCoupon?.minTrustScore || ""}
+                                                onChange={e => setEditingCoupon({...editingCoupon, minTrustScore: e.target.value})}
+                                                className="w-full h-12 bg-white border border-slate-200 rounded-xl px-4 text-sm font-semibold text-slate-900 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/5 transition-all"
+                                                placeholder="e.g. 80"
+                                                min="0"
+                                                max="100"
                                             />
                                         </div>
                                         <div className="space-y-2 flex flex-col justify-end">

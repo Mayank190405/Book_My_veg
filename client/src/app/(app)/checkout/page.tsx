@@ -30,6 +30,9 @@ export default function CheckoutPage() {
     const totalPrice = Number(rawTotalPrice) || 0;
     const discount = Number(rawDiscount) || 0;
  
+    const deliveryFee = totalPrice >= 249 ? 0 : 40;
+    const grandTotal = totalPrice + deliveryFee - discount;
+
     const [loading, setLoading] = useState(false);
     const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
     const [isAddressDialogOpen, setIsAddressDialogOpen] = useState(false);
@@ -47,9 +50,37 @@ export default function CheckoutPage() {
     useEffect(() => {
         setMounted(true);
     }, []);
- 
-    const deliveryFee = totalPrice >= 249 ? 0 : 40;
-    const grandTotal = totalPrice + deliveryFee - discount;
+
+    const [eligibility, setEligibility] = useState<{
+        codAllowed: boolean;
+        reasons: string[];
+        onlineAllowed: boolean;
+        nextOrderIndex: number;
+        advanceAmount: number;
+        codAmount: number;
+    } | null>(null);
+    const [eligibilityLoading, setEligibilityLoading] = useState(false);
+
+    useEffect(() => {
+        const fetchEligibility = async () => {
+            if (currentStep !== "payment" || !user) return;
+            setEligibilityLoading(true);
+            try {
+                const res = await api.get(`/payments/eligibility?amount=${grandTotal}`);
+                setEligibility(res.data);
+                
+                // If COD is not allowed, default to ONLINE
+                if (res.data && !res.data.codAllowed) {
+                    setPaymentMethod("ONLINE");
+                }
+            } catch (err) {
+                console.error("Failed to fetch payment eligibility:", err);
+            } finally {
+                setEligibilityLoading(false);
+            }
+        };
+        fetchEligibility();
+    }, [currentStep, grandTotal, user]);
  
     const { data: addresses } = useQuery({
         queryKey: ["addresses"],
@@ -94,8 +125,12 @@ export default function CheckoutPage() {
                 couponCode: couponCode || undefined,
                 locationId: activeStore?.id,
             });
-            clearCart();
-            if (method === "ONLINE") {
+            const hasOnlinePart = method === "ONLINE" || (eligibility && eligibility.advanceAmount > 0);
+            if (!hasOnlinePart) {
+                clearCart();
+            }
+
+            if (hasOnlinePart) {
                 try {
                     const payRes = await api.post(`/payments/${order.id}/generate-link`);
                     
@@ -109,16 +144,21 @@ export default function CheckoutPage() {
                                     onResponse: (response: any) => {
                                         console.log("[Easebuzz Iframe Response]", response);
                                         const isSuccess = response.status === "success";
-                                        router.push(`/payment/success?order_id=${order.id}&status=${isSuccess ? "success" : "failed"}`);
+                                        if (isSuccess) {
+                                            router.push(`/payment/success?order_id=${order.id}&status=success`);
+                                        } else {
+                                            toast.error("Payment failed or cancelled. Your basket remains preserved.");
+                                            router.push("/cart");
+                                        }
                                     }
                                 };
                                 checkoutObj.initiatePayment(options);
                             } else {
                                 toast.error("Easebuzz Checkout SDK failed to load");
-                                router.push(`/orders?success=true`);
+                                router.push("/cart");
                             }
                         };
-
+ 
                         if (!(window as any).EasebuzzCheckout) {
                             const script = document.createElement("script");
                             script.src = "https://ebz-static.s3.ap-south-1.amazonaws.com/easecheckout/v2.0.0/easebuzz-checkout-v2.min.js";
@@ -126,7 +166,7 @@ export default function CheckoutPage() {
                             script.onload = triggerIframeCheckout;
                             script.onerror = () => {
                                 toast.error("Failed to load Easebuzz script");
-                                router.push(`/orders?success=true`);
+                                router.push("/cart");
                             };
                             document.body.appendChild(script);
                         } else {
@@ -141,8 +181,9 @@ export default function CheckoutPage() {
                     console.error("Failed to generate payment link:", payErr);
                     toast.error("Order placed, but failed to redirect to payment gateway.");
                 }
+            } else {
+                router.push("/orders?success=true");
             }
-            router.push("/orders?success=true");
         } catch (error) {
             console.error(error);
             toast.error("Failed to place order");
@@ -382,10 +423,17 @@ export default function CheckoutPage() {
                                 <div className="space-y-3">
                                     {/* Cash on Delivery */}
                                     <div 
-                                        onClick={() => setPaymentMethod("COD")}
+                                        onClick={() => {
+                                            if (eligibility && !eligibility.codAllowed) {
+                                                toast.error(eligibility.reasons[0] || "COD is not available for this order.");
+                                                return;
+                                            }
+                                            setPaymentMethod("COD");
+                                        }}
                                         className={cn(
-                                            "bg-white rounded-3xl border p-5 cursor-pointer transition-all duration-300",
-                                            paymentMethod === "COD" ? "border-[#0b5c3e] shadow-sm" : "border-gray-100"
+                                            "bg-white rounded-3xl border p-5 cursor-pointer transition-all duration-300 relative overflow-hidden text-left",
+                                            paymentMethod === "COD" ? "border-[#0b5c3e] shadow-sm" : "border-gray-100",
+                                            eligibility && !eligibility.codAllowed && "opacity-50 cursor-not-allowed bg-gray-50/50"
                                         )}
                                     >
                                         <div className="flex items-center justify-between gap-4">
@@ -394,8 +442,32 @@ export default function CheckoutPage() {
                                                     <Wallet className="h-4.5 w-4.5" />
                                                 </div>
                                                 <div className="text-left">
-                                                    <h4 className="text-xs font-black text-gray-900 uppercase tracking-wider leading-none">Cash on Delivery</h4>
-                                                    <p className="text-[9px] text-gray-400 font-bold uppercase tracking-wider mt-1">Pay in cash when your order is delivered</p>
+                                                    <div className="flex items-center gap-2">
+                                                        <h4 className="text-xs font-black text-gray-900 uppercase tracking-wider leading-none">
+                                                            Cash on Delivery
+                                                        </h4>
+                                                        {eligibility?.codAllowed && eligibility.advanceAmount > 0 && (
+                                                            <span className="bg-amber-100 text-amber-800 text-[8px] font-black uppercase px-2 py-0.5 rounded-full tracking-wider leading-none">
+                                                                PARTIAL COD
+                                                            </span>
+                                                        )}
+                                                        {eligibility?.codAllowed && eligibility.advanceAmount === 0 && (
+                                                            <span className="bg-emerald-100 text-[#0b5c3e] text-[8px] font-black uppercase px-2 py-0.5 rounded-full tracking-wider leading-none">
+                                                                FULL COD
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <p className="text-[9px] text-gray-400 font-bold uppercase tracking-wider mt-1.5 leading-tight">
+                                                        {eligibilityLoading ? (
+                                                            "Checking eligibility..."
+                                                        ) : eligibility && !eligibility.codAllowed ? (
+                                                            "Not available for your current order level"
+                                                        ) : eligibility && eligibility.advanceAmount > 0 ? (
+                                                            `Pay ₹${eligibility.advanceAmount} advance online + ₹${eligibility.codAmount} on delivery`
+                                                        ) : (
+                                                            "Pay in cash when your order is delivered"
+                                                        )}
+                                                    </p>
                                                 </div>
                                             </div>
                                             <div className={cn(
@@ -406,10 +478,23 @@ export default function CheckoutPage() {
                                             </div>
                                         </div>
  
-                                        {paymentMethod === "COD" && (
+                                        {paymentMethod === "COD" && eligibility?.codAllowed && (
                                             <div className="mt-4 pt-3 border-t border-dashed border-emerald-500/10 flex items-center gap-2.5 text-[#0b5c3e] animate-in fade-in duration-300">
                                                 <ShieldCheck className="h-4.5 w-4.5 shrink-0" />
-                                                <p className="text-[9px] font-black uppercase tracking-widest leading-none">No extra charges. Pay safely on delivery.</p>
+                                                <p className="text-[9px] font-black uppercase tracking-widest leading-none">
+                                                    {eligibility.advanceAmount > 0 
+                                                        ? `Secure advance of ₹${eligibility.advanceAmount} required` 
+                                                        : "No extra charges. Pay safely on delivery."}
+                                                </p>
+                                            </div>
+                                        )}
+
+                                        {eligibility && !eligibility.codAllowed && (
+                                            <div className="mt-4 pt-3 border-t border-dashed border-red-500/10 flex items-center gap-2 text-red-500 animate-in fade-in duration-300">
+                                                <Info className="h-4 w-4 shrink-0" />
+                                                <p className="text-[9px] font-black uppercase tracking-wider leading-none">
+                                                    {eligibility.reasons[0]}
+                                                </p>
                                             </div>
                                         )}
                                     </div>
@@ -618,17 +703,23 @@ export default function CheckoutPage() {
  
                                 <button
                                     onClick={() => handlePlaceOrder(paymentMethod)}
-                                    disabled={loading}
+                                    disabled={loading || eligibilityLoading}
                                     className="flex-1 flex items-center justify-center gap-2 bg-[#0b5c3e] hover:bg-[#084831] disabled:bg-gray-100 disabled:text-gray-400 active:scale-[0.98] transition-all text-white font-black text-xs uppercase tracking-widest h-12.5 rounded-2xl shadow-lg shadow-emerald-950/15"
                                 >
-                                    <span>PLACE ORDER</span>
-                                    {loading ? <Loader2 className="h-4 w-4 animate-spin text-white" /> : <ArrowRight className="h-4.5 w-4.5 text-white" strokeWidth={3} />}
+                                    <span>
+                                        {paymentMethod === "COD" && eligibility && eligibility.advanceAmount > 0 
+                                            ? "PAY ADVANCE & PLACE ORDER" 
+                                            : "PLACE ORDER"}
+                                    </span>
+                                    {loading || eligibilityLoading ? <Loader2 className="h-4 w-4 animate-spin text-white" /> : <ArrowRight className="h-4.5 w-4.5 text-white" strokeWidth={3} />}
                                 </button>
                             </div>
                             
                             <p className="text-center text-[8px] font-black text-gray-300 uppercase tracking-widest leading-none">
                                 {paymentMethod === "COD" 
-                                    ? `You will pay ₹${grandTotal.toFixed(0)} in cash on delivery` 
+                                    ? (eligibility && eligibility.advanceAmount > 0 
+                                        ? `You will pay ₹${eligibility.advanceAmount} online advance + ₹${eligibility.codAmount} on delivery`
+                                        : `You will pay ₹${grandTotal.toFixed(0)} in cash on delivery`) 
                                     : `Secure online payment of ₹${grandTotal.toFixed(0)}`}
                             </p>
                         </div>

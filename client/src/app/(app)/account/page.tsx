@@ -175,6 +175,55 @@ export default function AccountPage() {
                         </div>
                     </div>
 
+                    {/* Trust Score & Level Panel */}
+                    {mounted && user && (
+                        <div className="mt-8 mx-4 bg-white/10 backdrop-blur-md rounded-3xl border border-white/10 p-5 space-y-4 shadow-inner relative">
+                            <div className="flex items-center justify-between">
+                                <div className="text-left">
+                                    <span className="text-[9px] font-black uppercase tracking-wider text-[#9ae6b4] dark:text-[#a3f7bf]">
+                                        Payment Trust Level
+                                    </span>
+                                    <h4 className="text-sm font-black uppercase tracking-tight text-white mt-1">
+                                        {Number((user as any).trustScore) >= 90 ? "🥇 Gold Elite Customer" 
+                                         : Number((user as any).trustScore) >= 70 ? "🥈 Silver Safety Customer" 
+                                         : Number((user as any).trustScore) >= 40 ? "🥉 Bronze Customer" 
+                                         : "⚠️ High-Risk Account"}
+                                    </h4>
+                                </div>
+                                <div className="text-right">
+                                    <span className="text-2xl font-black text-white italic tracking-tighter">
+                                        {Number((user as any).trustScore ?? 100)}%
+                                    </span>
+                                    <span className="text-[8px] font-black block uppercase tracking-widest text-[#9ae6b4] dark:text-[#a3f7bf] mt-0.5">
+                                        Trust Score
+                                    </span>
+                                </div>
+                            </div>
+
+                            {/* Progress bar gauge */}
+                            <div className="w-full bg-white/10 h-2.5 rounded-full overflow-hidden border border-white/5 p-0.5">
+                                <div 
+                                    className={cn(
+                                        "h-full rounded-full shadow-inner transition-all duration-1000",
+                                        Number((user as any).trustScore) >= 80 ? "bg-emerald-400" 
+                                         : Number((user as any).trustScore) >= 50 ? "bg-amber-400" 
+                                         : "bg-rose-500"
+                                    )}
+                                    style={{ width: `${Number((user as any).trustScore ?? 100)}%` }}
+                                />
+                            </div>
+
+                            {/* Details text */}
+                            <p className="text-[9px] font-semibold text-emerald-100/70 text-left uppercase tracking-wider leading-relaxed">
+                                {Number((user as any).trustScore) >= 80 
+                                    ? "Thank you for being a highly reliable shopper! Full Cash on Delivery is enabled."
+                                    : Number((user as any).trustScore) >= 50
+                                    ? "Good history. Partial Cash on Delivery is available to protect your shipments."
+                                    : "Due to recent cancellations, online advance is required to secure shipments."}
+                            </p>
+                        </div>
+                    )}
+
                 </div>
 
                 {/* 2. Quick Access Section */}

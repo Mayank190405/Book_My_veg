@@ -9,6 +9,7 @@ import { getIo } from "../sockets/io";
 import { generateOrderId } from "../utils/idGenerator";
 import axios from "axios";
 import crypto from "crypto";
+import { getPaymentEligibility } from "../services/paymentEligibilityService";
 
 const generateSha512 = (str: string) => {
     return crypto.createHash("sha512").update(str).digest("hex").toLowerCase();
@@ -250,6 +251,14 @@ export const generatePaymentLink = async (req: AuthenticatedRequest, res: Respon
         // Easebuzz Integration Pathway
         if (process.env.EASEBUZZ_SERVICE_URL && process.env.EASEBUZZ_MERCHANT_KEY) {
             logger.info(`[Payment] Using Easebuzz Payment Gateway for generating link: ${orderId}`);
+            
+            const pendingOnlinePayment = await prisma.payment.findFirst({
+                where: { orderId: order.id, method: "ONLINE", status: "PENDING" }
+            });
+            const amountToCharge = pendingOnlinePayment 
+                ? Number(pendingOnlinePayment.amount).toFixed(2)
+                : Number(order.totalAmount).toFixed(2);
+
             try {
                 const protocol = req.headers["x-forwarded-proto"] || (req.secure ? "https" : "http");
                 const callbackUrl = `${protocol}://${req.headers.host}/api/v1/payments/easebuzz/callback`;
@@ -265,7 +274,7 @@ export const generatePaymentLink = async (req: AuthenticatedRequest, res: Respon
                     `${process.env.EASEBUZZ_SERVICE_URL.replace(/\/$/, "")}/easebuzz?api_name=${apiName}`,
                     {
                         txnid: order.id,
-                        amount: Number(order.totalAmount).toFixed(2),
+                        amount: amountToCharge,
                         firstname: customerName,
                         email: (order as any).user.email || "customer@example.com",
                         phone: sanitizePhone(customerPhone),
@@ -299,16 +308,23 @@ export const generatePaymentLink = async (req: AuthenticatedRequest, res: Respon
             } catch (easebuzzError: any) {
                 logger.error(`[Payment] Easebuzz generation failed, falling back to mock gateway. Error: ${easebuzzError.message}, Data: ${JSON.stringify(easebuzzError.response?.data)}`);
                 return res.json({
-                    paymentLink: `${baseUrl.replace(/\/$/, "")}/payment/mock-gateway?orderId=${orderId}&amount=${order.totalAmount}`,
+                    paymentLink: `${baseUrl.replace(/\/$/, "")}/payment/mock-gateway?orderId=${orderId}&amount=${amountToCharge}`,
                 });
             }
         }
+
+        const pendingOnlinePaymentFallback = await prisma.payment.findFirst({
+            where: { orderId: order.id, method: "ONLINE", status: "PENDING" }
+        });
+        const amountToChargeFallback = pendingOnlinePaymentFallback 
+            ? Number(pendingOnlinePaymentFallback.amount).toFixed(2)
+            : Number(order.totalAmount).toFixed(2);
 
         // Fallback to Mock Payment Gateway if JUSPAY_API_KEY is not configured/empty
         if (!process.env.JUSPAY_API_KEY) {
             logger.info(`[Payment] JUSPAY_API_KEY is empty. Falling back to Mock Payment Gateway for order: ${orderId}`);
             return res.json({
-                paymentLink: `${baseUrl.replace(/\/$/, "")}/payment/mock-gateway?orderId=${orderId}&amount=${order.totalAmount}`,
+                paymentLink: `${baseUrl.replace(/\/$/, "")}/payment/mock-gateway?orderId=${orderId}&amount=${amountToChargeFallback}`,
             });
         }
 
@@ -351,12 +367,20 @@ const completeOrderPayment = async (orderId: string, paymentDetails: any) => {
     if (!existing) throw new Error("Order not found");
     if (paymentDetails.status === "CHARGED" || paymentDetails.status === "SUCCESS") {
         await prisma.$transaction(async (tx: any) => {
+            const pendingCodPayment = await tx.payment.findFirst({
+                where: { orderId: orderId, method: "COD", status: "PENDING" }
+            });
+
+            const newPaymentStatus = pendingCodPayment ? "PARTIAL" : "PAID";
+
             await tx.order.update({
                 where: { id: orderId },
-                data: { paymentStatus: "PAID", status: "CONFIRMED" as PrismaOrderStatus },
+                data: { paymentStatus: newPaymentStatus, status: "CONFIRMED" as PrismaOrderStatus },
             });
 
             const pendingPayment = await tx.payment.findFirst({
+                where: { orderId: orderId, status: "PENDING", method: "ONLINE" }
+            }) || await tx.payment.findFirst({
                 where: { orderId: orderId, status: "PENDING" }
             });
 
@@ -365,8 +389,8 @@ const completeOrderPayment = async (orderId: string, paymentDetails: any) => {
                     where: { id: pendingPayment.id },
                     data: {
                         status: "SUCCESS",
-                        amount: paymentDetails.amount || existing.totalAmount,
-                        method: paymentDetails.payment_method_type || "ONLINE",
+                        amount: paymentDetails.amount || pendingPayment.amount,
+                        method: paymentDetails.payment_method_type || pendingPayment.method,
                         transactionId: paymentDetails.txn_id || paymentDetails.order_id || orderId,
                         metadata: paymentDetails || {},
                     }
@@ -817,5 +841,20 @@ export const refundPayment = async (req: AuthenticatedRequest, res: Response) =>
     } catch (error) {
         console.error("Refund Error:", error);
         res.status(500).json({ message: "Error processing refund" });
+    }
+};
+
+export const checkPaymentEligibility = async (req: AuthenticatedRequest, res: Response) => {
+    const userId = req.user?.userId;
+    const amount = parseFloat(req.query.amount as string) || 0;
+
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+
+    try {
+        const eligibility = await getPaymentEligibility(userId, amount);
+        res.json(eligibility);
+    } catch (error) {
+        logger.error("[Payment] Error checking payment eligibility:", error);
+        res.status(500).json({ message: "Error checking payment eligibility" });
     }
 };

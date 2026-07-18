@@ -10,8 +10,23 @@ import { getReverseGeocode } from "@/services/geocodingService";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, ArrowLeft, ShieldCheck, Smartphone, CheckCircle2, ExternalLink, Navigation, MapPin } from "lucide-react";
+import { 
+    Loader2, 
+    ArrowLeft, 
+    ShieldCheck, 
+    Smartphone, 
+    CheckCircle2, 
+    ExternalLink, 
+    Navigation, 
+    MapPin, 
+    Leaf, 
+    Award, 
+    Edit2,
+    Info
+} from "lucide-react";
 import { toast } from "sonner";
+import Image from "next/image";
+import { cn } from "@/lib/utils";
 
 const NASHIK_AREAS = [
     { name: "College Road", lat: 19.9998, lng: 73.7621, pincode: "422005" },
@@ -118,6 +133,29 @@ const formatRetryAfter = (seconds: number) => {
     return `in ${minutes} ${minutes === 1 ? 'minute' : 'minutes'} and ${remainingSeconds} ${remainingSeconds === 1 ? 'second' : 'seconds'}`;
 };
 
+const LeafyDecoration = () => (
+    <svg className="absolute top-0 right-0 w-36 h-36 pointer-events-none opacity-90 z-0" viewBox="0 0 100 100" fill="none">
+        {/* Delicate premium branch design */}
+        <path d="M100 0 C80 20, 60 20, 50 30 C45 35, 40 45, 42 55 C44 65, 55 70, 65 65 C75 60, 85 45, 100 0" fill="#c6f6d5" fillOpacity="0.45" />
+        <path d="M100 0 C70 30, 55 45, 60 55 C65 65, 75 60, 80 50 C85 40, 90 20, 100 0" fill="#68d391" fillOpacity="0.35" />
+        <path d="M100 0 C85 10, 75 10, 70 15 C65 20, 68 28, 75 25 C82 22, 90 12, 100 0" fill="#38a169" fillOpacity="0.4" />
+        <path d="M100 0 C80 15, 65 35, 55 55" stroke="#2f855a" strokeWidth="0.5" strokeOpacity="0.2" />
+    </svg>
+);
+
+const AppLogo = () => (
+    <div className="w-16 h-16 bg-white border border-slate-100 rounded-3xl flex items-center justify-center shadow-[0_8px_30px_rgba(4,64,48,0.04)] mb-8 shrink-0 relative z-10">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            {/* Soft rounded bag body */}
+            <path d="M5 8V18C5 20.2091 6.79086 22 9 22H15C17.2091 22 19 20.2091 19 18V8" stroke="#10b981" strokeWidth="2.5" strokeLinecap="round"/>
+            <path d="M9 8V6C9 4.34315 10.3431 3 12 3C13.6569 3 15 4.34315 15 6V8" stroke="#10b981" strokeWidth="2.5" strokeLinecap="round"/>
+            {/* Delicate green leaf detail in center */}
+            <path d="M12 11C12 14.5 13.5 16 15 16C15 14 13.5 12.5 12 11Z" fill="#10b981" />
+            <path d="M12 11C12 14.5 10.5 16 9 16C9 14 10.5 12.5 12 11Z" fill="#047857" />
+        </svg>
+    </div>
+);
+
 function LoginForm() {
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -143,6 +181,16 @@ function LoginForm() {
     const [resolvedPincode, setResolvedPincode] = useState("");
     const [geoLoading, setGeoLoading] = useState(false);
     const mapRef = useRef<any>(null);
+
+    // OTP refs for individual boxes
+    const otpRefs = [
+        useRef<HTMLInputElement>(null),
+        useRef<HTMLInputElement>(null),
+        useRef<HTMLInputElement>(null),
+        useRef<HTMLInputElement>(null),
+        useRef<HTMLInputElement>(null),
+        useRef<HTMLInputElement>(null),
+    ];
 
     const handleSendOtp = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -389,10 +437,8 @@ function LoginForm() {
 
         setSetupLoading(true);
         try {
-            // 1. Update Profile (Name) - omit email so it doesn't fail validation
             await updateProfile({ name: name.trim() });
 
-            // 2. Create Address using both complete address and map resolved address
             const fullAddress = `${completeAddress.trim()}, ${resolvedAddress}`;
             await createAddress({
                 type: "HOME",
@@ -405,13 +451,11 @@ function LoginForm() {
                 phone: phone
             });
 
-            // 3. Update Zustand User Store User
             const user = useUserStore.getState().user;
             if (user) {
                 useUserStore.getState().setUser({ ...user, name: name.trim() });
             }
 
-            // 4. Set active location in Zustand Store
             const { setLocation: setUserLocation } = useUserStore.getState();
             setUserLocation({
                 address: fullAddress,
@@ -429,65 +473,95 @@ function LoginForm() {
         }
     };
 
+    const handleOtpChange = (index: number, value: string) => {
+        const cleanVal = value.replace(/\D/g, "");
+        if (!cleanVal) return;
+
+        const valArray = cleanVal.split("");
+        let currentIdx = index;
+
+        const newOtp = otp.split("");
+        for (let i = 0; i < valArray.length; i++) {
+            if (currentIdx < 6) {
+                newOtp[currentIdx] = valArray[i];
+                currentIdx++;
+            }
+        }
+        const updatedOtp = newOtp.join("").slice(0, 6);
+        setOtp(updatedOtp);
+
+        const nextFocus = Math.min(currentIdx, 5);
+        otpRefs[nextFocus].current?.focus();
+    };
+
+    const handleOtpKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === "Backspace") {
+            const newOtp = otp.split("");
+            if (newOtp[index]) {
+                newOtp[index] = "";
+                setOtp(newOtp.join(""));
+            } else if (index > 0) {
+                newOtp[index - 1] = "";
+                setOtp(newOtp.join(""));
+                otpRefs[index - 1].current?.focus();
+            }
+            e.preventDefault();
+        }
+    };
+
     return (
-        <div className="w-full max-w-md mx-auto px-6 animate-slide-up">
-            <div className="glass p-8 rounded-3xl shadow-2xl relative overflow-hidden group">
-                {/* Decorative background glow */}
-                <div className="absolute top-0 right-0 -mr-16 -mt-16 w-32 h-32 bg-primary/10 rounded-full blur-3xl group-hover:bg-primary/20 transition-colors duration-500" />
+        <div className="w-full flex flex-col min-h-screen md:min-h-[850px] md:h-[850px] justify-between relative overflow-hidden bg-gradient-to-b from-[#fafdfa] to-[#f5f9f6] animate-in fade-in duration-500">
+            
+            {/* Header decor logic */}
+            {step === "PHONE" && <LeafyDecoration />}
 
-                <div className="relative z-10">
-                    <div className="flex flex-col items-center mb-10 text-center">
-                        <div className="w-20 h-20 bg-emerald-50 rounded-3xl flex items-center justify-center mb-6 ring-1 ring-emerald-100 shadow-inner group-hover:scale-110 transition-all duration-700 ease-out">
-                            {step === "PHONE" ? (
-                                <div className="relative">
-                                    <Smartphone className="h-10 w-10 text-emerald-600 relative z-10" />
-                                    <div className="absolute inset-0 bg-emerald-400/20 blur-xl rounded-full animate-pulse" />
-                                </div>
-                            ) : step === "OTP" ? (
-                                <div className="relative">
-                                    <ShieldCheck className="h-10 w-10 text-emerald-600 relative z-10" />
-                                    <div className="absolute inset-0 bg-emerald-400/20 blur-xl rounded-full animate-pulse" />
-                                </div>
-                            ) : (
-                                <div className="relative">
-                                    <MapPin className="h-10 w-10 text-emerald-600 relative z-10" />
-                                    <div className="absolute inset-0 bg-emerald-400/20 blur-xl rounded-full animate-pulse" />
-                                </div>
-                            )}
+            {/* Main content viewport wrapper */}
+            <div className="flex-1 flex flex-col px-7 pt-12 pb-6 relative z-10 w-full min-w-0">
+                {step === "PHONE" ? (
+                    <div className="flex-1 flex flex-col justify-between">
+                        {/* Upper Intro panel */}
+                        <div className="relative">
+                            <AppLogo />
+                            <h1 className="text-4xl font-black text-[#0f342a] tracking-tight leading-[1.05] italic uppercase text-left">
+                                Welcome<br />Back!
+                            </h1>
+                            <p className="text-[10px] font-bold text-[#8ba29a] uppercase tracking-[0.18em] leading-relaxed mt-4 max-w-[280px] text-left">
+                                Experience the future of farm-fresh essentials with Book My Veg.
+                            </p>
+
+                            {/* Overflowing basket render */}
+                            <div className="absolute top-[80px] -right-20 w-60 h-60 pointer-events-none select-none mix-blend-multiply opacity-95">
+                                <Image 
+                                    src="/images/login_basket.png" 
+                                    alt="Fresh Vegetables Basket"
+                                    width={240}
+                                    height={240}
+                                    priority
+                                    className="object-contain"
+                                />
+                            </div>
                         </div>
-                        <h1 className="text-4xl font-heading font-black text-slate-900 tracking-tight mb-3">
-                            {step === "PHONE" ? "Welcome Back" : step === "OTP" ? "Security Check" : "Complete Profile"}
-                        </h1>
-                        <p className="text-slate-500 text-base leading-relaxed px-2 max-w-[280px]">
-                            {step === "PHONE"
-                                ? "Experience the future of farm-fresh essentials with Book My Veg."
-                                : step === "OTP"
-                                    ? (whatsappUrl
-                                        ? "Almost there! One-tap verification via WhatsApp requested."
-                                        : `Enter the 6-digit verification code sent to +91 ${phone}`)
-                                    : "Enter your details so we can deliver farm-fresh veg to your doorstep."
-                            }
-                        </p>
-                    </div>
 
-                    {step === "PHONE" ? (
-                        <form onSubmit={handleSendOtp} className="space-y-6">
-                            <div className="space-y-2">
-                                <Label htmlFor="phone" className="text-xs font-semibold uppercase tracking-wider text-gray-400 ml-1">
+                        {/* Mid form panel */}
+                        <form onSubmit={handleSendOtp} className="space-y-6 mt-6">
+                            <div className="space-y-2 text-left">
+                                <Label htmlFor="phone" className="text-[10px] font-black uppercase tracking-[0.2em] text-[#8ba29a] pl-1">
                                     Mobile Number
                                 </Label>
-                                <div className="relative group/input">
-                                    <div className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center gap-2 border-r pr-3 py-1 border-gray-100 group-focus-within/input:border-primary/30 transition-colors">
-                                        <span className="text-gray-500 font-medium">🇮🇳</span>
-                                        <span className="text-gray-400 text-sm font-semibold">+91</span>
+                                <div className="flex items-center bg-white border border-slate-100 rounded-3xl px-4 py-1.5 shadow-[0_8px_30px_rgba(4,64,48,0.015)] focus-within:border-emerald-500 focus-within:ring-4 focus-within:ring-emerald-500/5 transition-all">
+                                    {/* Country Selector Mockup */}
+                                    <div className="flex items-center gap-2 border-r border-slate-100 pr-3 mr-3 select-none">
+                                        <span className="text-base">🇮🇳</span>
+                                        <span className="text-xs font-black text-slate-800 tracking-wider">+91</span>
+                                        <span className="text-[9px] font-bold text-slate-400">▼</span>
                                     </div>
                                     <Input
                                         id="phone"
                                         type="tel"
-                                        placeholder="9876543210"
+                                        placeholder="Enter mobile number"
                                         value={phone}
                                         onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                                        className="pl-24 h-14 rounded-2xl border-gray-100 bg-white/50 focus:bg-white focus:ring-primary/20 transition-all text-lg font-medium"
+                                        className="h-10 border-0 bg-transparent px-0 text-sm font-bold text-slate-800 placeholder-slate-300 outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
                                         required
                                         minLength={10}
                                         maxLength={10}
@@ -496,56 +570,122 @@ function LoginForm() {
                                 </div>
                             </div>
 
-                            <Button 
+                            <button 
                                 type="submit" 
-                                className="w-full h-15 rounded-[22px] bg-gradient-to-br from-emerald-600 to-green-600 text-white font-bold text-xl shadow-[0_12px_24px_-8px_rgba(16,185,129,0.4)] hover:shadow-[0_16px_32px_-8px_rgba(16,185,129,0.5)] active:scale-[0.97] transition-all duration-300 disabled:opacity-50 disabled:scale-100 py-8 border-none"
+                                className="w-full h-14 bg-[#10b981] rounded-3xl flex items-center justify-between pl-6 pr-3.5 text-white active:scale-[0.98] transition-all hover:bg-[#0e9d6d] shadow-[0_12px_24px_rgba(16,185,129,0.15)] disabled:opacity-50 disabled:scale-100"
                                 disabled={loading || phone.length < 10}
                             >
-                                {loading ? (
-                                    <Loader2 className="h-6 w-6 animate-spin" />
-                                ) : (
-                                    <div className="flex items-center gap-2">
-                                        <span>Continue safely</span>
-                                        <div className="w-4 h-[1px] bg-white/30" />
-                                    </div>
-                                )}
-                            </Button>
+                                <span className="text-xs font-black uppercase tracking-[0.2em]">Continue Safely</span>
+                                <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center shrink-0">
+                                    {loading ? (
+                                        <Loader2 className="h-4 w-4 animate-spin text-white" />
+                                    ) : (
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                            <line x1="5" y1="12" x2="19" y2="12" />
+                                            <polyline points="12 5 19 12 12 19" />
+                                        </svg>
+                                    )}
+                                </div>
+                            </button>
+
+                            <div className="relative flex items-center justify-center py-2 select-none">
+                                <div className="absolute inset-0 flex items-center"><span className="w-full border-t border-slate-100" /></div>
+                                <span className="relative bg-gradient-to-b from-[#fafdfa] to-[#f5f9f6] px-3.5 text-[8px] font-black text-slate-300 uppercase tracking-widest">or</span>
+                            </div>
+
+                            <button
+                                type="button"
+                                onClick={() => router.push(redirect)}
+                                className="w-full text-center text-[10px] font-black text-[#10b981] uppercase tracking-[0.2em] py-2 hover:opacity-80 active:scale-95 transition-all"
+                            >
+                                Skip for now & browse
+                            </button>
                         </form>
-                    ) : step === "OTP" ? (
-                        <div className="space-y-6">
-                            {whatsappUrl ? (
+
+                        {/* Badges footer list */}
+                        <div className="grid grid-cols-3 gap-2 mt-8 pt-6 border-t border-slate-100/60 text-left">
+                            <div className="space-y-1.5">
+                                <div className="w-8 h-8 bg-emerald-500/10 rounded-xl flex items-center justify-center text-emerald-600">
+                                    <ShieldCheck className="h-4 w-4" />
+                                </div>
+                                <h5 className="text-[9px] font-black uppercase tracking-wider text-slate-700">Safe & Secure</h5>
+                                <p className="text-[7.5px] font-semibold text-slate-400 leading-normal uppercase">Your data is protected</p>
+                            </div>
+                            <div className="space-y-1.5">
+                                <div className="w-8 h-8 bg-emerald-500/10 rounded-xl flex items-center justify-center text-emerald-600">
+                                    <Leaf className="h-4 w-4" />
+                                </div>
+                                <h5 className="text-[9px] font-black uppercase tracking-wider text-slate-700">Farm Fresh</h5>
+                                <p className="text-[7.5px] font-semibold text-slate-400 leading-normal uppercase">Handpicked for you</p>
+                            </div>
+                            <div className="space-y-1.5">
+                                <div className="w-8 h-8 bg-emerald-500/10 rounded-xl flex items-center justify-center text-emerald-600">
+                                    <Award className="h-4 w-4" />
+                                </div>
+                                <h5 className="text-[9px] font-black uppercase tracking-wider text-slate-700">Reliable</h5>
+                                <p className="text-[7.5px] font-semibold text-slate-400 leading-normal uppercase">Trusted by millions</p>
+                            </div>
+                        </div>
+                    </div>
+                ) : step === "OTP" ? (
+                    <div className="flex-1 flex flex-col justify-between">
+                        {/* Status notification toast */}
+                        <div className="w-full bg-[#f0fbf8] border border-emerald-500/10 rounded-2xl p-4 flex items-center gap-3 animate-in slide-in-from-top duration-300 shadow-[0_8px_30px_rgba(4,64,48,0.015)] mb-6 text-left">
+                            <div className="w-8 h-8 bg-emerald-500/15 text-emerald-600 rounded-full flex items-center justify-center shrink-0">
+                                <CheckCircle2 className="h-4.5 w-4.5" />
+                            </div>
+                            <div className="flex-1">
+                                <h5 className="text-[10px] font-black text-emerald-950 uppercase tracking-wide">OTP sent successfully</h5>
+                                <p className="text-[8px] font-bold text-emerald-800/80 uppercase tracking-wider mt-0.5">Please check your WhatsApp</p>
+                            </div>
+                        </div>
+
+                        {/* Top Group info card */}
+                        <div className="text-center flex flex-col items-center">
+                            <div className="w-16 h-16 bg-white border border-slate-100 rounded-3xl flex items-center justify-center shadow-[0_8px_30px_rgba(4,64,48,0.04)] mb-6 shrink-0 relative z-10 text-emerald-600">
+                                <ShieldCheck className="h-8 w-8" />
+                            </div>
+                            <h2 className="text-xl font-black text-[#0f342a] tracking-tight uppercase italic">Verify Your Number</h2>
+                            <p className="text-[10px] font-semibold text-[#8ba29a] uppercase tracking-wider leading-relaxed mt-2.5 max-w-[280px]">
+                                Enter the 6-digit verification code sent to <span className="text-[#10b981] font-black">+91 {phone}</span>
+                            </p>
+                        </div>
+
+                        {/* Custom inputs code block form */}
+                        <div className="space-y-6 mt-6">
+                            {whatsappUrl && (
                                 <div className="space-y-4">
                                     <Button
                                         onClick={() => window.open(whatsappUrl, '_blank')}
-                                        className="w-full h-16 rounded-2xl bg-[#25D366] hover:bg-[#20bd5c] text-white font-bold text-lg shadow-lg shadow-green-500/20 active:scale-[0.98] transition-all flex items-center justify-center gap-3"
+                                        className="w-full h-14 rounded-3xl bg-[#25D366] hover:bg-[#20bd5c] text-white font-black text-xs uppercase tracking-widest shadow-md flex items-center justify-center gap-3 border-none"
                                     >
-                                        <ExternalLink className="h-6 w-6" />
+                                        <ExternalLink className="h-4.5 w-4.5" />
                                         Verify on WhatsApp
                                     </Button>
 
-                                    <div className="flex flex-col items-center gap-3 py-4">
+                                    <div className="flex flex-col items-center gap-3 py-2">
                                         <div className="flex items-center gap-2">
-                                            <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                                            <span className="text-xs font-bold text-primary uppercase tracking-widest animate-pulse">
+                                            <Loader2 className="h-3.5 w-3.5 animate-spin text-[#10b981]" />
+                                            <span className="text-[9px] font-black text-[#10b981] uppercase tracking-widest animate-pulse">
                                                 Waiting for WhatsApp confirm...
                                             </span>
                                         </div>
-                                        <p className="text-[10px] text-gray-400 text-center px-6">
-                                            Click the button above to send the verification message. We'll automatically log you in once you send it.
+                                        <p className="text-[8px] font-bold text-slate-400 uppercase tracking-wider text-center px-4 leading-normal">
+                                            Click the button above to send the verification message. We will automatically log you in once sent.
                                         </p>
                                     </div>
 
-                                    <div className="relative">
-                                        <div className="absolute inset-0 flex items-center"><span className="w-full border-t border-gray-100" /></div>
-                                        <div className="relative flex justify-center text-xs uppercase"><span className="bg-white px-2 text-gray-400 font-medium tracking-widest">Or try code</span></div>
+                                    <div className="relative flex items-center justify-center py-2 select-none">
+                                        <div className="absolute inset-0 flex items-center"><span className="w-full border-t border-slate-100" /></div>
+                                        <span className="relative bg-gradient-to-b from-[#fafdfa] to-[#f5f9f6] px-3.5 text-[8px] font-black text-slate-300 uppercase tracking-widest">or try code</span>
                                     </div>
                                 </div>
-                            ) : null}
+                            )}
 
                             <form onSubmit={handleVerifyOtp} className="space-y-6">
-                                <div className="space-y-2">
-                                    <div className="flex justify-between items-center ml-1">
-                                        <Label htmlFor="otp" className="text-xs font-semibold uppercase tracking-wider text-gray-400">
+                                <div className="space-y-2 text-left">
+                                    <div className="flex justify-between items-center pl-1">
+                                        <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-[#8ba29a]">
                                             Verification Code
                                         </Label>
                                         <button
@@ -554,50 +694,103 @@ function LoginForm() {
                                                 setStep("PHONE");
                                                 setWhatsappUrl(null);
                                                 setMagicToken(null);
+                                                setOtp("");
                                             }}
-                                            className="text-primary text-xs font-bold hover:underline flex items-center gap-1"
+                                            className="text-[#10b981] text-[9px] font-black uppercase tracking-wider flex items-center gap-1.5 hover:opacity-80 transition-opacity"
                                         >
-                                            <ArrowLeft className="h-3 w-3" /> Change Number
+                                            <Edit2 className="h-2.5 w-2.5" /> Change Number
                                         </button>
                                     </div>
-                                    <Input
-                                        id="otp"
-                                        type="text"
-                                        placeholder="0 0 0 0 0 0"
-                                        value={otp}
-                                        onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                                        className="h-14 rounded-2xl border-gray-100 bg-white/50 focus:bg-white focus:ring-primary/20 transition-all text-center tracking-[1em] text-2xl font-bold pl-[1em]"
-                                        required={!whatsappUrl}
-                                        minLength={6}
-                                        maxLength={6}
-                                        autoFocus={!whatsappUrl}
-                                    />
+
+                                    {/* Six separate inputs block */}
+                                    <div className="flex justify-between items-center gap-2 select-none">
+                                        {[0, 1, 2, 3, 4, 5].map((idx) => (
+                                            <input
+                                                key={idx}
+                                                ref={otpRefs[idx]}
+                                                type="text"
+                                                inputMode="numeric"
+                                                pattern="[0-9]*"
+                                                maxLength={1}
+                                                value={otp[idx] || ""}
+                                                onChange={(e) => handleOtpChange(idx, e.target.value)}
+                                                onKeyDown={(e) => handleOtpKeyDown(idx, e)}
+                                                placeholder="0"
+                                                className={cn(
+                                                    "w-12 h-14 bg-white border border-slate-100 rounded-2xl text-center text-lg font-black text-slate-800 outline-none focus:border-emerald-600 focus:ring-4 focus:ring-emerald-500/5 transition-all shadow-[0_8px_30px_rgba(4,64,48,0.01)]",
+                                                    otp[idx] && "border-emerald-600 ring-2 ring-emerald-500/5"
+                                                )}
+                                            />
+                                        ))}
+                                    </div>
                                 </div>
 
-                                <Button type="submit" className="w-full h-14 rounded-2xl premium-gradient text-white font-bold text-lg shadow-lg shadow-primary/25 hover:shadow-primary/40 active:scale-[0.98] transition-all disabled:opacity-50 disabled:scale-100" disabled={loading || otp.length < 6}>
-                                    {loading ? (
-                                        <Loader2 className="h-6 w-6 animate-spin" />
-                                    ) : (
-                                        "Verify & Login"
-                                    )}
-                                </Button>
+                                <button 
+                                    type="submit" 
+                                    className="w-full h-14 bg-[#10b981] rounded-3xl flex items-center justify-between pl-6 pr-3.5 text-white active:scale-[0.98] transition-all hover:bg-[#0e9d6d] shadow-[0_12px_24px_rgba(16,185,129,0.15)] disabled:opacity-50 disabled:scale-100"
+                                    disabled={loading || otp.length < 6}
+                                >
+                                    <span className="text-xs font-black uppercase tracking-[0.2em]">Verify & Login</span>
+                                    <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center shrink-0">
+                                        {loading ? (
+                                            <Loader2 className="h-4 w-4 animate-spin text-white" />
+                                        ) : (
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                                <line x1="5" y1="12" x2="19" y2="12" />
+                                                <polyline points="12 5 19 12 12 19" />
+                                            </svg>
+                                        )}
+                                    </div>
+                                </button>
 
                                 <div className="text-center pt-2">
                                     <button
                                         type="button"
                                         onClick={handleSendOtp}
                                         disabled={loading}
-                                        className="text-gray-400 text-sm font-medium hover:text-primary transition-colors disabled:opacity-50"
+                                        className="text-[#8ba29a] text-[10px] font-bold uppercase tracking-wider hover:text-[#10b981] transition-colors disabled:opacity-50"
                                     >
-                                        Didn't receive the code? <span className="text-primary font-bold">Resend</span>
+                                        Didn't receive the code? <span className="text-[#10b981] font-black">Resend</span>
                                     </button>
                                 </div>
+
+                                <button
+                                    type="button"
+                                    onClick={() => router.push(redirect)}
+                                    className="w-full text-center text-[10px] font-black text-[#10b981] uppercase tracking-[0.2em] py-2 hover:opacity-80 active:scale-95 transition-all"
+                                >
+                                    Skip for now & browse
+                                </button>
                             </form>
                         </div>
-                    ) : (
-                        <form onSubmit={handleProfileSetupSubmit} className="space-y-6 animate-fade-in">
-                            <div className="space-y-2">
-                                <Label htmlFor="name" className="text-xs font-semibold uppercase tracking-wider text-gray-400">
+
+                        {/* Crate graphic at bottom */}
+                        <div className="w-full relative mt-8 select-none pointer-events-none mix-blend-multiply opacity-90 flex justify-center">
+                            <Image 
+                                src="/images/login_crate.png" 
+                                alt="Fresh Vegetables Crate"
+                                width={320}
+                                height={220}
+                                className="object-contain"
+                            />
+                        </div>
+                    </div>
+                ) : (
+                    <div className="flex-1 flex flex-col justify-between animate-fade-in text-left">
+                        {/* Profile Setup Intro */}
+                        <div>
+                            <div className="w-16 h-16 bg-white border border-slate-100 rounded-3xl flex items-center justify-center shadow-[0_8px_30px_rgba(4,64,48,0.04)] mb-6 shrink-0 text-emerald-600">
+                                <MapPin className="h-8 w-8" />
+                            </div>
+                            <h2 className="text-xl font-black text-[#0f342a] tracking-tight uppercase italic">Complete Profile</h2>
+                            <p className="text-[10px] font-semibold text-[#8ba29a] uppercase tracking-wider leading-relaxed mt-2.5">
+                                Enter your details so we can deliver farm-fresh veg to your doorstep.
+                            </p>
+                        </div>
+
+                        <form onSubmit={handleProfileSetupSubmit} className="space-y-5 mt-6">
+                            <div className="space-y-1.5">
+                                <Label htmlFor="name" className="text-[10px] font-black uppercase tracking-[0.2em] text-[#8ba29a] pl-1">
                                     Your Full Name
                                 </Label>
                                 <Input
@@ -606,14 +799,14 @@ function LoginForm() {
                                     placeholder="Enter your full name"
                                     value={name}
                                     onChange={(e) => setName(e.target.value)}
-                                    className="h-14 rounded-2xl border-gray-100 bg-white/50 focus:bg-white focus:ring-primary/20 transition-all text-lg font-medium"
+                                    className="h-12 rounded-2xl border-slate-100 bg-white/50 focus:bg-white text-slate-800 font-bold placeholder-slate-300"
                                     required
                                     minLength={2}
                                 />
                             </div>
 
-                            <div className="space-y-2">
-                                <Label htmlFor="completeAddress" className="text-xs font-semibold uppercase tracking-wider text-gray-400">
+                            <div className="space-y-1.5">
+                                <Label htmlFor="completeAddress" className="text-[10px] font-black uppercase tracking-[0.2em] text-[#8ba29a] pl-1">
                                     House / Flat No. / Building / Street
                                 </Label>
                                 <Input
@@ -622,83 +815,82 @@ function LoginForm() {
                                     placeholder="e.g. Flat 104, Royal Crest, College Road"
                                     value={completeAddress}
                                     onChange={(e) => setCompleteAddress(e.target.value)}
-                                    className="h-14 rounded-2xl border-gray-100 bg-white/50 focus:bg-white focus:ring-primary/20 transition-all text-lg font-medium"
+                                    className="h-12 rounded-2xl border-slate-100 bg-white/50 focus:bg-white text-slate-800 font-bold placeholder-slate-300"
                                     required
                                     minLength={5}
                                 />
                             </div>
 
-                            <div className="space-y-2 relative">
-                                <Label className="text-xs font-semibold uppercase tracking-wider text-gray-400">
+                            <div className="space-y-1.5 relative">
+                                <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-[#8ba29a] pl-1">
                                     Drop Pin for Delivery Address
                                 </Label>
                                 
-                                <div className="relative">
-                                    <div id="login-map" className="w-full h-52 rounded-2xl border border-gray-100 overflow-hidden shadow-inner relative z-0" />
+                                <div className="relative rounded-2xl border border-slate-100 overflow-hidden shadow-inner">
+                                    <div id="login-map" className="w-full h-44 relative z-0" />
                                     
                                     {/* Central Pin Indicator */}
                                     <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-full z-[400] pointer-events-none flex flex-col items-center">
-                                        <MapPin className="h-8 w-8 text-primary fill-primary/20 animate-bounce" />
-                                        <div className="w-2 h-2 bg-primary/40 rounded-full blur-[2px] -mt-1" />
+                                        <MapPin className="h-7 w-7 text-[#10b981] fill-[#10b981]/20 animate-bounce" />
+                                        <div className="w-1.5 h-1.5 bg-[#10b981]/40 rounded-full blur-[2px] -mt-1" />
                                     </div>
 
                                     {/* Auto Detect GPS button */}
                                     <button
                                         type="button"
                                         onClick={handleAutoDetect}
-                                        className="absolute bottom-4 right-4 z-[400] w-10 h-10 rounded-xl bg-white border border-gray-200 flex items-center justify-center text-slate-700 shadow-md hover:scale-105 active:scale-95 transition-all"
+                                        className="absolute bottom-3 right-3 z-[400] w-9 h-9 rounded-xl bg-white border border-slate-200 flex items-center justify-center shadow-md hover:scale-105 active:scale-95 transition-all text-slate-700"
                                         title="Use Current Location"
                                     >
-                                        <Navigation className="h-5 w-5 text-primary" />
+                                        <Navigation className="h-4.5 w-4.5 text-[#10b981]" />
                                     </button>
                                 </div>
                             </div>
 
-                            <div className="bg-emerald-50/50 p-4 rounded-2xl border border-emerald-100/50 space-y-1">
-                                <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-widest block">
-                                    Selected Address
+                            <div className="bg-emerald-50/40 p-4 rounded-2xl border border-emerald-100/30 space-y-1">
+                                <span className="text-[9px] font-black text-emerald-800 uppercase tracking-widest block">
+                                    Selected Address Area
                                 </span>
                                 {geoLoading ? (
-                                    <div className="flex items-center gap-2 text-slate-400 text-sm">
+                                    <div className="flex items-center gap-2 text-slate-400 text-xs">
                                         <Loader2 className="h-3 w-3 animate-spin text-slate-400" />
-                                        <span>Resolving coordinates...</span>
+                                        <span>Resolving GPS coordinates...</span>
                                     </div>
                                 ) : (
-                                    <p className="text-sm font-medium text-slate-700 leading-relaxed">
+                                    <p className="text-xs font-bold text-slate-700 leading-relaxed uppercase tracking-wider">
                                         {resolvedAddress || "Move map to drop pin"} {resolvedPincode ? `(${resolvedPincode})` : ""}
                                     </p>
                                 )}
                             </div>
 
-                            <Button 
+                            <button 
                                 type="submit" 
-                                className="w-full h-15 rounded-[22px] bg-gradient-to-br from-emerald-600 to-green-600 text-white font-bold text-xl shadow-[0_12px_24px_-8px_rgba(16,185,129,0.4)] hover:shadow-[0_16px_32px_-8px_rgba(16,185,129,0.5)] active:scale-[0.97] transition-all duration-300 disabled:opacity-50 disabled:scale-100 py-8 border-none"
+                                className="w-full h-14 bg-[#10b981] rounded-3xl flex items-center justify-between pl-6 pr-3.5 text-white active:scale-[0.98] transition-all hover:bg-[#0e9d6d] shadow-[0_12px_24px_rgba(16,185,129,0.15)] disabled:opacity-50 disabled:scale-100 mt-2"
                                 disabled={setupLoading || geoLoading || name.trim().length < 2 || completeAddress.trim().length < 5 || !resolvedAddress}
                             >
-                                {setupLoading ? (
-                                    <Loader2 className="h-6 w-6 animate-spin" />
-                                ) : (
-                                    "Complete Registration"
-                                )}
-                            </Button>
+                                <span className="text-xs font-black uppercase tracking-[0.2em]">Complete Registration</span>
+                                <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center shrink-0">
+                                    {setupLoading ? (
+                                        <Loader2 className="h-4 w-4 animate-spin text-white" />
+                                    ) : (
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                            <line x1="5" y1="12" x2="19" y2="12" />
+                                            <polyline points="12 5 19 12 12 19" />
+                                        </svg>
+                                    )}
+                                </div>
+                            </button>
                         </form>
-                    )}
-                </div>
-
-                <div className="mt-8 pt-6 border-t border-gray-100/50">
-                    <button
-                        type="button"
-                        onClick={() => router.push(redirect)}
-                        className="w-full text-center text-gray-400 text-sm font-semibold hover:text-primary transition-colors py-2"
-                    >
-                        Skip for now & browse
-                    </button>
-                </div>
+                    </div>
+                )}
             </div>
 
-            <p className="mt-12 text-center text-gray-400 text-[10px] uppercase tracking-widest font-bold">
-                BMV Market • Safe • Secure • Reliable
-            </p>
+            {/* Sticky footer text */}
+            <div className="pb-8 z-10 w-full text-center select-none bg-transparent">
+                <p className="text-[8px] font-black text-slate-300 uppercase tracking-[0.25em] leading-none">
+                    BMV MARKET • SAFE • SECURE • RELIABLE
+                </p>
+            </div>
         </div>
     );
 }
@@ -706,9 +898,9 @@ function LoginForm() {
 export default function LoginPage() {
     return (
         <Suspense fallback={
-            <div className="flex flex-col items-center gap-4">
-                <Loader2 className="h-12 w-12 animate-spin text-primary opacity-20" />
-                <p className="text-gray-400 font-medium animate-pulse text-sm">Preparing secure login...</p>
+            <div className="flex flex-col items-center gap-4 py-32 justify-center">
+                <Loader2 className="h-12 w-12 animate-spin text-[#10b981] opacity-25" />
+                <p className="text-slate-400 font-bold uppercase tracking-widest text-xs animate-pulse">Preparing secure login...</p>
             </div>
         }>
             <LoginForm />

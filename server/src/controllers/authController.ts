@@ -14,6 +14,7 @@ import { sendOtpViaWhatsapp, getConversation, getMyMetaTemplates } from "../serv
 import { generateTokens, verifyRefreshToken } from "../utils/jwt";
 import logger from "../utils/logger";
 import bcrypt from "bcryptjs";
+import { calculateUserTrustScore } from "../services/paymentEligibilityService";
 
 export const sendOtp = async (req: Request, res: Response) => {
     const { phone } = req.body;
@@ -454,7 +455,14 @@ export const getMe = async (req: any, res: Response) => {
             where: { id: req.user.userId },
             select: { id: true, phone: true, name: true, email: true, role: true, locationId: true },
         }));
-        res.json(user);
+        
+        if (!user) return res.status(404).json({ message: "User not found" });
+
+        const trustScore = await calculateUserTrustScore(prisma, req.user.userId);
+        res.json({
+            ...user,
+            trustScore
+        });
     } catch (error) {
         res.status(500).json({ message: "Error fetching profile" });
     }

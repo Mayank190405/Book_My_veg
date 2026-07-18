@@ -4,17 +4,10 @@ export default function LoginLayout({
     children: React.ReactNode;
 }) {
     return (
-        <div className="min-h-screen bg-background isolate">
-            {/* We skip Header and BottomNav here for a full-screen immersive feel */}
-            <main className="min-h-screen flex items-center justify-center relative overflow-hidden">
-                {/* Animated background blobs for premium feel */}
-                <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-primary/20 rounded-full blur-[120px] animate-pulse" />
-                <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-green-400/20 rounded-full blur-[120px] animate-pulse delay-700" />
-
-                <div className="z-10 w-full">
-                    {children}
-                </div>
-            </main>
+        <div className="min-h-screen bg-[#f4f7f4] flex items-center justify-center p-0 md:p-6 overflow-x-hidden select-none">
+            <div className="w-full max-w-[430px] min-h-screen md:min-h-[850px] md:h-[850px] md:rounded-[40px] md:shadow-[0_24px_70px_-15px_rgba(4,64,48,0.15)] bg-white overflow-hidden relative flex flex-col border border-emerald-500/5">
+                {children}
+            </div>
         </div>
     );
 }
