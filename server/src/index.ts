@@ -78,9 +78,10 @@ pubClient.on("error", (err) => logger.error("Redis Pub Client Error", err));
 subClient.on("error", (err) => logger.error("Redis Sub Client Error", err));
 
 
-// Middleware
 app.use(helmet({
     hsts: false,
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+    crossOriginEmbedderPolicy: false,
 }));
 app.use(cors({
     origin: (origin, callback) => {
@@ -88,6 +89,8 @@ app.use(cors({
         callback(null, true);
     },
     credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept", "Origin", "Cookie"],
     maxAge: 86400,
 }));
 import path from "path";

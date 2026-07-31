@@ -78,9 +78,10 @@ Promise.all([pubClient.connect(), subClient.connect()]).then(() => {
 }).catch(err => logger_1.default.error("Socket.io Redis Adapter failed", err));
 pubClient.on("error", (err) => logger_1.default.error("Redis Pub Client Error", err));
 subClient.on("error", (err) => logger_1.default.error("Redis Sub Client Error", err));
-// Middleware
 app.use((0, helmet_1.default)({
     hsts: false,
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+    crossOriginEmbedderPolicy: false,
 }));
 app.use((0, cors_1.default)({
     origin: (origin, callback) => {
@@ -88,6 +89,8 @@ app.use((0, cors_1.default)({
         callback(null, true);
     },
     credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept", "Origin", "Cookie"],
     maxAge: 86400,
 }));
 const path_1 = __importDefault(require("path"));

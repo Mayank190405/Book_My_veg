@@ -13,9 +13,9 @@ export const getBaseURL = () => {
             return envUrl;
         }
         
-        return `${window.location.protocol}//${hostname}:5000/api/v1`;
+        return `${window.location.protocol}//${hostname}:5001/api/v1`;
     }
-    return process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api/v1";
+    return process.env.NEXT_PUBLIC_API_URL || "http://localhost:5001/api/v1";
 };
 
 
