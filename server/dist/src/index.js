@@ -83,14 +83,10 @@ app.use((0, helmet_1.default)({
     hsts: false,
 }));
 app.use((0, cors_1.default)({
-    origin: [
-        process.env.CLIENT_URL || "http://localhost:3000",
-        "https://bookmyveg.co.in",
-        "https://www.bookmyveg.co.in",
-        "http://3.109.5.168:3000",
-        "http://192.168.1.9:3000",
-        "http://192.168.1.13:3000"
-    ],
+    origin: (origin, callback) => {
+        // Allow all origins dynamically (reflecting request origin) so credentials and CORS checks pass cleanly
+        callback(null, true);
+    },
     credentials: true,
     maxAge: 86400,
 }));

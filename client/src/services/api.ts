@@ -4,17 +4,21 @@ import { useUserStore } from "@/store/useUserStore";
 export const getBaseURL = () => {
     if (typeof window !== "undefined") {
         const hostname = window.location.hostname;
+        const protocol = window.location.protocol;
         const envUrl = process.env.NEXT_PUBLIC_API_URL;
         
         if (envUrl) {
-            // If accessing via IP address or custom domain on local network, replace localhost with current hostname
+            let url = envUrl;
             if (hostname !== "localhost" && hostname !== "127.0.0.1") {
-                return envUrl.replace("localhost", hostname).replace("127.0.0.1", hostname);
+                url = url.replace("localhost", hostname).replace("127.0.0.1", hostname);
             }
-            return envUrl;
+            if (protocol === "https:" && url.startsWith("http://")) {
+                url = url.replace("http://", "https://");
+            }
+            return url;
         }
         
-        return `${window.location.protocol}//${hostname}:5000/api/v1`;
+        return `${protocol}//${hostname}:5000/api/v1`;
     }
     return process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api/v1";
 };
