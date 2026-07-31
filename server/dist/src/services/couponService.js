@@ -11,6 +11,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.couponService = void 0;
 const errors_1 = require("../utils/errors");
+const paymentEligibilityService_1 = require("./paymentEligibilityService");
 exports.couponService = {
     /**
      * Validates a coupon code and returns expected discount.
@@ -133,6 +134,16 @@ exports.couponService = {
             // ── 8. Cart Rules & Combo Validation ────────────────────────
             if (coupon.cartRulesJson) {
                 const rules = coupon.cartRulesJson;
+                // Trust Score Verification
+                if (rules.minTrustScore !== undefined && rules.minTrustScore !== null) {
+                    if (!userId) {
+                        throw new errors_1.CouponError("Please log in to apply this coupon.");
+                    }
+                    const trustScore = yield (0, paymentEligibilityService_1.calculateUserTrustScore)(tx, userId);
+                    if (trustScore < Number(rules.minTrustScore)) {
+                        throw new errors_1.CouponError(`This coupon requires a minimum trust score of ${rules.minTrustScore}%. Your current trust score is ${trustScore}%.`);
+                    }
+                }
                 // Category Spend Checks (e.g. Dairy orders above ₹499)
                 if (rules.requireCategorySpend) {
                     const categorySpend = cartItems

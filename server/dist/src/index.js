@@ -29,6 +29,7 @@ const cartRoutes_1 = __importDefault(require("./routes/cartRoutes"));
 const orderRoutes_1 = __importDefault(require("./routes/orderRoutes"));
 const addressRoutes_1 = __importDefault(require("./routes/addressRoutes"));
 const paymentRoutes_1 = __importDefault(require("./routes/paymentRoutes"));
+const payRoutes_1 = __importDefault(require("./routes/payRoutes"));
 const geocodingRoutes_1 = __importDefault(require("./routes/geocodingRoutes"));
 const reviewRoutes_1 = __importDefault(require("./routes/reviewRoutes"));
 const searchRoutes_1 = __importDefault(require("./routes/searchRoutes"));
@@ -101,6 +102,7 @@ app.use("/uploads", express_1.default.static(path_1.default.join(process.cwd(), 
     }
 }));
 app.use(express_1.default.json({ limit: "50mb" }));
+app.use(express_1.default.urlencoded({ extended: true, limit: "10mb" }));
 app.use((0, cookie_parser_1.default)());
 app.use(requestLogger_1.requestLogger); // Request logging
 // Routes
@@ -113,6 +115,7 @@ app.use("/api/v1/cart", cartRoutes_1.default);
 app.use("/api/v1/orders", orderRoutes_1.default);
 app.use("/api/v1/addresses", addressRoutes_1.default);
 app.use("/api/v1/payments", paymentRoutes_1.default);
+app.use("/api/v1/pay", payRoutes_1.default);
 app.use("/api/v1/geocoding", geocodingRoutes_1.default);
 app.use("/api/v1/reviews", reviewRoutes_1.default);
 app.use("/api/v1/search", searchRoutes_1.default);

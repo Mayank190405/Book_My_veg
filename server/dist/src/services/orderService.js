@@ -21,6 +21,7 @@ const inventoryService_1 = require("./inventoryService");
 const couponService_1 = require("./couponService");
 const autoCancelQueue_1 = require("../queues/autoCancelQueue");
 const idGenerator_1 = require("../utils/idGenerator");
+const paymentEligibilityService_1 = require("./paymentEligibilityService");
 exports.orderService = {
     /**
      * Places an order with full validation and atomic guarantees.
@@ -94,17 +95,60 @@ exports.orderService = {
                     couponId = couponResult.id;
                     yield couponService_1.couponService.incrementUsage(tx, couponId);
                 }
-                // ── 4. Create Order ───────────────────────────────────────────────
-                const isOnline = paymentMethod === "ONLINE";
                 const itemsSubtotal = enrichedItems.reduce((acc, item) => acc + (item.quantity * item.price), 0);
                 const computedDeliveryCharge = data.deliveryCharge !== undefined
                     ? data.deliveryCharge
                     : (itemsSubtotal >= 249 ? 0 : 40);
+                const finalOrderAmount = totalAmount - discountAmount;
+                let orderStatus = "CONFIRMED";
+                const paymentRecords = [];
+                if (paymentMethod === "ONLINE") {
+                    orderStatus = "PAYMENT_PENDING";
+                    paymentRecords.push({
+                        amount: finalOrderAmount,
+                        method: "ONLINE",
+                        status: "PENDING",
+                        transactionId: `PENDING_ON_${Date.now()}`
+                    });
+                }
+                else {
+                    // Customer requested COD (either full or partial COD)
+                    const eligibility = yield (0, paymentEligibilityService_1.getPaymentEligibility)(userId, finalOrderAmount);
+                    if (!eligibility.codAllowed) {
+                        throw new Error("COD is not allowed for your first order. Please choose online payment.");
+                    }
+                    if (eligibility.advanceAmount > 0) {
+                        // Partial COD
+                        orderStatus = "PAYMENT_PENDING";
+                        paymentRecords.push({
+                            amount: eligibility.advanceAmount,
+                            method: "ONLINE",
+                            status: "PENDING",
+                            transactionId: `PENDING_ADV_${Date.now()}`
+                        });
+                        paymentRecords.push({
+                            amount: eligibility.codAmount,
+                            method: "COD",
+                            status: "PENDING",
+                            transactionId: `PENDING_BAL_${Date.now()}`
+                        });
+                    }
+                    else {
+                        // Full COD allowed
+                        orderStatus = "CONFIRMED";
+                        paymentRecords.push({
+                            amount: finalOrderAmount,
+                            method: "COD",
+                            status: "PENDING",
+                            transactionId: `PENDING_COD_${Date.now()}`
+                        });
+                    }
+                }
                 const newOrder = yield tx.order.create({
                     data: {
                         id: (0, idGenerator_1.generateOrderId)(),
                         userId,
-                        totalAmount: totalAmount - discountAmount,
+                        totalAmount: finalOrderAmount,
                         discountAmount,
                         taxAmount: data.taxAmount || 0,
                         deliveryCharge: computedDeliveryCharge,
@@ -115,7 +159,7 @@ exports.orderService = {
                         deliveryDate: deliveryDate ? new Date(deliveryDate) : undefined,
                         deliverySlot,
                         paymentStatus: "PENDING",
-                        status: (isOnline ? "PAYMENT_PENDING" : "CONFIRMED"),
+                        status: orderStatus,
                         shippingAddress: address || {},
                         locationId: locationId,
                         items: {
@@ -129,18 +173,15 @@ exports.orderService = {
                         },
                     },
                 });
-                // Create initial pending payment record
-                yield tx.payment.create({
-                    data: {
-                        orderId: newOrder.id,
-                        amount: newOrder.totalAmount,
-                        method: isOnline ? "ONLINE" : "COD",
-                        status: "PENDING",
-                        transactionId: `PENDING_${Date.now()}`
-                    }
-                });
-                // Create in-app system notification for the user (COD Pathway)
-                if (!isOnline) {
+                // Create payment records
+                for (const payRec of paymentRecords) {
+                    yield tx.payment.create({
+                        data: Object.assign({ orderId: newOrder.id }, payRec)
+                    });
+                }
+                // Create in-app system notification for the user (If no online payment is required initially)
+                const hasOnlinePart = paymentRecords.some((p) => p.method === "ONLINE");
+                if (!hasOnlinePart) {
                     yield tx.notification.create({
                         data: {
                             userId: userId,
@@ -155,7 +196,7 @@ exports.orderService = {
                 yield tx.orderStatusHistory.create({
                     data: {
                         orderId: newOrder.id,
-                        status: (isOnline ? "PAYMENT_PENDING" : "CONFIRMED"),
+                        status: orderStatus,
                         remark: "Order placed" + (couponCode ? ` with coupon ${couponCode}` : ""),
                         changedBy: userId,
                     },

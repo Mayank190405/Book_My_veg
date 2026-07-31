@@ -255,6 +255,30 @@ const updateOrderStatus = (req, res, next) => __awaiter(void 0, void 0, void 0, 
                     }
                 } })
         });
+        // Automatically complete COD payment and mark order paid when status is DELIVERED
+        if (status === "DELIVERED") {
+            const pendingCodPayment = yield prisma_1.default.payment.findFirst({
+                where: { orderId: id, method: "COD", status: "PENDING" }
+            });
+            if (pendingCodPayment) {
+                yield prisma_1.default.$transaction([
+                    prisma_1.default.payment.update({
+                        where: { id: pendingCodPayment.id },
+                        data: { status: "SUCCESS", transactionId: `DELIVERED_${Date.now()}` }
+                    }),
+                    prisma_1.default.order.update({
+                        where: { id: id },
+                        data: { isPaid: true, paymentStatus: "COMPLETED" }
+                    })
+                ]);
+            }
+            else {
+                yield prisma_1.default.order.update({
+                    where: { id: id },
+                    data: { isPaid: true, paymentStatus: "COMPLETED" }
+                });
+            }
+        }
         // Create Audit Log
         yield prisma_1.default.auditLog.create({
             data: {

@@ -358,13 +358,68 @@ export const generatePaymentLink = async (req: AuthenticatedRequest, res: Respon
 
 // ─── Shared Helper: Complete Order Payment ───────────────────────────────────
 
+export const settleDuesForCustomer = async (userId: string, amount: number, transactionId: string, metadata: any) => {
+    let remaining = Number(amount);
+    await prisma.$transaction(async (tx: any) => {
+        const unpaid = await tx.order.findMany({
+            where: {
+                userId,
+                paymentStatus: { in: ["PENDING", "PARTIAL"] },
+                status: { notIn: ["CANCELLED", "FAILED", "PAYMENT_PENDING"] }
+            },
+            orderBy: { createdAt: "asc" },
+            include: { payments: true }
+        });
+
+        for (const order of unpaid) {
+            if (remaining <= 0) break;
+            const paid = order.payments.filter((p: any) => p.status === "SUCCESS").reduce((acc: number, p: any) => acc + Number(p.amount), 0);
+            const due = Number(order.totalAmount) - paid;
+            const toApply = Math.min(remaining, due);
+
+            if (toApply > 0) {
+                await tx.payment.create({
+                    data: {
+                        orderId: order.id,
+                        amount: toApply,
+                        method: metadata?.payment_method_type || "EASEBUZZ",
+                        status: "SUCCESS",
+                        transactionId: transactionId || `SETTLE_${Date.now()}`,
+                        metadata: metadata || {}
+                    }
+                });
+
+                const isFull = (paid + toApply) >= Number(order.totalAmount);
+                await tx.order.update({
+                    where: { id: order.id },
+                    data: {
+                        isPaid: isFull,
+                        paymentStatus: isFull ? "COMPLETED" : "PARTIAL"
+                    }
+                });
+                remaining -= toApply;
+            }
+        }
+    });
+};
+
 const completeOrderPayment = async (orderId: string, paymentDetails: any) => {
-    const existing = await prisma.order.findUnique({
+    let existing = await prisma.order.findUnique({
         where: { id: orderId },
         include: { items: true, user: true },
     });
 
-    if (!existing) throw new Error("Order not found");
+    if (!existing) {
+        if (orderId.startsWith("SETTLE_") || orderId.startsWith("DUE_")) {
+            const parts = orderId.split("_");
+            const targetId = parts[1];
+            if (paymentDetails.status === "CHARGED" || paymentDetails.status === "SUCCESS") {
+                await settleDuesForCustomer(targetId, Number(paymentDetails.amount), paymentDetails.txn_id || orderId, paymentDetails);
+                return { status: "SUCCESS" };
+            }
+        }
+        throw new Error("Order not found");
+    }
     if (paymentDetails.status === "CHARGED" || paymentDetails.status === "SUCCESS") {
         await prisma.$transaction(async (tx: any) => {
             const pendingCodPayment = await tx.payment.findFirst({
@@ -858,3 +913,195 @@ export const checkPaymentEligibility = async (req: AuthenticatedRequest, res: Re
         res.status(500).json({ message: "Error checking payment eligibility" });
     }
 };
+
+// ─── Public Pay Info & Pay Due Functions ────────────────────────────────────
+
+export const getPayInfo = async (req: Request, res: Response) => {
+    try {
+        const userid = (req.query.userid || req.query.userId) as string;
+        const number = (req.query.number || req.query.phone) as string;
+        const billid = (req.query.billid || req.query.billId) as string;
+
+        if (!userid && !number && !billid) {
+            return res.status(400).json({ message: "Missing required parameters (userid, number, or billid)" });
+        }
+
+        let customer: any = null;
+        if (userid) {
+            customer = await prisma.user.findUnique({ where: { id: userid } });
+        }
+        if (!customer && number) {
+            const cleanPhone = number.replace(/\D/g, "");
+            customer = await prisma.user.findFirst({
+                where: {
+                    OR: [
+                        { phone: number },
+                        { phone: cleanPhone },
+                        { phone: `+91${cleanPhone}` }
+                    ]
+                }
+            });
+        }
+
+        let singleBill: any = null;
+        if (billid) {
+            const order = await prisma.order.findUnique({
+                where: { id: billid },
+                include: {
+                    user: { select: { id: true, name: true, phone: true, email: true } },
+                    items: { include: { product: true } },
+                    payments: true
+                }
+            });
+            if (order) {
+                if (!customer && order.user) {
+                    customer = order.user;
+                }
+                const paid = order.payments.filter((p: any) => p.status === "SUCCESS").reduce((sum: number, p: any) => sum + Number(p.amount), 0);
+                const dueAmount = Math.max(0, Number(order.totalAmount) - paid);
+                singleBill = {
+                    id: order.id,
+                    totalAmount: Number(order.totalAmount),
+                    paidAmount: paid,
+                    dueAmount: dueAmount,
+                    isPaid: order.isPaid || order.paymentStatus === "COMPLETED" || order.paymentStatus === "PAID",
+                    paymentStatus: order.paymentStatus,
+                    status: order.status,
+                    createdAt: order.createdAt,
+                    items: order.items.map((i: any) => ({
+                        id: i.id,
+                        name: i.product?.name || "Item",
+                        quantity: i.quantity,
+                        sellingPrice: Number(i.sellingPrice)
+                    }))
+                };
+            }
+        }
+
+        let unpaidOrders: any[] = [];
+        let totalDue = 0;
+
+        const effectiveUserId = customer?.id || userid;
+        if (effectiveUserId) {
+            const orders = await prisma.order.findMany({
+                where: {
+                    userId: effectiveUserId,
+                    paymentStatus: { in: ["PENDING", "PARTIAL"] },
+                    status: { notIn: ["CANCELLED", "FAILED", "PAYMENT_PENDING"] }
+                },
+                orderBy: { createdAt: "asc" },
+                include: { payments: true }
+            });
+
+            unpaidOrders = orders.map((o: any) => {
+                const paid = o.payments.filter((p: any) => p.status === "SUCCESS").reduce((sum: number, p: any) => sum + Number(p.amount), 0);
+                const due = Math.max(0, Number(o.totalAmount) - paid);
+                totalDue += due;
+                return {
+                    id: o.id,
+                    createdAt: o.createdAt,
+                    totalAmount: Number(o.totalAmount),
+                    paidAmount: paid,
+                    dueAmount: due,
+                    status: o.status,
+                    paymentStatus: o.paymentStatus
+                };
+            }).filter((o: any) => o.dueAmount > 0);
+        }
+
+        return res.json({
+            customer: customer ? { id: customer.id, name: customer.name, phone: customer.phone, email: customer.email } : null,
+            bill: singleBill,
+            unpaidOrders,
+            totalDue
+        });
+    } catch (error: any) {
+        logger.error(`[PayInfo Error] ${error.message}`);
+        return res.status(500).json({ message: "Failed to fetch payment details" });
+    }
+};
+
+export const initiatePayDue = async (req: Request, res: Response) => {
+    try {
+        const { userId, phone, billId, amount } = req.body;
+
+        let customer: any = null;
+        if (userId) customer = await prisma.user.findUnique({ where: { id: userId } });
+        if (!customer && phone) {
+            const cleanPhone = phone.replace(/\D/g, "");
+            customer = await prisma.user.findFirst({
+                where: { OR: [{ phone }, { phone: cleanPhone }, { phone: `+91${cleanPhone}` }] }
+            });
+        }
+
+        const effectiveUserId = customer?.id || userId || "ANONYMOUS";
+        const customerName = customer?.name || "Customer";
+        const customerPhone = customer?.phone || phone || "9999999999";
+        const customerEmail = customer?.email || "customer@example.com";
+
+        let txnid = billId ? `DUE_${billId}_${Date.now()}` : `SETTLE_${effectiveUserId}_${Date.now()}`;
+        if (billId) {
+            const order = await prisma.order.findUnique({ where: { id: billId } });
+            if (order && !order.isPaid) {
+                txnid = order.id;
+            }
+        }
+
+        const amountToPay = Number(amount);
+        if (!amountToPay || amountToPay <= 0) {
+            return res.status(400).json({ message: "Invalid payment amount" });
+        }
+
+        const protocol = req.headers["x-forwarded-proto"] || (req.secure ? "https" : "http");
+        const callbackUrl = `${protocol}://${req.headers.host}/api/v1/payments/easebuzz/callback`;
+
+        let baseUrl = process.env.CLIENT_URL || "http://localhost:3000";
+        const origin = req.headers.origin || (req.headers.referer ? new URL(req.headers.referer).origin : null);
+        if (origin && (baseUrl.includes("localhost") || !process.env.CLIENT_URL)) {
+            baseUrl = origin;
+        }
+
+        if (process.env.EASEBUZZ_SERVICE_URL && process.env.EASEBUZZ_MERCHANT_KEY) {
+            const useIframe = process.env.EASEBUZZ_IFRAME === "1";
+            const apiName = useIframe ? "initiate_payment_iframe" : "initiate_payment";
+
+            const easebuzzRes = await axios.post(
+                `${process.env.EASEBUZZ_SERVICE_URL.replace(/\/$/, "")}/easebuzz?api_name=${apiName}`,
+                {
+                    txnid: txnid,
+                    amount: amountToPay.toFixed(2),
+                    firstname: customerName,
+                    email: customerEmail,
+                    phone: sanitizePhone(customerPhone),
+                    productinfo: billId ? `Bill Payment ${billId}` : `Account Settlement ${effectiveUserId}`,
+                    surl: callbackUrl,
+                    furl: callbackUrl,
+                },
+                { headers: { "Accept": "application/json", "Content-Type": "application/json" } }
+            );
+
+            if (easebuzzRes.data && easebuzzRes.data.status === 1) {
+                if (useIframe) {
+                    return res.json({
+                        txnid,
+                        iframe: true,
+                        key: easebuzzRes.data.data.key,
+                        accessKey: easebuzzRes.data.data.access_key,
+                        env: easebuzzRes.data.data.env,
+                    });
+                } else if (easebuzzRes.data.paymentLink) {
+                    return res.json({ txnid, paymentLink: easebuzzRes.data.paymentLink });
+                }
+            }
+        }
+
+        return res.json({
+            txnid,
+            paymentLink: `${baseUrl.replace(/\/$/, "")}/payment/mock-gateway?orderId=${txnid}&amount=${amountToPay}`,
+        });
+    } catch (error: any) {
+        logger.error(`[Initiate Pay Due Error] ${error.message}`);
+        return res.status(500).json({ message: "Failed to initiate payment" });
+    }
+};
+

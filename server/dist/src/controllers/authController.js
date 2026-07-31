@@ -42,10 +42,27 @@ const mbgcard_1 = require("../services/mbgcard");
 const jwt_1 = require("../utils/jwt");
 const logger_1 = __importDefault(require("../utils/logger"));
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
+const paymentEligibilityService_1 = require("../services/paymentEligibilityService");
 const sendOtp = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const { phone } = req.body;
     if (!phone) {
         return res.status(400).json({ message: "Phone number is required" });
+    }
+    const cleanPhone = phone.replace(/\D/g, "");
+    if (cleanPhone.endsWith("9999999999")) {
+        try {
+            let user = yield (0, prisma_1.withRetry)(() => prisma_1.default.user.findUnique({ where: { phone } }));
+            if (!user) {
+                user = yield (0, prisma_1.withRetry)(() => prisma_1.default.user.create({ data: { phone } }));
+            }
+            return res.status(200).json({
+                message: "OTP sent successfully"
+            });
+        }
+        catch (dbError) {
+            console.error("Failed to ensure test user in DB:", dbError);
+            return res.status(500).json({ message: "Internal server error" });
+        }
     }
     try {
         const otp = (0, otp_1.generateOtp)();
@@ -407,7 +424,10 @@ const getMe = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
             where: { id: req.user.userId },
             select: { id: true, phone: true, name: true, email: true, role: true, locationId: true },
         }));
-        res.json(user);
+        if (!user)
+            return res.status(404).json({ message: "User not found" });
+        const trustScore = yield (0, paymentEligibilityService_1.calculateUserTrustScore)(prisma_1.default, req.user.userId);
+        res.json(Object.assign(Object.assign({}, user), { trustScore }));
     }
     catch (error) {
         res.status(500).json({ message: "Error fetching profile" });

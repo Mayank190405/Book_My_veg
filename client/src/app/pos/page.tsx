@@ -368,6 +368,97 @@ export default function POSOperator() {
         } catch { toast.error("Failed to load history"); }
     };
 
+    const forwardWhatsAppLink = (type: "BILL" | "ALL_DUES", customBillId?: string) => {
+        if (!selectedCustomer?.phone) {
+            toast.error("Customer phone number is missing");
+            return;
+        }
+        const cleanPhone = selectedCustomer.phone.replace(/\D/g, "");
+        const targetPhone = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
+        const origin = typeof window !== "undefined" ? window.location.origin : "";
+
+        const billId = customBillId || lastReceipt?.id || inspectingOrder?.id || "";
+
+        let link = "";
+        let message = "";
+
+        if (type === "BILL" && billId) {
+            link = `${origin}/pay/userid=${selectedCustomer.id}&number=${selectedCustomer.phone}&billid=${billId}`;
+            message = `Hello ${selectedCustomer.name}, here is your bill invoice #${billId} for ₹${grandTotal.toFixed(2)}. Pay directly online here: ${link}`;
+        } else if (type === "BILL") {
+            link = `${origin}/pay/userid=${selectedCustomer.id}&number=${selectedCustomer.phone}`;
+            message = `Hello ${selectedCustomer.name}, your bill total is ₹${grandTotal.toFixed(2)}. Pay online directly here: ${link}`;
+        } else {
+            link = `${origin}/pay/userid=${selectedCustomer.id}&number=${selectedCustomer.phone}`;
+            const dueAmt = customerHistory?.summary?.totalDue || grandTotal;
+            message = `Hello ${selectedCustomer.name}, view all your outstanding bills and settle dues for Book My Veg here: ${link}`;
+        }
+
+        const waUrl = `https://wa.me/${targetPhone}?text=${encodeURIComponent(message)}`;
+        window.open(waUrl, "_blank");
+    };
+
+    const triggerEasebuzzCheckoutInPOS = async () => {
+        if (!selectedCustomer?.id) {
+            toast.error("Customer required to initiate Easebuzz payment");
+            return;
+        }
+        setIsProcessing(true);
+        try {
+            const res = await api.post("/pay/pay-due", {
+                userId: selectedCustomer?.id,
+                phone: selectedCustomer?.phone,
+                billId: lastReceipt?.id || inspectingOrder?.id,
+                amount: grandTotal
+            });
+            const data = res.data;
+
+            if (data.iframe && data.accessKey) {
+                const triggerSdk = () => {
+                    const EasebuzzCheckout = (window as any).EasebuzzCheckout;
+                    if (EasebuzzCheckout) {
+                        const checkoutObj = new EasebuzzCheckout(data.key, data.env);
+                        checkoutObj.initiatePayment({
+                            access_key: data.accessKey,
+                            onResponse: (response: any) => {
+                                setIsProcessing(false);
+                                if (response.status === "success") {
+                                    toast.success("Payment completed via Easebuzz");
+                                    setShowPaymentDialog(false);
+                                }
+                            }
+                        });
+                    } else {
+                        setIsProcessing(false);
+                        toast.error("Easebuzz Checkout SDK failed to load");
+                    }
+                };
+
+                if (!(window as any).EasebuzzCheckout) {
+                    const script = document.createElement("script");
+                    script.src = "https://ebz-static.s3.ap-south-1.amazonaws.com/easecheckout/v2.0.0/easebuzz-checkout-v2.min.js";
+                    script.async = true;
+                    script.onload = triggerSdk;
+                    script.onerror = () => {
+                        setIsProcessing(false);
+                        toast.error("Failed to load Easebuzz script");
+                    };
+                    document.body.appendChild(script);
+                } else {
+                    triggerSdk();
+                }
+            } else if (data.paymentLink) {
+                window.open(data.paymentLink, "_blank");
+                setIsProcessing(false);
+            } else {
+                throw new Error("No payment link returned");
+            }
+        } catch (err: any) {
+            setIsProcessing(false);
+            toast.error(err.response?.data?.message || err.message || "Easebuzz checkout failed");
+        }
+    };
+
     // Checkout — CUST-01: Blocked if no real customer
     const handleCheckout = async () => {
         if (!activeShift) { toast.error("Operational Block: No active shift found. Open a shift to proceed."); setShowShiftModal(true); return; }
@@ -709,13 +800,11 @@ export default function POSOperator() {
                         ${storeConfig?.gstNumber ? `<span style="margin: 0 4px;">•</span><span>GST: ${storeConfig.gstNumber}</span>` : '<span style="margin: 0 4px;">•</span><span>GST: N/A</span>'}
                     </div>
 
-                    <!-- Payment QR Code for UPI Desk -->
-                    ${paymentMethod === 'UPI' ? `
-                    <div class="qr-section">
-                        <p class="font-black text-center text-xs uppercase tracking-widest mb-2">Scan To Pay Now</p>
-                        <img class="qr-code" src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(`upi://pay?pa=${storeConfig?.upiId || 'bookmyveg@upi'}&pn=${encodeURIComponent(storeConfig?.name || 'BookMyVeg')}&am=${lastReceipt.grandTotal.toFixed(2)}&cu=INR`)}" />
+                    <!-- Public Pay Link QR Code -->
+                    <div class="qr-section" style="margin-top: 6px; margin-bottom: 6px; text-align: center;">
+                        <p class="font-black text-center text-xs uppercase tracking-widest mb-1" style="font-size: 8px; margin-bottom: 2px;">Scan To Pay Bill / View Dues</p>
+                        <img class="qr-code" style="width: 100px; height: 100px; margin: 0 auto; display: block;" src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(`${typeof window !== 'undefined' ? window.location.origin : ''}/pay/userid=${lastReceipt.userId || lastReceipt.customer?.id || ''}&number=${lastReceipt.customerPhone || lastReceipt.customer?.phone || ''}&billid=${lastReceipt.id || lastReceipt.order?.id || ''}`)}" />
                     </div>
-                    ` : ''}
 
                     <div class="divider-solid"></div>
 
@@ -1584,33 +1673,61 @@ export default function POSOperator() {
                                     )}
                                 </div>
                             ) : paymentMethod === "CREDIT" ? (
-                                <div className="flex-1 flex flex-col items-center justify-center text-center gap-8 p-10 bg-amber-500/5 rounded-[3.5rem] border-4 border-dashed border-amber-500/10">
-                                    <div className="w-28 h-28 bg-amber-500 rounded-[2.5rem] flex items-center justify-center shadow-2xl shadow-amber-500/40 border-6 border-white/20">
-                                        <BookOpen className="h-12 w-12 text-white" />
+                                <div className="flex-1 flex flex-col items-center justify-center text-center gap-6 p-8 bg-amber-500/5 rounded-[3.5rem] border-4 border-dashed border-amber-500/10">
+                                    <div className="w-24 h-24 bg-amber-500 rounded-[2.5rem] flex items-center justify-center shadow-2xl shadow-amber-500/40 border-6 border-white/20">
+                                        <BookOpen className="h-10 w-10 text-white" />
                                     </div>
-                                    <div className="space-y-3">
-                                        <h3 className="text-4xl font-black uppercase text-slate-900 tracking-tighter">Debit On Account</h3>
-                                        <p className="text-base font-bold text-slate-500 max-w-[450px] leading-relaxed">
-                                            The amount of <strong className="text-slate-900">₹{grandTotal.toFixed(2)}</strong> will be recorded as outstanding for <strong className="text-emerald-600 underline underline-offset-[12px] decoration-4">{selectedCustomer?.name}</strong>.
+                                    <div className="space-y-2">
+                                        <h3 className="text-3xl font-black uppercase text-slate-900 tracking-tighter">Debit On Account</h3>
+                                        <p className="text-sm font-bold text-slate-500 max-w-[450px] leading-relaxed">
+                                            The amount of <strong className="text-slate-900">₹{grandTotal.toFixed(2)}</strong> will be recorded as outstanding for <strong className="text-emerald-600 underline underline-offset-8 decoration-4">{selectedCustomer?.name}</strong>.
                                         </p>
                                     </div>
-                                    <div className="px-8 py-4 bg-amber-500 text-white rounded-[1.25rem] text-[10px] font-black uppercase tracking-[0.4em] shadow-2xl shadow-amber-500/30">
-                                        Credit Ledger Stamped
+                                    
+                                    <div className="flex flex-col sm:flex-row gap-3 w-full max-w-lg pt-2">
+                                        <button
+                                            onClick={() => forwardWhatsAppLink("BILL")}
+                                            className="flex-1 px-4 py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-black text-xs uppercase tracking-wider shadow-lg flex items-center justify-center gap-2 active:scale-95 transition-all"
+                                        >
+                                            <Smartphone className="h-4 w-4" /> Forward Bill Link (WhatsApp)
+                                        </button>
+                                        <button
+                                            onClick={() => forwardWhatsAppLink("ALL_DUES")}
+                                            className="flex-1 px-4 py-3.5 bg-slate-900 hover:bg-black text-white rounded-2xl font-black text-xs uppercase tracking-wider shadow-lg flex items-center justify-center gap-2 active:scale-95 transition-all"
+                                        >
+                                            <BookOpen className="h-4 w-4 text-amber-400" /> Forward All Dues Link
+                                        </button>
                                     </div>
                                 </div>
                             ) : (
-                                <div className="flex-1 flex flex-col items-center justify-center text-center gap-10 bg-teal-500/5 rounded-[3.5rem] border-4 border-dashed border-teal-500/10">
-                                    <div className="w-52 h-52 bg-white rounded-[3.5rem] shadow-2xl flex items-center justify-center p-6 border-6 border-teal-500/10 relative group hover:scale-105 transition-all duration-500">
+                                <div className="flex-1 flex flex-col items-center justify-center text-center gap-6 p-8 bg-teal-500/5 rounded-[3.5rem] border-4 border-dashed border-teal-500/10">
+                                    <div className="w-44 h-44 bg-white rounded-[3rem] shadow-2xl flex items-center justify-center p-4 border-6 border-teal-500/10 relative group hover:scale-105 transition-all duration-500">
                                         <img
-                                            src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(`upi://pay?pa=${storeConfig?.upiId || 'bookmyveg@upi'}&pn=${encodeURIComponent(storeConfig?.name || 'BookMyVeg')}&am=${grandTotal.toFixed(2)}&cu=INR`)}`}
-                                            alt="UPI QR"
+                                            src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(`${typeof window !== 'undefined' ? window.location.origin : ''}/pay/userid=${selectedCustomer?.id || ''}&number=${selectedCustomer?.phone || ''}`)}`}
+                                            alt="UPI Pay QR"
                                             className="w-full h-full object-contain"
                                         />
                                         <div className="absolute inset-x-0 -bottom-8 text-[9px] font-black text-teal-600 uppercase tracking-[0.3em] animate-pulse whitespace-nowrap text-center">Live Merchant Gateway</div>
                                     </div>
                                     <div className="space-y-1">
-                                        <p className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Scan Merchant QR</p>
-                                        <p className="text-sm font-bold text-slate-400">Accept payment via any UPI application</p>
+                                        <p className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Digital Pay Options</p>
+                                        <p className="text-xs font-bold text-slate-400">Choose preferred digital collection method below</p>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-4 w-full max-w-md pt-2">
+                                        <button
+                                            onClick={() => forwardWhatsAppLink("BILL")}
+                                            className="px-4 py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-black text-xs uppercase tracking-wider shadow-xl flex items-center justify-center gap-2 active:scale-95 transition-all"
+                                        >
+                                            <Smartphone className="h-4 w-4" /> Forward on WhatsApp
+                                        </button>
+                                        <button
+                                            onClick={triggerEasebuzzCheckoutInPOS}
+                                            disabled={isProcessing}
+                                            className="px-4 py-3.5 bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white rounded-2xl font-black text-xs uppercase tracking-wider shadow-xl flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-50"
+                                        >
+                                            <CreditCard className="h-4 w-4" /> Pay by Easebuzz
+                                        </button>
                                     </div>
                                 </div>
                             )}
@@ -1828,19 +1945,33 @@ export default function POSOperator() {
                                     </div>
                                 )}
 
+                                {/* Public Pay QR Code Section */}
+                                <div className="mt-6 p-4 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col items-center justify-center text-center">
+                                    <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest mb-2">Scan To Pay Bill / Settle Dues Online</p>
+                                    <img 
+                                        src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(`${typeof window !== 'undefined' ? window.location.origin : ''}/pay/userid=${lastReceipt.customer?.id || ''}&number=${lastReceipt.customer?.phone || ''}&billid=${lastReceipt.id || lastReceipt.order?.id || ''}`)}`}
+                                        alt="Public Pay QR"
+                                        className="w-28 h-28 object-contain rounded-lg border p-1 bg-white"
+                                    />
+                                    <p className="text-[8px] font-bold text-slate-400 mt-1 uppercase">Direct Bill Payment Gateway</p>
+                                </div>
+
                                 {/* Footer Thank You Section */}
-                                <div className="text-center pt-8">
+                                <div className="text-center pt-6">
                                     <p className="text-[10px] font-black text-slate-900 uppercase tracking-[0.4em] mb-2 leading-none">Thank You!</p>
                                     <p className="text-[8px] text-slate-400 font-bold italic tracking-tight">Authenticated Cloud Intelligence — BMV Systems</p>
                                 </div>
                             </div>
 
                             {/* Actions Area */}
-                            <div className="p-6 bg-slate-50 border-t flex gap-3">
+                            <div className="p-6 bg-slate-50 border-t flex flex-col sm:flex-row gap-3">
                                 <Button onClick={handlePrintReceipt} className="flex-[2] h-14 bg-slate-900 hover:bg-black text-white font-black uppercase text-xs tracking-widest shadow-xl shadow-slate-900/20 rounded-2xl transition-all active:scale-95">
                                     <Printer className="h-5 w-5 mr-3" /> Execute Printing
                                 </Button>
-                                <Button variant="outline" onClick={() => setShowReceiptDialog(false)} className="flex-1 h-14 border-slate-200 bg-white text-slate-400 font-black uppercase text-xs hover:bg-white hover:text-slate-900 hover:border-slate-400 transition-all rounded-2xl active:scale-95">
+                                <Button onClick={() => forwardWhatsAppLink("BILL", lastReceipt.id || lastReceipt.order?.id)} className="flex-1 h-14 bg-emerald-600 hover:bg-emerald-500 text-white font-black uppercase text-xs tracking-widest shadow-xl rounded-2xl transition-all active:scale-95">
+                                    <Smartphone className="h-5 w-5 mr-2" /> Share WA
+                                </Button>
+                                <Button variant="outline" onClick={() => setShowReceiptDialog(false)} className="h-14 border-slate-200 bg-white text-slate-400 font-black uppercase text-xs hover:bg-white hover:text-slate-900 hover:border-slate-400 transition-all rounded-2xl active:scale-95">
                                     Dismiss
                                 </Button>
                             </div>
