@@ -52,6 +52,117 @@ interface AuthenticatedRequest extends Request {
     user?: { userId: string; role: string };
 }
 
+interface EasebuzzInitiateParams {
+    txnid: string;
+    amount: number;
+    firstname: string;
+    email: string;
+    phone: string;
+    productinfo: string;
+    callbackUrl: string;
+}
+
+const callEasebuzzInitiateApi = async (params: EasebuzzInitiateParams) => {
+    const key = process.env.EASEBUZZ_KEY || process.env.EASEBUZZ_MERCHANT_KEY;
+    const salt = process.env.EASEBUZZ_SALT;
+    const env = process.env.EASEBUZZ_ENV || process.env.ENV || "test";
+    const serviceUrl = process.env.EASEBUZZ_SERVICE_URL;
+    const useIframe = process.env.EASEBUZZ_IFRAME === "1";
+
+    if (!key) {
+        throw new Error("Easebuzz Key / Merchant Key not configured in environment variables");
+    }
+
+    if (serviceUrl) {
+        const apiName = useIframe ? "initiate_payment_iframe" : "initiate_payment";
+        const easebuzzRes = await axios.post(
+            `${serviceUrl.replace(/\/$/, "")}/easebuzz?api_name=${apiName}`,
+            {
+                txnid: params.txnid,
+                amount: params.amount.toFixed(2),
+                firstname: params.firstname,
+                email: params.email,
+                phone: sanitizePhone(params.phone),
+                productinfo: params.productinfo,
+                surl: params.callbackUrl,
+                furl: params.callbackUrl,
+            },
+            {
+                headers: { "Accept": "application/json", "Content-Type": "application/json" },
+                timeout: 10000
+            }
+        );
+
+        if (easebuzzRes.data && easebuzzRes.data.status === 1) {
+            if (useIframe && easebuzzRes.data.data) {
+                return {
+                    iframe: true,
+                    key: easebuzzRes.data.data.key || key,
+                    accessKey: easebuzzRes.data.data.access_key || easebuzzRes.data.data,
+                    env: easebuzzRes.data.data.env || (env === "prod" ? "prod" : "test")
+                };
+            } else if (easebuzzRes.data.paymentLink) {
+                return { paymentLink: easebuzzRes.data.paymentLink };
+            }
+        }
+        throw new Error(easebuzzRes.data?.message || "Easebuzz microservice initiation failed");
+    }
+
+    if (key && salt) {
+        const amountStr = params.amount.toFixed(2);
+        const productInfo = params.productinfo;
+        const firstname = params.firstname;
+        const email = params.email;
+        const phone = sanitizePhone(params.phone);
+        const surl = params.callbackUrl;
+        const furl = params.callbackUrl;
+
+        const hashSequence = `${key}|${params.txnid}|${amountStr}|${productInfo}|${firstname}|${email}|||||||||||${salt}`;
+        const hash = generateSha512(hashSequence);
+        const baseUrl = env === "prod" ? "https://pay.easebuzz.in" : "https://testpay.easebuzz.in";
+
+        const formData = new URLSearchParams({
+            key,
+            txnid: params.txnid,
+            amount: amountStr,
+            productinfo: productInfo,
+            firstname,
+            email,
+            phone,
+            surl,
+            furl,
+            hash
+        });
+
+        const directRes = await axios.post(
+            `${baseUrl}/payment/initiateLink`,
+            formData.toString(),
+            {
+                headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                timeout: 15000
+            }
+        );
+
+        if (directRes.data && directRes.data.status === 1 && directRes.data.data) {
+            const accessKey = directRes.data.data;
+            if (useIframe && typeof accessKey === "string") {
+                return {
+                    iframe: true,
+                    key,
+                    accessKey,
+                    env: env === "prod" ? "prod" : "test"
+                };
+            }
+            return {
+                paymentLink: `${baseUrl}/pay/${accessKey}`
+            };
+        }
+        throw new Error(directRes.data?.error_desc || directRes.data?.data || "Easebuzz direct initiation failed");
+    }
+
+    throw new Error("Easebuzz environment keys (EASEBUZZ_KEY/EASEBUZZ_SALT) are missing");
+};
+
 // ─── initiatePayment ─────────────────────────────────────────────────────────
 
 export const initiatePayment = async (req: AuthenticatedRequest, res: Response) => {
@@ -127,64 +238,38 @@ export const initiatePayment = async (req: AuthenticatedRequest, res: Response) 
         }
 
         // Easebuzz Integration Pathway
-        if (process.env.EASEBUZZ_SERVICE_URL && process.env.EASEBUZZ_MERCHANT_KEY) {
-            logger.info(`[Payment] Using Easebuzz Payment Gateway for order: ${order.id}`);
-            try {
-                const protocol = req.headers["x-forwarded-proto"] || (req.secure ? "https" : "http");
-                const callbackUrl = `${protocol}://${req.headers.host}/api/v1/payments/easebuzz/callback`;
+        if (process.env.EASEBUZZ_KEY || process.env.EASEBUZZ_MERCHANT_KEY) {
+    logger.info(`[Payment] Using Easebuzz Payment Gateway for order: ${order.id}`);
+    try {
+        const protocol = req.headers["x-forwarded-proto"] || (req.secure ? "https" : "http");
+        const callbackUrl = `${protocol}://${req.headers.host}/api/v1/payments/easebuzz/callback`;
 
-                const addressObj = address as any;
-                const customerName = addressObj?.name || user.name || "Customer";
-                const customerPhone = addressObj?.phone || user.phone || "9999999999";
+        const addressObj = address as any;
+        const customerName = addressObj?.name || user.name || "Customer";
+        const customerPhone = addressObj?.phone || user.phone || "9999999999";
 
-                const useIframe = process.env.EASEBUZZ_IFRAME === "1";
-                const apiName = useIframe ? "initiate_payment_iframe" : "initiate_payment";
+        const easeResult = await callEasebuzzInitiateApi({
+            txnid: order.id,
+            amount: Number(amount),
+            firstname: customerName,
+            email: user.email || "customer@example.com",
+            phone: customerPhone,
+            productinfo: `Order ${order.id}`,
+            callbackUrl
+        });
 
-                const easebuzzRes = await axios.post(
-                    `${process.env.EASEBUZZ_SERVICE_URL.replace(/\/$/, "")}/easebuzz?api_name=${apiName}`,
-                    {
-                        txnid: order.id,
-                        amount: Number(amount).toFixed(2),
-                        firstname: customerName,
-                        email: user.email || "customer@example.com",
-                        phone: sanitizePhone(customerPhone),
-                        productinfo: `Order ${order.id}`,
-                        surl: callbackUrl,
-                        furl: callbackUrl,
-                    },
-                    {
-                        headers: {
-                            "Accept": "application/json",
-                            "Content-Type": "application/json"
-                        }
-                    }
-                );
-
-                if (easebuzzRes.data && easebuzzRes.data.status === 1) {
-                    if (useIframe) {
-                        return res.json({
-                            orderId: order.id,
-                            iframe: true,
-                            key: easebuzzRes.data.data.key,
-                            accessKey: easebuzzRes.data.data.access_key,
-                            env: easebuzzRes.data.data.env,
-                        });
-                    } else if (easebuzzRes.data.paymentLink) {
-                        return res.json({
-                            orderId: order.id,
-                            paymentLink: easebuzzRes.data.paymentLink,
-                        });
-                    }
-                }
-                throw new Error(easebuzzRes.data?.message || "Failed to initiate payment with Easebuzz");
-            } catch (easebuzzError: any) {
-                logger.error(`[Payment] Easebuzz initiation failed, falling back to mock gateway. Error: ${easebuzzError.message}, Data: ${JSON.stringify(easebuzzError.response?.data)}`);
-                return res.json({
-                    orderId: order.id,
-                    paymentLink: `${baseUrl.replace(/\/$/, "")}/payment/mock-gateway?orderId=${order.id}&amount=${amount}`,
-                });
-            }
-        }
+        return res.json({
+            orderId: order.id,
+            ...easeResult
+        });
+    } catch (easebuzzError: any) {
+        logger.error(`[Payment] Easebuzz initiation failed, falling back to mock gateway. Error: ${easebuzzError.message}`);
+        return res.json({
+            orderId: order.id,
+            paymentLink: `${baseUrl.replace(/\/$/, "")}/payment/mock-gateway?orderId=${order.id}&amount=${amount}`,
+        });
+    }
+}
 
         // Fallback to Mock Payment Gateway if JUSPAY_API_KEY is not configured/empty
         if (!process.env.JUSPAY_API_KEY) {
@@ -1078,37 +1163,24 @@ export const initiatePayDue = async (req: Request, res: Response) => {
             baseUrl = origin;
         }
 
-        if (process.env.EASEBUZZ_SERVICE_URL && process.env.EASEBUZZ_MERCHANT_KEY) {
-            const useIframe = process.env.EASEBUZZ_IFRAME === "1";
-            const apiName = useIframe ? "initiate_payment_iframe" : "initiate_payment";
-
-            const easebuzzRes = await axios.post(
-                `${process.env.EASEBUZZ_SERVICE_URL.replace(/\/$/, "")}/easebuzz?api_name=${apiName}`,
-                {
-                    txnid: txnid,
-                    amount: amountToPay.toFixed(2),
+        if (process.env.EASEBUZZ_KEY || process.env.EASEBUZZ_MERCHANT_KEY) {
+            try {
+                const easeResult = await callEasebuzzInitiateApi({
+                    txnid,
+                    amount: amountToPay,
                     firstname: customerName,
                     email: customerEmail,
-                    phone: sanitizePhone(customerPhone),
+                    phone: customerPhone,
                     productinfo: billId ? `Bill Payment ${billId}` : `Account Settlement ${effectiveUserId}`,
-                    surl: callbackUrl,
-                    furl: callbackUrl,
-                },
-                { headers: { "Accept": "application/json", "Content-Type": "application/json" } }
-            );
+                    callbackUrl
+                });
 
-            if (easebuzzRes.data && easebuzzRes.data.status === 1) {
-                if (useIframe) {
-                    return res.json({
-                        txnid,
-                        iframe: true,
-                        key: easebuzzRes.data.data.key,
-                        accessKey: easebuzzRes.data.data.access_key,
-                        env: easebuzzRes.data.data.env,
-                    });
-                } else if (easebuzzRes.data.paymentLink) {
-                    return res.json({ txnid, paymentLink: easebuzzRes.data.paymentLink });
-                }
+                return res.json({
+                    txnid,
+                    ...easeResult
+                });
+            } catch (easebuzzError: any) {
+                logger.error(`[Initiate Pay Due] Easebuzz initiation failed: ${easebuzzError.message}`);
             }
         }
 
