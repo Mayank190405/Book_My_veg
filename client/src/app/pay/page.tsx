@@ -7,8 +7,7 @@ import {
     User, Phone, FileText, ArrowRight, Loader2, RefreshCw, Check, Sparkles, Building
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api/v1";
+import { getBaseURL } from "@/services/api";
 
 interface PayPageProps {
     slugParams?: string[];
@@ -83,7 +82,7 @@ function PayContent({ slugParams }: PayPageProps) {
             if (extractedParams.number) query.set("number", extractedParams.number);
             if (extractedParams.billid) query.set("billid", extractedParams.billid);
 
-            const res = await fetch(`${API_BASE_URL}/pay/pay-info?${query.toString()}`);
+            const res = await fetch(`${getBaseURL()}/pay/pay-info?${query.toString()}`);
             if (!res.ok) throw new Error("Failed to load payment details");
             const data = await res.json();
             setPayData(data);
@@ -110,7 +109,7 @@ function PayContent({ slugParams }: PayPageProps) {
 
         setProcessing(true);
         try {
-            const res = await fetch(`${API_BASE_URL}/pay/pay-due`, {
+            const res = await fetch(`${getBaseURL()}/pay/pay-due`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({

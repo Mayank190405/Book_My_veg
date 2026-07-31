@@ -3,18 +3,18 @@ import { useUserStore } from "@/store/useUserStore";
 
 export const getBaseURL = () => {
     if (typeof window !== "undefined") {
-        const isClientLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+        const hostname = window.location.hostname;
         const envUrl = process.env.NEXT_PUBLIC_API_URL;
         
-        if (envUrl && (!envUrl.includes("localhost") && !envUrl.includes("127.0.0.1") || isClientLocal)) {
+        if (envUrl) {
+            // If accessing via IP address or custom domain on local network, replace localhost with current hostname
+            if (hostname !== "localhost" && hostname !== "127.0.0.1") {
+                return envUrl.replace("localhost", hostname).replace("127.0.0.1", hostname);
+            }
             return envUrl;
         }
         
-        // Fallback for production: If not on localhost, use the current origin
-        if (!isClientLocal) {
-            return `${window.location.origin}/api/v1`;
-        }
-        return `${window.location.protocol}//${window.location.hostname}:5000/api/v1`;
+        return `${window.location.protocol}//${hostname}:5000/api/v1`;
     }
     return process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api/v1";
 };
