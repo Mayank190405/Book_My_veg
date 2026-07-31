@@ -27,7 +27,8 @@ function MockGatewayContent() {
             // Trigger backend payment verification directly so database order status changes to PAID / FAILED
             await api.post("/payments/verify", {
                 order_id: orderId,
-                status: status
+                status: status,
+                amount: amount
             });
             
             // Redirect to success page with status
