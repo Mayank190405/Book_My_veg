@@ -4,16 +4,23 @@ import { useUserStore } from "@/store/useUserStore";
 export const getBaseURL = () => {
     if (typeof window !== "undefined") {
         const hostname = window.location.hostname;
+        const protocol = window.location.protocol;
         const envUrl = process.env.NEXT_PUBLIC_API_URL;
-        
+
+        // On HTTPS or production domain (bookmyveg), use relative /api/v1
+        // so requests use same-origin HTTPS and Nginx reverse proxy routes them to backend port 5001
+        if (protocol === "https:" || hostname.includes("bookmyveg")) {
+            return "/api/v1";
+        }
+
         if (envUrl) {
             if (hostname !== "localhost" && hostname !== "127.0.0.1" && (envUrl.includes("localhost") || envUrl.includes("127.0.0.1"))) {
                 return envUrl.replace("localhost", hostname).replace("127.0.0.1", hostname);
             }
             return envUrl;
         }
-        
-        return `${window.location.protocol}//${hostname}:5001/api/v1`;
+
+        return `${protocol}//${hostname}:5001/api/v1`;
     }
     return process.env.NEXT_PUBLIC_API_URL || "http://localhost:5001/api/v1";
 };
