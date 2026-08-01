@@ -66,11 +66,6 @@ export default function GlobalNotificationListener() {
 
         socket.on("OP_NEW_ORDER", handleNewOrder);
 
-        // Request Browser Notification access on mount if not already granted
-        if ("Notification" in window && Notification.permission === "default") {
-            Notification.requestPermission();
-        }
-
         return () => {
             socket.off("OP_NEW_ORDER", handleNewOrder);
         };
@@ -82,8 +77,11 @@ export default function GlobalNotificationListener() {
                 <button 
                     onClick={() => {
                         setNotificationsEnabled(true);
+                        if ("Notification" in window && Notification.permission === "default") {
+                            Notification.requestPermission();
+                        }
                         if (audioRef.current) {
-                            audioRef.current.play();
+                            audioRef.current.play().catch(() => {});
                             toast.success("Operational alerts unlocked", {
                                 description: "Loud bell notifications are now active across all dashboards."
                             });

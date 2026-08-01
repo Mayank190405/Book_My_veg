@@ -469,9 +469,7 @@ export default function POSOperator() {
 
             if (data.accessKey || data.paymentLink) {
                 const checkoutUrl = data.paymentLink || `https://${data.env === "prod" ? "pay" : "testpay"}.easebuzz.in/pay/${data.accessKey}`;
-                const sdkUrl = data.env === "prod"
-                    ? "https://pay.easebuzz.in/ebx/v2/easebuzz-checkout.js"
-                    : "https://testpay.easebuzz.in/ebx/v2/easebuzz-checkout.js";
+                const sdkUrl = "https://ebz-static.s3.ap-south-1.amazonaws.com/easecheckout/v2.0.0/easebuzz-checkout-v2.min.js";
 
                 const triggerSdk = () => {
                     const EasebuzzCheckout = (window as any).EasebuzzCheckout;
@@ -509,16 +507,10 @@ export default function POSOperator() {
                     script.async = true;
                     script.onload = triggerSdk;
                     script.onerror = () => {
-                        const fallbackScript = document.createElement("script");
-                        fallbackScript.src = "https://ebz-static.s3.ap-south-1.amazonaws.com/easecheckout/v2.0.0/easebuzz-checkout-v2.min.js";
-                        fallbackScript.onload = triggerSdk;
-                        fallbackScript.onerror = () => {
-                            setIsProcessing(false);
-                            setShowPaymentDialog(false);
-                            setPosPaymentIframeUrl(checkoutUrl);
-                            setShowPosIframeModal(true);
-                        };
-                        document.body.appendChild(fallbackScript);
+                        setIsProcessing(false);
+                        setShowPaymentDialog(false);
+                        setPosPaymentIframeUrl(checkoutUrl);
+                        setShowPosIframeModal(true);
                     };
                     document.body.appendChild(script);
                 } else {
