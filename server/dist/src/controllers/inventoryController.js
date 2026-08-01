@@ -15,6 +15,85 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.getInwardHistory = exports.getMortalityHistory = exports.recordMortality = exports.addInwardStock = exports.transferStock = exports.createAdjustment = exports.syncInventory = exports.adjustStock = exports.getStoreInventory = void 0;
 const prisma_1 = __importDefault(require("../config/prisma"));
 const client_1 = require("@prisma/client");
+const consolidateStoreInventory = (locationId) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const products = yield prisma_1.default.product.findMany({
+            include: { variants: true }
+        });
+        for (const product of products) {
+            const hasVariants = product.variants.length > 0;
+            const allInventory = yield prisma_1.default.inventory.findMany({
+                where: { productId: product.id, locationId }
+            });
+            if (allInventory.length === 0)
+                continue;
+            if (hasVariants) {
+                const primaryVariant = product.variants[0];
+                let primaryVarInv = allInventory.find(i => i.variantId === primaryVariant.id);
+                if (!primaryVarInv) {
+                    primaryVarInv = yield prisma_1.default.inventory.create({
+                        data: {
+                            productId: product.id,
+                            locationId,
+                            variantId: primaryVariant.id,
+                            currentStock: 0,
+                            thresholdStock: 5
+                        }
+                    });
+                }
+                const baseInvs = allInventory.filter(i => i.variantId === null);
+                if (baseInvs.length > 0) {
+                    let extraStock = 0;
+                    const baseIdsToDelete = [];
+                    for (const baseInv of baseInvs) {
+                        extraStock += Number(baseInv.currentStock || 0);
+                        baseIdsToDelete.push(baseInv.id);
+                    }
+                    if (extraStock > 0) {
+                        yield prisma_1.default.inventory.update({
+                            where: { id: primaryVarInv.id },
+                            data: {
+                                currentStock: new client_1.Prisma.Decimal(Number(primaryVarInv.currentStock) + extraStock)
+                            }
+                        });
+                    }
+                    if (baseIdsToDelete.length > 0) {
+                        yield prisma_1.default.inventory.deleteMany({
+                            where: { id: { in: baseIdsToDelete } }
+                        });
+                    }
+                }
+            }
+            else {
+                const nullInvs = allInventory.filter(i => i.variantId === null);
+                if (nullInvs.length > 1) {
+                    const primary = nullInvs[0];
+                    const duplicates = nullInvs.slice(1);
+                    let totalExtra = 0;
+                    const dupIds = [];
+                    for (const dup of duplicates) {
+                        totalExtra += Number(dup.currentStock || 0);
+                        dupIds.push(dup.id);
+                    }
+                    if (totalExtra > 0) {
+                        yield prisma_1.default.inventory.update({
+                            where: { id: primary.id },
+                            data: {
+                                currentStock: new client_1.Prisma.Decimal(Number(primary.currentStock) + totalExtra)
+                            }
+                        });
+                    }
+                    yield prisma_1.default.inventory.deleteMany({
+                        where: { id: { in: dupIds } }
+                    });
+                }
+            }
+        }
+    }
+    catch (err) {
+        console.error(`[Consolidate Inventory Error] ${err.message}`);
+    }
+});
 const getStoreInventory = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const { locationId } = req.params;
     const authUser = req.user;
@@ -23,8 +102,10 @@ const getStoreInventory = (req, res) => __awaiter(void 0, void 0, void 0, functi
         return res.status(403).json({ message: "Access Denied: Regional Data Isolation Protocol Active" });
     }
     try {
+        const targetLocId = locationId;
+        yield consolidateStoreInventory(targetLocId);
         const inventory = yield prisma_1.default.inventory.findMany({
-            where: { locationId: locationId },
+            where: { locationId: targetLocId },
             include: {
                 product: {
                     select: {

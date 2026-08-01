@@ -2,6 +2,94 @@ import { Request, Response } from "express";
 import prisma from "../config/prisma";
 import { Prisma } from "@prisma/client";
 
+const consolidateStoreInventory = async (locationId: string) => {
+    try {
+        const products = await prisma.product.findMany({
+            include: { variants: true }
+        });
+
+        for (const product of products) {
+            const hasVariants = product.variants.length > 0;
+            const allInventory = await prisma.inventory.findMany({
+                where: { productId: product.id, locationId }
+            });
+
+            if (allInventory.length === 0) continue;
+
+            if (hasVariants) {
+                const primaryVariant = product.variants[0];
+                let primaryVarInv = allInventory.find(i => i.variantId === primaryVariant.id);
+
+                if (!primaryVarInv) {
+                    primaryVarInv = await prisma.inventory.create({
+                        data: {
+                            productId: product.id,
+                            locationId,
+                            variantId: primaryVariant.id,
+                            currentStock: 0,
+                            thresholdStock: 5
+                        }
+                    });
+                }
+
+                const baseInvs = allInventory.filter(i => i.variantId === null);
+                if (baseInvs.length > 0) {
+                    let extraStock = 0;
+                    const baseIdsToDelete: string[] = [];
+
+                    for (const baseInv of baseInvs) {
+                        extraStock += Number(baseInv.currentStock || 0);
+                        baseIdsToDelete.push(baseInv.id);
+                    }
+
+                    if (extraStock > 0) {
+                        await prisma.inventory.update({
+                            where: { id: primaryVarInv.id },
+                            data: {
+                                currentStock: new Prisma.Decimal(Number(primaryVarInv.currentStock) + extraStock)
+                            }
+                        });
+                    }
+
+                    if (baseIdsToDelete.length > 0) {
+                        await prisma.inventory.deleteMany({
+                            where: { id: { in: baseIdsToDelete } }
+                        });
+                    }
+                }
+            } else {
+                const nullInvs = allInventory.filter(i => i.variantId === null);
+                if (nullInvs.length > 1) {
+                    const primary = nullInvs[0];
+                    const duplicates = nullInvs.slice(1);
+                    let totalExtra = 0;
+                    const dupIds: string[] = [];
+
+                    for (const dup of duplicates) {
+                        totalExtra += Number(dup.currentStock || 0);
+                        dupIds.push(dup.id);
+                    }
+
+                    if (totalExtra > 0) {
+                        await prisma.inventory.update({
+                            where: { id: primary.id },
+                            data: {
+                                currentStock: new Prisma.Decimal(Number(primary.currentStock) + totalExtra)
+                            }
+                        });
+                    }
+
+                    await prisma.inventory.deleteMany({
+                        where: { id: { in: dupIds } }
+                    });
+                }
+            }
+        }
+    } catch (err: any) {
+        console.error(`[Consolidate Inventory Error] ${err.message}`);
+    }
+};
+
 export const getStoreInventory = async (req: Request, res: Response) => {
     const { locationId } = req.params;
     const authUser = (req as any).user;
@@ -12,8 +100,11 @@ export const getStoreInventory = async (req: Request, res: Response) => {
     }
 
     try {
+        const targetLocId = locationId as string;
+        await consolidateStoreInventory(targetLocId);
+
         const inventory = await prisma.inventory.findMany({
-            where: { locationId: locationId as string },
+            where: { locationId: targetLocId },
             include: {
                 product: {
                     select: {
