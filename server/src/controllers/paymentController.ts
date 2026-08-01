@@ -67,14 +67,14 @@ const callEasebuzzInitiateApi = async (params: EasebuzzInitiateParams) => {
     const salt = process.env.EASEBUZZ_SALT;
     const env = process.env.EASEBUZZ_ENV || process.env.ENV || "test";
     const serviceUrl = process.env.EASEBUZZ_SERVICE_URL;
-    const useIframe = process.env.EASEBUZZ_IFRAME === "1";
+    const useIframe = process.env.EASEBUZZ_IFRAME !== "0"; // Default to true for Easebuzz iframe popup modal
 
     if (!key) {
         throw new Error("Easebuzz Key / Merchant Key not configured in environment variables");
     }
 
     if (serviceUrl) {
-        const apiName = useIframe ? "initiate_payment_iframe" : "initiate_payment";
+        const apiName = "initiate_payment_iframe";
         const easebuzzRes = await axios.post(
             `${serviceUrl.replace(/\/$/, "")}/easebuzz?api_name=${apiName}`,
             {
@@ -94,16 +94,15 @@ const callEasebuzzInitiateApi = async (params: EasebuzzInitiateParams) => {
         );
 
         if (easebuzzRes.data && easebuzzRes.data.status === 1) {
-            if (useIframe && easebuzzRes.data.data) {
-                return {
-                    iframe: true,
-                    key: easebuzzRes.data.data.key || key,
-                    accessKey: easebuzzRes.data.data.access_key || easebuzzRes.data.data,
-                    env: easebuzzRes.data.data.env || (env === "prod" ? "prod" : "test")
-                };
-            } else if (easebuzzRes.data.paymentLink) {
-                return { paymentLink: easebuzzRes.data.paymentLink };
-            }
+            const rawData = easebuzzRes.data.data;
+            const accessKey = typeof rawData === "string" ? rawData : (rawData?.access_key || rawData);
+            return {
+                iframe: true,
+                key: rawData?.key || key,
+                accessKey,
+                env: rawData?.env || (env === "prod" ? "prod" : "test"),
+                paymentLink: easebuzzRes.data.paymentLink || `https://${env === "prod" ? "pay" : "testpay"}.easebuzz.in/pay/${accessKey}`
+            };
         }
         throw new Error(easebuzzRes.data?.message || "Easebuzz microservice initiation failed");
     }
@@ -145,15 +144,11 @@ const callEasebuzzInitiateApi = async (params: EasebuzzInitiateParams) => {
 
         if (directRes.data && directRes.data.status === 1 && directRes.data.data) {
             const accessKey = directRes.data.data;
-            if (useIframe && typeof accessKey === "string") {
-                return {
-                    iframe: true,
-                    key,
-                    accessKey,
-                    env: env === "prod" ? "prod" : "test"
-                };
-            }
             return {
+                iframe: true,
+                key,
+                accessKey,
+                env: env === "prod" ? "prod" : "test",
                 paymentLink: `${baseUrl}/pay/${accessKey}`
             };
         }
