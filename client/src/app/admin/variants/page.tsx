@@ -57,17 +57,17 @@ export default function AdminVariants() {
         isActive: true
     });
 
-    const fetchVariants = async () => {
-        setLoading(true);
+    const fetchVariants = async (isBackground = false) => {
+        if (!isBackground) setLoading(true);
         try {
             const res = await api.get("/variants");
             if (res.data.success) {
                 setVariants(res.data.data);
             }
         } catch (error: any) {
-            toast.error("Failed to load variants");
+            if (!isBackground) toast.error("Failed to load variants");
         } finally {
-            setLoading(false);
+            if (!isBackground) setLoading(false);
         }
     };
 
@@ -84,6 +84,18 @@ export default function AdminVariants() {
     useEffect(() => {
         fetchVariants();
         fetchProducts();
+
+        const interval = setInterval(() => {
+            fetchVariants(true);
+        }, 10000);
+
+        const handleUpdate = () => fetchVariants(true);
+        window.addEventListener("variants_updated", handleUpdate);
+
+        return () => {
+            clearInterval(interval);
+            window.removeEventListener("variants_updated", handleUpdate);
+        };
     }, []);
 
     // Filtered variants
@@ -302,7 +314,7 @@ export default function AdminVariants() {
 
                 <div className="flex flex-wrap items-center gap-3">
                     <button
-                        onClick={fetchVariants}
+                        onClick={() => fetchVariants(false)}
                         className="p-2.5 rounded-xl border border-border bg-card hover:bg-accent text-foreground transition-all duration-200"
                         title="Refresh Variants"
                     >

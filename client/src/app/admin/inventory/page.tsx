@@ -248,19 +248,29 @@ export default function AdminInventory() {
     useEffect(() => {
         if (selectedStore) {
             fetchInventory();
+            const interval = setInterval(() => {
+                fetchInventory(true); // silent background refresh
+            }, 10000);
+
+            const handleUpdate = () => fetchInventory(true);
+            window.addEventListener("inventory_updated", handleUpdate);
+
+            return () => {
+                clearInterval(interval);
+                window.removeEventListener("inventory_updated", handleUpdate);
+            };
         }
     }, [selectedStore]);
 
-    const fetchInventory = async () => {
-        setLoading(true);
+    const fetchInventory = async (isBackground = false) => {
+        if (!isBackground) setLoading(true);
         try {
-            // Updated to use the correct store-wise endpoint
             const res = await api.get(`/inventory/store/${selectedStore}`);
             setInventory(res.data);
         } catch (error) {
-            toast.error("Failed to load inventory data");
+            if (!isBackground) toast.error("Failed to load inventory data");
         } finally {
-            setLoading(false);
+            if (!isBackground) setLoading(false);
         }
     };
 
@@ -331,7 +341,7 @@ export default function AdminInventory() {
                             </select>
                         </div>
                         <button 
-                            onClick={fetchInventory}
+                            onClick={() => fetchInventory(false)}
                             className="w-10 h-10 rounded-lg bg-slate-50 hover:bg-emerald-50 flex items-center justify-center text-slate-400 hover:text-emerald-600 transition-colors"
                         >
                             <RefreshCw className="h-4 w-4" />
