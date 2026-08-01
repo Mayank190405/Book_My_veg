@@ -130,17 +130,26 @@ function PayContent({ slugParams }: PayPageProps) {
                 const triggerSdk = () => {
                     const EasebuzzCheckout = (window as any).EasebuzzCheckout;
                     if (EasebuzzCheckout) {
-                        const checkoutObj = new EasebuzzCheckout(data.key, data.env);
-                        checkoutObj.initiatePayment({
-                            access_key: data.accessKey,
-                            onResponse: (response: any) => {
-                                setProcessing(false);
-                                if (response.status === "success") {
-                                    setPaymentSuccess(true);
-                                    fetchPayData();
+                        setProcessing(false);
+                        try {
+                            const checkoutObj = new EasebuzzCheckout(data.key, data.env);
+                            checkoutObj.initiatePayment({
+                                access_key: data.accessKey,
+                                onResponse: (response: any) => {
+                                    setProcessing(false);
+                                    if (response.status === "success" || response.status === "user_cancelled") {
+                                        if (response.status === "success") {
+                                            setPaymentSuccess(true);
+                                            fetchPayData();
+                                        }
+                                    }
                                 }
-                            }
-                        });
+                            });
+                        } catch (sdkErr) {
+                            const fallbackUrl = data.paymentLink || `https://${data.env === "prod" ? "pay" : "testpay"}.easebuzz.in/pay/${data.accessKey}`;
+                            setPayIframeUrl(fallbackUrl);
+                            setShowPayIframeModal(true);
+                        }
                     } else {
                         setProcessing(false);
                         const fallbackUrl = data.paymentLink || `https://${data.env === "prod" ? "pay" : "testpay"}.easebuzz.in/pay/${data.accessKey}`;

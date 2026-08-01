@@ -471,18 +471,27 @@ export default function POSOperator() {
                 const triggerSdk = () => {
                     const EasebuzzCheckout = (window as any).EasebuzzCheckout;
                     if (EasebuzzCheckout) {
-                        const checkoutObj = new EasebuzzCheckout(data.key, data.env);
-                        checkoutObj.initiatePayment({
-                            access_key: data.accessKey,
-                            onResponse: (response: any) => {
-                                setIsProcessing(false);
-                                if (response.status === "success") {
-                                    toast.success("Payment completed successfully");
-                                    setShowPaymentDialog(false);
-                                    setShowPosIframeModal(false);
+                        setIsProcessing(false);
+                        setShowPaymentDialog(false);
+                        try {
+                            const checkoutObj = new EasebuzzCheckout(data.key, data.env);
+                            checkoutObj.initiatePayment({
+                                access_key: data.accessKey,
+                                onResponse: (response: any) => {
+                                    setIsProcessing(false);
+                                    if (response.status === "success") {
+                                        toast.success("Payment completed via Easebuzz");
+                                        setShowPaymentDialog(false);
+                                        setShowPosIframeModal(false);
+                                    }
                                 }
+                            });
+                        } catch (err) {
+                            if (data.paymentLink) {
+                                setPosPaymentIframeUrl(data.paymentLink);
+                                setShowPosIframeModal(true);
                             }
-                        });
+                        }
                     } else {
                         setIsProcessing(false);
                         if (data.paymentLink) {
