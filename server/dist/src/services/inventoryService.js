@@ -16,6 +16,7 @@ exports.InventoryService = exports.InventoryLogType = void 0;
 const client_1 = require("@prisma/client");
 const prisma_1 = __importDefault(require("../config/prisma"));
 const errors_1 = require("../utils/errors");
+const unitConverter_1 = require("../utils/unitConverter");
 var InventoryLogType;
 (function (InventoryLogType) {
     InventoryLogType["SALE"] = "SALE";
@@ -78,9 +79,22 @@ class InventoryService {
                 // No need to apply delta below as it's already reflected in the Batch SUM we just queried
             }
             else {
+                let effectiveQtyDelta = params.qtyDelta;
+                if (params.variantId) {
+                    const [product, variant] = yield Promise.all([
+                        db.product.findUnique({ where: { id: params.productId }, select: { weightUnit: true } }),
+                        db.productVariant.findUnique({ where: { id: params.variantId }, select: { weight: true, weightUnit: true } })
+                    ]);
+                    if (product && variant) {
+                        const isDeduction = params.qtyDelta < 0;
+                        const absQty = Math.abs(params.qtyDelta);
+                        const baseUnits = (0, unitConverter_1.convertVariantToBaseQuantity)(variant.weight, variant.weightUnit, product.weightUnit, absQty);
+                        effectiveQtyDelta = isDeduction ? -baseUnits : baseUnits;
+                    }
+                }
                 invId = invRows[0].id;
                 const existingStock = new client_1.Prisma.Decimal(invRows[0].currentStock);
-                const delta = new client_1.Prisma.Decimal(params.qtyDelta);
+                const delta = new client_1.Prisma.Decimal(effectiveQtyDelta);
                 if (existingStock.plus(delta).isNegative()) {
                     throw new errors_1.StockError(`Insufficient actual stock for product ${params.productId}. Required: ${delta.abs()}, Available: ${existingStock}`);
                 }

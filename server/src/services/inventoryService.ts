@@ -2,6 +2,7 @@
 import { Prisma } from "@prisma/client";
 import prisma from "../config/prisma";
 import { StockError } from "../utils/errors";
+import { convertVariantToBaseQuantity } from "../utils/unitConverter";
 
 export enum InventoryLogType {
     SALE = "SALE",
@@ -83,9 +84,23 @@ export class InventoryService {
             invId = newInv.id;
             // No need to apply delta below as it's already reflected in the Batch SUM we just queried
         } else {
+        let effectiveQtyDelta = params.qtyDelta;
+        if (params.variantId) {
+            const [product, variant] = await Promise.all([
+                db.product.findUnique({ where: { id: params.productId }, select: { weightUnit: true } }),
+                db.productVariant.findUnique({ where: { id: params.variantId }, select: { weight: true, weightUnit: true } })
+            ]);
+            if (product && variant) {
+                const isDeduction = params.qtyDelta < 0;
+                const absQty = Math.abs(params.qtyDelta);
+                const baseUnits = convertVariantToBaseQuantity(variant.weight, variant.weightUnit, product.weightUnit, absQty);
+                effectiveQtyDelta = isDeduction ? -baseUnits : baseUnits;
+            }
+        }
+
         invId = invRows[0].id;
         const existingStock = new Prisma.Decimal(invRows[0].currentStock);
-        const delta = new Prisma.Decimal(params.qtyDelta);
+        const delta = new Prisma.Decimal(effectiveQtyDelta);
 
         if (existingStock.plus(delta).isNegative()) {
             throw new StockError(`Insufficient actual stock for product ${params.productId}. Required: ${delta.abs()}, Available: ${existingStock}`);
