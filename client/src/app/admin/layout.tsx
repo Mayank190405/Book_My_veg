@@ -24,6 +24,7 @@ import {
     Receipt,
     ArrowDownToLine,
     Skull,
+    Tag,
     History,
     MessageSquare,
     Key
@@ -48,6 +49,7 @@ const NAV_ITEMS = [
     { label: "Categories", icon: Layers, href: "/admin/categories" },
     { label: "Units", icon: Scale, href: "/admin/units" },
     { label: "Products", icon: ShoppingCart, href: "/admin/products" },
+    { label: "Product Variants", icon: Tag, href: "/admin/variants" },
     { label: "Inventory", icon: Warehouse, href: "/admin/inventory" },
     { label: "Stock Inward", icon: ArrowDownToLine, href: "/admin/inventory/inward" },
     { label: "Stock Transfer", icon: ChevronRight, href: "/admin/inventory/transfer" },
