@@ -837,9 +837,15 @@ export const handleWebhook = async (req: Request, res: Response) => {
         if (!txnid || !status) return res.status(400).json({ message: "Missing txnid or status" });
 
         const isSuccess = (status || "").toLowerCase() === "success";
+
+        // Resolve original orderId from txnid (strip timestamp suffix)
+        let resolvedOrderId = txnid;
+        if (!txnid.startsWith("DUE_") && !txnid.startsWith("SETTLE_")) {
+            resolvedOrderId = txnid.replace(/_\d{3,}$/, "");
+        }
         
         try {
-            await completeOrderPayment(txnid, {
+            await completeOrderPayment(resolvedOrderId, {
                 status: isSuccess ? "CHARGED" : "FAILED",
                 txn_id: easebuzz_id || txnid,
                 amount: Number(amount),
@@ -904,19 +910,31 @@ export const handleEasebuzzCallback = async (req: Request, res: Response) => {
     }
 
     const isSuccess = (status || "").toLowerCase() === "success";
+
+    // Recover the original orderId from the txnid.
+    // txnid formats:
+    //   "BMVXXXXXXXXXX_123456"  → order id is "BMVXXXXXXXXXX"
+    //   "DUE_BILLID_1234567890" → handled by completeOrderPayment's DUE_ branch
+    //   "SETTLE_USERID_1234567890" → handled by completeOrderPayment's SETTLE_ branch
+    //   "BMVXXXXXXXXXX" (legacy, no suffix)
+    let resolvedOrderId = txnid;
+    if (!txnid.startsWith("DUE_") && !txnid.startsWith("SETTLE_")) {
+        // Strip the _NNNNNN timestamp suffix added for uniqueness
+        resolvedOrderId = txnid.replace(/_\d{3,}$/, "");
+    }
     
     try {
-        await completeOrderPayment(txnid, {
+        await completeOrderPayment(resolvedOrderId, {
             status: isSuccess ? "CHARGED" : "FAILED",
             txn_id: easebuzz_id || txnid,
             amount: Number(amount),
             payment_method_type: mode || "ONLINE"
         });
         
-        return res.redirect(`${clientUrl}/payment/success?order_id=${txnid}&status=${isSuccess ? "success" : "failed"}`);
+        return res.redirect(`${clientUrl}/payment/success?order_id=${resolvedOrderId}&status=${isSuccess ? "success" : "failed"}`);
     } catch (error: any) {
         logger.error(`[Easebuzz Callback] Error completing payment: ${error.message}`);
-        return res.redirect(`${clientUrl}/payment/success?order_id=${txnid}&status=failed&message=Payment completion failed`);
+        return res.redirect(`${clientUrl}/payment/success?order_id=${resolvedOrderId}&status=failed&message=Payment completion failed`);
     }
 };
 
@@ -1140,12 +1158,26 @@ export const initiatePayDue = async (req: Request, res: Response) => {
         const customerPhone = customer?.phone || phone || "9999999999";
         const customerEmail = customer?.email || "customer@example.com";
 
-        let txnid = billId ? `DUE_${billId}_${Date.now()}` : `SETTLE_${effectiveUserId}_${Date.now()}`;
+        // Easebuzz requires a unique txnid for every initiation attempt.
+        // Always generate a unique one — never reuse order.id directly since it may
+        // have been consumed by a previous (possibly failed) Easebuzz transaction.
+        const timestamp = Date.now();
+        let txnid: string;
+        let productInfoLabel: string;
+
         if (billId) {
             const order = await prisma.order.findUnique({ where: { id: billId } });
             if (order && !order.isPaid) {
-                txnid = order.id;
+                // Unique txnid referencing the order, with a short suffix to avoid collisions
+                txnid = `${order.id}_${String(timestamp).slice(-6)}`;
+                productInfoLabel = `Bill Payment ${order.id}`;
+            } else {
+                txnid = `DUE_${billId}_${timestamp}`;
+                productInfoLabel = `Bill Payment ${billId}`;
             }
+        } else {
+            txnid = `SETTLE_${effectiveUserId}_${timestamp}`;
+            productInfoLabel = `Account Settlement ${effectiveUserId}`;
         }
 
         const amountToPay = Number(amount);
@@ -1174,7 +1206,7 @@ export const initiatePayDue = async (req: Request, res: Response) => {
                     firstname: customerName,
                     email: customerEmail,
                     phone: customerPhone,
-                    productinfo: billId ? `Bill Payment ${billId}` : `Account Settlement ${effectiveUserId}`,
+                    productinfo: productInfoLabel,
                     callbackUrl
                 });
 
