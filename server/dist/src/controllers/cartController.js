@@ -33,7 +33,15 @@ const syncCart = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
             const product = yield prisma_1.default.product.findUnique({ where: { id: item.productId } });
             if (!product)
                 continue; // Skip stale identifiers
-            const vId = item.variantId || null;
+            let vId = null;
+            if (item.variantId) {
+                const validVariant = yield prisma_1.default.productVariant.findUnique({
+                    where: { id: item.variantId }
+                });
+                if (validVariant) {
+                    vId = validVariant.id;
+                }
+            }
             const existing = yield prisma_1.default.cartItem.findFirst({
                 where: { cartId: cart.id, productId: item.productId, variantId: vId }
             });

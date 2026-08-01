@@ -29,7 +29,16 @@ export const syncCart = async (req: AuthenticatedRequest, res: Response) => {
             const product = await prisma.product.findUnique({ where: { id: item.productId } });
             if (!product) continue; // Skip stale identifiers
 
-            const vId = item.variantId || null;
+            let vId: string | null = null;
+            if (item.variantId) {
+                const validVariant = await prisma.productVariant.findUnique({
+                    where: { id: item.variantId }
+                });
+                if (validVariant) {
+                    vId = validVariant.id;
+                }
+            }
+
             const existing = await prisma.cartItem.findFirst({
                 where: { cartId: cart.id, productId: item.productId, variantId: vId }
             });

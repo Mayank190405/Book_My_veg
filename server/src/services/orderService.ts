@@ -83,9 +83,21 @@ export const orderService = {
                     });
                     price = Number(pricing?.price ?? product?.basePrice ?? 0);
                 }
+
+                let safeVariantId: string | null = null;
+                if (item.variantId) {
+                    const validVariant = await tx.productVariant.findUnique({
+                        where: { id: item.variantId },
+                        select: { id: true }
+                    });
+                    if (validVariant) {
+                        safeVariantId = validVariant.id;
+                    }
+                }
+
                 return { 
                     productId: item.productId,
-                    variantId: item.variantId,
+                    variantId: safeVariantId || undefined,
                     quantity: Number(item.quantity),
                     price,
                     categoryId: product?.categoryId || "",

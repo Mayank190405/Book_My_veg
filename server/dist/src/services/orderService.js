@@ -75,9 +75,19 @@ exports.orderService = {
                         });
                         price = Number((_b = (_a = pricing === null || pricing === void 0 ? void 0 : pricing.price) !== null && _a !== void 0 ? _a : product === null || product === void 0 ? void 0 : product.basePrice) !== null && _b !== void 0 ? _b : 0);
                     }
+                    let safeVariantId = null;
+                    if (item.variantId) {
+                        const validVariant = yield tx.productVariant.findUnique({
+                            where: { id: item.variantId },
+                            select: { id: true }
+                        });
+                        if (validVariant) {
+                            safeVariantId = validVariant.id;
+                        }
+                    }
                     return {
                         productId: item.productId,
-                        variantId: item.variantId,
+                        variantId: safeVariantId || undefined,
                         quantity: Number(item.quantity),
                         price,
                         categoryId: (product === null || product === void 0 ? void 0 : product.categoryId) || "",
