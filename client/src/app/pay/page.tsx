@@ -211,41 +211,48 @@ function PayContent({ slugParams }: PayPageProps) {
     const isPaid = isSingleBill ? bill?.isPaid : payData.totalDue <= 0;
 
     return (
-        <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between p-4 sm:p-6 lg:p-8">
-            <div className="max-w-2xl mx-auto w-full space-y-6">
+        <div className="min-h-screen bg-[#fbfdfc] dark:bg-[#061512] text-slate-900 dark:text-slate-100 flex flex-col justify-between p-4 sm:p-6 lg:p-10 relative overflow-hidden font-sans">
+            {/* Ambient Website Theme Background Glow */}
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[350px] bg-emerald-500/10 dark:bg-emerald-500/15 blur-[140px] rounded-full pointer-events-none" />
+            <div className="absolute bottom-0 right-0 w-[400px] h-[300px] bg-teal-500/10 dark:bg-teal-500/15 blur-[120px] rounded-full pointer-events-none" />
+            
+            <div className="max-w-xl mx-auto w-full space-y-6 relative z-10 my-auto">
                 
                 {/* Brand Header */}
-                <div className="flex items-center justify-between pb-4 border-b border-slate-800">
-                    <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center text-slate-950 shadow-lg shadow-emerald-500/20">
-                            <Building className="w-6 h-6" />
+                <div className="flex items-center justify-between pb-4 border-b border-slate-200/80 dark:border-slate-800/80">
+                    <div className="flex items-center gap-3.5">
+                        <div className="w-11 h-11 rounded-2xl bg-emerald-600 dark:bg-emerald-500 flex items-center justify-center text-white dark:text-slate-950 shadow-lg shadow-emerald-600/20 ring-4 ring-emerald-500/10">
+                            <Building className="w-6 h-6 stroke-[2.5]" />
                         </div>
                         <div>
-                            <h2 className="text-lg font-black tracking-tight text-white uppercase">Book My Veg</h2>
-                            <p className="text-xs text-slate-400 font-medium">Official Digital Payment Desk</p>
+                            <h2 className="text-xl font-black tracking-tight text-slate-900 dark:text-white uppercase flex items-center gap-2">
+                                Book My Veg
+                                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                            </h2>
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400 font-bold tracking-wide uppercase">Official Digital Payment Desk</p>
                         </div>
                     </div>
-                    <div className="px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-full text-emerald-400 text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5">
-                        <ShieldCheck className="w-3.5 h-3.5" /> 256-Bit SSL
+                    <div className="px-3.5 py-1.5 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 rounded-full text-emerald-700 dark:text-emerald-400 text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 shadow-xs">
+                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" /> 256-Bit Encrypted
                     </div>
                 </div>
 
                 {/* Customer Badge */}
                 {customer && (
-                    <div className="p-4 bg-slate-900/80 border border-slate-800 rounded-2xl flex items-center justify-between shadow-sm">
-                        <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center text-slate-400">
+                    <div className="p-4 bg-white dark:bg-[#0b1c19] border border-slate-200/90 dark:border-emerald-500/20 rounded-2xl flex items-center justify-between shadow-xs">
+                        <div className="flex items-center gap-3.5">
+                            <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-slate-800/80 border border-emerald-100 dark:border-slate-700/50 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
                                 <User className="w-5 h-5" />
                             </div>
                             <div>
-                                <p className="text-xs font-bold uppercase text-slate-400 tracking-wider">Customer</p>
-                                <p className="text-base font-black text-white">{customer.name || "Valued Customer"}</p>
+                                <p className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-400 tracking-wider">Account Holder</p>
+                                <p className="text-base font-black text-slate-900 dark:text-white tracking-wide">{customer.name || "Valued Customer"}</p>
                             </div>
                         </div>
                         {customer.phone && (
-                            <div className="flex items-center gap-1.5 text-xs text-slate-400 font-bold bg-slate-800/60 px-3 py-1.5 rounded-lg border border-slate-700/50">
-                                <Phone className="w-3.5 h-3.5 text-teal-400" />
-                                {customer.phone}
+                            <div className="flex items-center gap-2 text-xs font-bold text-emerald-800 dark:text-teal-300 bg-emerald-50 dark:bg-teal-500/10 px-3.5 py-2 rounded-xl border border-emerald-200 dark:border-teal-500/20">
+                                <Phone className="w-3.5 h-3.5 text-emerald-600 dark:text-teal-400" />
+                                <span>{customer.phone}</span>
                             </div>
                         )}
                     </div>
@@ -253,20 +260,22 @@ function PayContent({ slugParams }: PayPageProps) {
 
                 {/* Payment Completed Card */}
                 {isPaid || paymentSuccess ? (
-                    <div className="p-8 bg-emerald-950/40 border-2 border-emerald-500/30 rounded-3xl text-center space-y-4 shadow-2xl backdrop-blur-md">
-                        <div className="w-20 h-20 bg-emerald-500 rounded-full flex items-center justify-center text-slate-950 mx-auto shadow-xl shadow-emerald-500/30">
+                    <div className="p-8 bg-emerald-50/80 dark:bg-gradient-to-b dark:from-emerald-950/40 dark:to-slate-900/60 border border-emerald-200 dark:border-emerald-500/30 rounded-[32px] text-center space-y-4 shadow-xl relative overflow-hidden">
+                        <div className="w-20 h-20 bg-emerald-600 dark:bg-emerald-500 rounded-2xl flex items-center justify-center text-white dark:text-slate-950 mx-auto shadow-xl shadow-emerald-600/30 ring-8 ring-emerald-500/10">
                             <Check className="w-10 h-10 stroke-[3]" />
                         </div>
-                        <h2 className="text-2xl font-black text-white tracking-tight uppercase">
-                            {isSingleBill ? "Bill Paid Successfully!" : "All Dues Cleared!"}
-                        </h2>
-                        <p className="text-slate-400 text-sm max-w-md mx-auto">
-                            Thank you! Your transaction has been confirmed and updated automatically.
-                        </p>
+                        <div className="space-y-1">
+                            <h2 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight uppercase">
+                                {isSingleBill ? "Payment Completed!" : "All Dues Cleared!"}
+                            </h2>
+                            <p className="text-slate-600 dark:text-slate-400 text-xs max-w-sm mx-auto font-medium">
+                                Transaction processed successfully. Your account ledger has been updated.
+                            </p>
+                        </div>
                         {bill && (
-                            <div className="p-4 bg-slate-900/60 rounded-xl border border-slate-800 text-left text-xs space-y-1 mt-4">
-                                <p className="text-slate-400 font-medium">Bill Number: <span className="text-white font-mono font-bold">{bill.id}</span></p>
-                                <p className="text-slate-400 font-medium">Total Paid: <span className="text-emerald-400 font-bold">₹{bill.totalAmount.toFixed(2)}</span></p>
+                            <div className="p-4 bg-white dark:bg-slate-950/80 rounded-2xl border border-emerald-100 dark:border-slate-800/80 text-left text-xs space-y-1.5 mt-4 shadow-xs">
+                                <p className="text-slate-600 dark:text-slate-400 font-medium flex justify-between"><span>Bill Reference:</span> <span className="text-slate-900 dark:text-white font-mono font-bold">{bill.id}</span></p>
+                                <p className="text-slate-600 dark:text-slate-400 font-medium flex justify-between"><span>Total Settled:</span> <span className="text-emerald-600 dark:text-emerald-400 font-bold text-sm">₹{bill.totalAmount.toFixed(2)}</span></p>
                             </div>
                         )}
                     </div>
@@ -274,34 +283,33 @@ function PayContent({ slugParams }: PayPageProps) {
                     <>
                         {/* Single Bill Details */}
                         {isSingleBill && bill && (
-                            <div className="p-6 bg-slate-900 border border-slate-800 rounded-3xl space-y-6 shadow-xl relative overflow-hidden">
-                                <div className="absolute top-0 right-0 p-6 opacity-5 text-white pointer-events-none">
-                                    <FileText className="w-48 h-48 -mr-10 -mt-10" />
-                                </div>
-                                <div className="flex justify-between items-start border-b border-slate-800 pb-4">
+                            <div className="p-6 bg-white dark:bg-slate-900/60 border border-slate-200/90 dark:border-slate-800/80 rounded-[28px] space-y-5 shadow-sm relative overflow-hidden">
+                                <div className="flex justify-between items-start border-b border-slate-100 dark:border-slate-800/80 pb-4">
                                     <div>
-                                        <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400">Bill Invoice</span>
-                                        <h3 className="text-xl font-black text-white font-mono">{bill.id}</h3>
-                                        <p className="text-xs text-slate-400 font-medium">{new Date(bill.createdAt).toLocaleDateString("en-IN", { dateStyle: "full" })}</p>
+                                        <span className="px-2.5 py-1 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 text-[10px] font-black uppercase tracking-wider rounded-lg border border-emerald-200 dark:border-emerald-500/20 inline-block mb-1.5">
+                                            Bill Invoice
+                                        </span>
+                                        <h3 className="text-xl font-black text-slate-900 dark:text-white font-mono tracking-tight">{bill.id}</h3>
+                                        <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium mt-0.5">{new Date(bill.createdAt).toLocaleDateString("en-IN", { dateStyle: "full" })}</p>
                                     </div>
                                     <div className="text-right">
                                         <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Balance Due</span>
-                                        <p className="text-3xl font-black text-emerald-400 tracking-tight">₹{bill.dueAmount.toFixed(2)}</p>
+                                        <p className="text-3xl font-black text-emerald-600 dark:text-emerald-400 tracking-tight">₹{bill.dueAmount.toFixed(2)}</p>
                                     </div>
                                 </div>
 
                                 {/* Items list */}
                                 {bill.items && bill.items.length > 0 && (
                                     <div className="space-y-2">
-                                        <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Item Breakdown</p>
-                                        <div className="divide-y divide-slate-800/60 bg-slate-950/60 rounded-2xl border border-slate-800 p-3">
+                                        <p className="text-[11px] font-black text-slate-400 dark:text-slate-400 uppercase tracking-wider">Item Breakdown</p>
+                                        <div className="divide-y divide-slate-100 dark:divide-slate-800/60 bg-slate-50/80 dark:bg-slate-950/70 rounded-2xl border border-slate-200/60 dark:border-slate-800/80 p-3.5">
                                             {bill.items.map((item: any) => (
-                                                <div key={item.id} className="py-2 flex justify-between items-center text-xs">
+                                                <div key={item.id} className="py-2.5 flex justify-between items-center text-xs">
                                                     <div>
-                                                        <p className="font-bold text-slate-200">{item.name}</p>
-                                                        <p className="text-[10px] text-slate-400">Qty: {item.quantity} x ₹{item.sellingPrice}</p>
+                                                        <p className="font-bold text-slate-800 dark:text-slate-100">{item.name}</p>
+                                                        <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">Qty: {item.quantity} × ₹{item.sellingPrice}</p>
                                                     </div>
-                                                    <span className="font-mono font-bold text-slate-300">₹{(item.quantity * item.sellingPrice).toFixed(2)}</span>
+                                                    <span className="font-mono font-bold text-slate-700 dark:text-slate-200 text-sm">₹{(item.quantity * item.sellingPrice).toFixed(2)}</span>
                                                 </div>
                                             ))}
                                         </div>
@@ -312,30 +320,30 @@ function PayContent({ slugParams }: PayPageProps) {
 
                         {/* Customer All Dues Summary */}
                         {!isSingleBill && (
-                            <div className="p-6 bg-slate-900 border border-slate-800 rounded-3xl space-y-6 shadow-xl">
-                                <div className="flex justify-between items-center border-b border-slate-800 pb-4">
+                            <div className="p-6 bg-white dark:bg-slate-900/60 border border-slate-200/90 dark:border-slate-800/80 rounded-[28px] space-y-5 shadow-sm">
+                                <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-800/80 pb-4">
                                     <div>
-                                        <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400">Outstanding Account Balance</span>
-                                        <h3 className="text-3xl font-black text-white tracking-tight">₹{payData.totalDue.toFixed(2)}</h3>
+                                        <span className="text-[10px] font-black uppercase tracking-widest text-emerald-700 dark:text-emerald-400">Outstanding Balance</span>
+                                        <h3 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">₹{payData.totalDue.toFixed(2)}</h3>
                                     </div>
-                                    <div className="px-3 py-1.5 bg-amber-500/10 border border-amber-500/20 text-amber-400 rounded-full text-xs font-bold uppercase tracking-wider">
+                                    <div className="px-3.5 py-1.5 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 text-amber-700 dark:text-amber-400 rounded-full text-xs font-bold uppercase tracking-wider">
                                         {unpaidOrders.length} Pending {unpaidOrders.length === 1 ? "Bill" : "Bills"}
                                     </div>
                                 </div>
 
                                 {/* Unpaid Orders List */}
-                                <div className="space-y-3">
-                                    <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Pending Dues List</p>
-                                    <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                                <div className="space-y-2.5">
+                                    <p className="text-[11px] font-black text-slate-400 uppercase tracking-wider">Unpaid Invoices</p>
+                                    <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
                                         {unpaidOrders.map((ord: any) => (
-                                            <div key={ord.id} className="p-3 bg-slate-950/80 rounded-xl border border-slate-800 flex justify-between items-center text-xs">
+                                            <div key={ord.id} className="p-3 bg-slate-50 dark:bg-slate-950/70 rounded-2xl border border-slate-200/60 dark:border-slate-800/80 flex justify-between items-center text-xs">
                                                 <div>
-                                                    <p className="font-mono font-bold text-slate-200">{ord.id}</p>
-                                                    <p className="text-[10px] text-slate-400">{new Date(ord.createdAt).toLocaleDateString()}</p>
+                                                    <p className="font-mono font-bold text-slate-800 dark:text-slate-200">{ord.id}</p>
+                                                    <p className="text-[10px] text-slate-500 dark:text-slate-400">{new Date(ord.createdAt).toLocaleDateString()}</p>
                                                 </div>
                                                 <div className="text-right">
-                                                    <p className="font-bold text-emerald-400">Due: ₹{ord.dueAmount.toFixed(2)}</p>
-                                                    <p className="text-[10px] text-slate-500">Total: ₹{ord.totalAmount.toFixed(2)}</p>
+                                                    <p className="font-bold text-emerald-700 dark:text-emerald-400">Due: ₹{ord.dueAmount.toFixed(2)}</p>
+                                                    <p className="text-[10px] text-slate-400 dark:text-slate-500">Total: ₹{ord.totalAmount.toFixed(2)}</p>
                                                 </div>
                                             </div>
                                         ))}
@@ -345,10 +353,10 @@ function PayContent({ slugParams }: PayPageProps) {
                         )}
 
                         {/* Payment Input & Action */}
-                        <div className="p-6 bg-slate-900 border border-slate-800 rounded-3xl space-y-5 shadow-2xl">
+                        <div className="p-6 bg-white dark:bg-slate-900/80 border border-slate-200/90 dark:border-slate-800/80 rounded-[28px] space-y-5 shadow-md">
                             <div className="space-y-2">
-                                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">
-                                    Payment Amount (₹)
+                                <label className="block text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                                    Enter Payment Amount (₹)
                                 </label>
                                 <div className="relative">
                                     <input 
@@ -356,11 +364,11 @@ function PayContent({ slugParams }: PayPageProps) {
                                         value={customAmount}
                                         onChange={(e) => setCustomAmount(e.target.value)}
                                         placeholder="0.00"
-                                        className="w-full h-14 bg-slate-950 border-2 border-slate-700 focus:border-emerald-500 rounded-2xl px-12 text-2xl font-black text-white outline-none transition-all tabular-nums"
+                                        className="w-full h-15 bg-slate-50 dark:bg-slate-950 border-2 border-slate-200 dark:border-slate-700/80 focus:border-emerald-500 rounded-2xl px-12 text-2xl font-black text-slate-900 dark:text-white outline-none transition-all tabular-nums [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                     />
-                                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-2xl font-black text-slate-500">₹</span>
+                                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-2xl font-black text-emerald-600 dark:text-emerald-500">₹</span>
                                 </div>
-                                <p className="text-[11px] text-slate-400 italic">
+                                <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
                                     {!isSingleBill ? "Payments will automatically settle your oldest outstanding dues first." : "Pay full amount or partial instalment."}
                                 </p>
                             </div>
@@ -368,7 +376,7 @@ function PayContent({ slugParams }: PayPageProps) {
                             <button
                                 onClick={handleEasebuzzPayment}
                                 disabled={processing || !customAmount || Number(customAmount) <= 0}
-                                className="w-full h-16 bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-black text-lg uppercase tracking-wider rounded-2xl shadow-xl shadow-emerald-500/20 transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-3"
+                                className="w-full h-16 bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-400 text-white dark:text-slate-950 font-black text-base uppercase tracking-wider rounded-2xl shadow-xl shadow-emerald-600/20 dark:shadow-emerald-500/25 transition-all active:scale-[0.99] disabled:opacity-50 flex items-center justify-center gap-3 cursor-pointer"
                             >
                                 {processing ? (
                                     <>
@@ -376,7 +384,7 @@ function PayContent({ slugParams }: PayPageProps) {
                                     </>
                                 ) : (
                                     <>
-                                        <CreditCard className="w-6 h-6" /> Pay ₹{Number(customAmount || 0).toFixed(2)} via Easebuzz
+                                        <CreditCard className="w-5 h-5 stroke-[2.5]" /> Pay ₹{Number(customAmount || 0).toFixed(2)} via Easebuzz
                                     </>
                                 )}
                             </button>
@@ -384,23 +392,28 @@ function PayContent({ slugParams }: PayPageProps) {
                     </>
                 )}
 
+                {/* Footer Security Note */}
+                <div className="text-center pt-2 text-[11px] text-slate-400 dark:text-slate-400 font-semibold tracking-wide">
+                    Protected by Easebuzz Gateway • Book My Veg Official Checkout
+                </div>
+
                 {/* In-App Payment Gateway Popup Modal Overlay */}
                 {showPayIframeModal && (
                     <div className="fixed inset-0 z-[99999] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
-                        <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col">
-                            <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/50">
+                        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col">
+                            <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-950/60">
                                 <div className="flex items-center gap-2">
-                                    <CreditCard className="w-5 h-5 text-emerald-400" />
-                                    <h3 className="text-sm font-bold text-white uppercase tracking-wider">Easebuzz Secure Checkout</h3>
+                                    <CreditCard className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+                                    <h3 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider">Easebuzz Secure Checkout</h3>
                                 </div>
                                 <button
                                     onClick={() => setShowPayIframeModal(false)}
-                                    className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold transition-all"
+                                    className="px-3.5 py-1.5 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-300 rounded-xl text-xs font-bold transition-all cursor-pointer"
                                 >
                                     Close / X
                                 </button>
                             </div>
-                            <div className="w-full h-[520px] bg-slate-950 relative">
+                            <div className="w-full h-[520px] bg-slate-100 dark:bg-slate-950 relative">
                                 {payIframeUrl ? (
                                     <iframe
                                         src={payIframeUrl}
@@ -409,8 +422,8 @@ function PayContent({ slugParams }: PayPageProps) {
                                     />
                                 ) : (
                                     <div className="flex flex-col items-center justify-center h-full text-slate-400">
-                                        <Loader2 className="w-8 h-8 text-emerald-500 animate-spin mb-2" />
-                                        <p className="text-xs">Loading Payment Window...</p>
+                                        <Loader2 className="w-8 h-8 text-emerald-600 dark:text-emerald-500 animate-spin mb-2" />
+                                        <p className="text-xs">Loading Payment Portal...</p>
                                     </div>
                                 )}
                             </div>
