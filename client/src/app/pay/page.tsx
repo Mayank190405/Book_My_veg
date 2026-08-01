@@ -103,6 +103,9 @@ function PayContent({ slugParams }: PayPageProps) {
         fetchPayData();
     }, [extractedParams]);
 
+    const [payIframeUrl, setPayIframeUrl] = useState<string | null>(null);
+    const [showPayIframeModal, setShowPayIframeModal] = useState(false);
+
     const handleEasebuzzPayment = async () => {
         const payAmount = Number(customAmount || (payData?.bill?.dueAmount || payData?.totalDue || 0));
         if (!payAmount || payAmount <= 0) return;
@@ -140,7 +143,9 @@ function PayContent({ slugParams }: PayPageProps) {
                         });
                     } else {
                         setProcessing(false);
-                        alert("Easebuzz SDK failed to load");
+                        const fallbackUrl = data.paymentLink || `https://${data.env === "prod" ? "pay" : "testpay"}.easebuzz.in/pay/${data.accessKey}`;
+                        setPayIframeUrl(fallbackUrl);
+                        setShowPayIframeModal(true);
                     }
                 };
 
@@ -151,14 +156,18 @@ function PayContent({ slugParams }: PayPageProps) {
                     script.onload = triggerSdk;
                     script.onerror = () => {
                         setProcessing(false);
-                        alert("Failed to load Easebuzz payment script");
+                        const fallbackUrl = data.paymentLink || `https://${data.env === "prod" ? "pay" : "testpay"}.easebuzz.in/pay/${data.accessKey}`;
+                        setPayIframeUrl(fallbackUrl);
+                        setShowPayIframeModal(true);
                     };
                     document.body.appendChild(script);
                 } else {
                     triggerSdk();
                 }
             } else if (data.paymentLink) {
-                window.location.href = data.paymentLink;
+                setPayIframeUrl(data.paymentLink);
+                setShowPayIframeModal(true);
+                setProcessing(false);
             } else {
                 throw new Error("No payment link returned");
             }
@@ -375,10 +384,39 @@ function PayContent({ slugParams }: PayPageProps) {
                     </>
                 )}
 
-                {/* Footer Security Note */}
-                <div className="text-center pt-4 text-xs text-slate-500 font-medium">
-                    Protected by Easebuzz Payment Gateway • Book My Veg Official Checkout
-                </div>
+                {/* In-App Payment Gateway Popup Modal Overlay */}
+                {showPayIframeModal && (
+                    <div className="fixed inset-0 z-[99999] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+                        <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col">
+                            <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/50">
+                                <div className="flex items-center gap-2">
+                                    <CreditCard className="w-5 h-5 text-emerald-400" />
+                                    <h3 className="text-sm font-bold text-white uppercase tracking-wider">Easebuzz Secure Checkout</h3>
+                                </div>
+                                <button
+                                    onClick={() => setShowPayIframeModal(false)}
+                                    className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold transition-all"
+                                >
+                                    Close / X
+                                </button>
+                            </div>
+                            <div className="w-full h-[520px] bg-slate-950 relative">
+                                {payIframeUrl ? (
+                                    <iframe
+                                        src={payIframeUrl}
+                                        className="w-full h-full border-none"
+                                        title="Easebuzz Payment Portal"
+                                    />
+                                ) : (
+                                    <div className="flex flex-col items-center justify-center h-full text-slate-400">
+                                        <Loader2 className="w-8 h-8 text-emerald-500 animate-spin mb-2" />
+                                        <p className="text-xs">Loading Payment Window...</p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )}
 
             </div>
         </div>
