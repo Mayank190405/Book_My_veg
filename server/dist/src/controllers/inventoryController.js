@@ -63,9 +63,17 @@ const consolidateStoreInventory = (locationId) => __awaiter(void 0, void 0, void
                 }
             }
             if (duplicateIdsToDelete.length > 0) {
-                yield prisma_1.default.inventory.deleteMany({
-                    where: { id: { in: duplicateIdsToDelete } }
-                });
+                try {
+                    yield prisma_1.default.inventory.deleteMany({
+                        where: { id: { in: duplicateIdsToDelete } }
+                    });
+                }
+                catch (delErr) {
+                    yield prisma_1.default.inventory.updateMany({
+                        where: { id: { in: duplicateIdsToDelete } },
+                        data: { currentStock: 0 }
+                    });
+                }
             }
         }
     }

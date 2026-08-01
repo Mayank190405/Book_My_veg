@@ -56,9 +56,16 @@ const consolidateStoreInventory = async (locationId: string) => {
             }
 
             if (duplicateIdsToDelete.length > 0) {
-                await prisma.inventory.deleteMany({
-                    where: { id: { in: duplicateIdsToDelete } }
-                });
+                try {
+                    await prisma.inventory.deleteMany({
+                        where: { id: { in: duplicateIdsToDelete } }
+                    });
+                } catch (delErr: any) {
+                    await prisma.inventory.updateMany({
+                        where: { id: { in: duplicateIdsToDelete } },
+                        data: { currentStock: 0 }
+                    });
+                }
             }
         }
     } catch (err: any) {
