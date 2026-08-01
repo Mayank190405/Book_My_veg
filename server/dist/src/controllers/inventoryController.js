@@ -17,76 +17,55 @@ const prisma_1 = __importDefault(require("../config/prisma"));
 const client_1 = require("@prisma/client");
 const consolidateStoreInventory = (locationId) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const products = yield prisma_1.default.product.findMany({
-            include: { variants: true }
-        });
+        const products = yield prisma_1.default.product.findMany();
         for (const product of products) {
-            const hasVariants = product.variants.length > 0;
             const allInventory = yield prisma_1.default.inventory.findMany({
                 where: { productId: product.id, locationId }
             });
             if (allInventory.length === 0)
                 continue;
-            if (hasVariants) {
-                const primaryVariant = product.variants[0];
-                let primaryVarInv = allInventory.find(i => i.variantId === primaryVariant.id);
-                if (!primaryVarInv) {
-                    primaryVarInv = yield prisma_1.default.inventory.create({
-                        data: {
-                            productId: product.id,
-                            locationId,
-                            variantId: primaryVariant.id,
-                            currentStock: 0,
-                            thresholdStock: 5
-                        }
-                    });
-                }
-                const baseInvs = allInventory.filter(i => i.variantId === null);
-                if (baseInvs.length > 0) {
-                    let extraStock = 0;
-                    const baseIdsToDelete = [];
-                    for (const baseInv of baseInvs) {
-                        extraStock += Number(baseInv.currentStock || 0);
-                        baseIdsToDelete.push(baseInv.id);
+            // Find or select the primary Base Product Inventory record (variantId = null)
+            let baseInv = allInventory.find(i => i.variantId === null);
+            let totalStock = 0;
+            const duplicateIdsToDelete = [];
+            for (const inv of allInventory) {
+                totalStock += Number(inv.currentStock || 0);
+            }
+            if (!baseInv) {
+                // If no base inventory record exists, convert the first inventory record or create base record
+                baseInv = yield prisma_1.default.inventory.create({
+                    data: {
+                        productId: product.id,
+                        locationId,
+                        variantId: null,
+                        currentStock: new client_1.Prisma.Decimal(totalStock),
+                        thresholdStock: 5
                     }
-                    if (extraStock > 0) {
-                        yield prisma_1.default.inventory.update({
-                            where: { id: primaryVarInv.id },
-                            data: {
-                                currentStock: new client_1.Prisma.Decimal(Number(primaryVarInv.currentStock) + extraStock)
-                            }
-                        });
-                    }
-                    if (baseIdsToDelete.length > 0) {
-                        yield prisma_1.default.inventory.deleteMany({
-                            where: { id: { in: baseIdsToDelete } }
-                        });
-                    }
+                });
+                // Delete all old variant/non-base records
+                for (const inv of allInventory) {
+                    duplicateIdsToDelete.push(inv.id);
                 }
             }
             else {
-                const nullInvs = allInventory.filter(i => i.variantId === null);
-                if (nullInvs.length > 1) {
-                    const primary = nullInvs[0];
-                    const duplicates = nullInvs.slice(1);
-                    let totalExtra = 0;
-                    const dupIds = [];
-                    for (const dup of duplicates) {
-                        totalExtra += Number(dup.currentStock || 0);
-                        dupIds.push(dup.id);
+                // Primary base inventory exists: update it with total consolidated stock
+                yield prisma_1.default.inventory.update({
+                    where: { id: baseInv.id },
+                    data: {
+                        currentStock: new client_1.Prisma.Decimal(totalStock)
                     }
-                    if (totalExtra > 0) {
-                        yield prisma_1.default.inventory.update({
-                            where: { id: primary.id },
-                            data: {
-                                currentStock: new client_1.Prisma.Decimal(Number(primary.currentStock) + totalExtra)
-                            }
-                        });
+                });
+                // Delete all other inventory records (variants / duplicate base rows)
+                for (const inv of allInventory) {
+                    if (inv.id !== baseInv.id) {
+                        duplicateIdsToDelete.push(inv.id);
                     }
-                    yield prisma_1.default.inventory.deleteMany({
-                        where: { id: { in: dupIds } }
-                    });
                 }
+            }
+            if (duplicateIdsToDelete.length > 0) {
+                yield prisma_1.default.inventory.deleteMany({
+                    where: { id: { in: duplicateIdsToDelete } }
+                });
             }
         }
     }
@@ -180,64 +159,29 @@ const syncInventory = (req, res) => __awaiter(void 0, void 0, void 0, function* 
     }
     try {
         const targetLocationId = locationId;
-        const products = yield prisma_1.default.product.findMany({
-            include: { variants: true }
-        });
+        yield consolidateStoreInventory(targetLocationId);
+        const products = yield prisma_1.default.product.findMany();
         let count = 0;
         for (const product of products) {
-            if (product.variants.length > 0) {
-                // Delete redundant 0-stock null-variant inventory records when variants exist
-                yield prisma_1.default.inventory.deleteMany({
-                    where: {
+            const existing = yield prisma_1.default.inventory.findFirst({
+                where: {
+                    productId: product.id,
+                    locationId: targetLocationId,
+                    variantId: null
+                }
+            });
+            if (!existing) {
+                yield prisma_1.default.inventory.create({
+                    data: {
                         productId: product.id,
                         locationId: targetLocationId,
                         variantId: null,
-                        currentStock: 0
+                        currentStock: 0,
+                        thresholdStock: 5
                     }
                 });
-                for (const variant of product.variants) {
-                    const existing = yield prisma_1.default.inventory.findFirst({
-                        where: {
-                            productId: product.id,
-                            locationId: targetLocationId,
-                            variantId: variant.id
-                        }
-                    });
-                    if (!existing) {
-                        yield prisma_1.default.inventory.create({
-                            data: {
-                                productId: product.id,
-                                locationId: targetLocationId,
-                                variantId: variant.id,
-                                currentStock: 0,
-                                thresholdStock: 5
-                            }
-                        });
-                    }
-                    count++;
-                }
             }
-            else {
-                const existing = yield prisma_1.default.inventory.findFirst({
-                    where: {
-                        productId: product.id,
-                        locationId: targetLocationId,
-                        variantId: null
-                    }
-                });
-                if (!existing) {
-                    yield prisma_1.default.inventory.create({
-                        data: {
-                            productId: product.id,
-                            locationId: targetLocationId,
-                            variantId: null,
-                            currentStock: 0,
-                            thresholdStock: 5
-                        }
-                    });
-                }
-                count++;
-            }
+            count++;
         }
         res.json({ message: `Inventory synced for ${count} nodes`, count });
     }

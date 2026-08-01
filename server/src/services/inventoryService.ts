@@ -35,7 +35,7 @@ export class InventoryService {
     }) {
         const variantQuery = params.variantId ? Prisma.sql`AND "variantId" = ${params.variantId}` : Prisma.sql`AND "variantId" IS NULL`;
 
-        const invRows: any[] = await db.$queryRaw`
+        let invRows: any[] = await db.$queryRaw`
             SELECT id, "currentStock" 
             FROM "Inventory" 
             WHERE "productId" = ${params.productId} 
@@ -43,6 +43,18 @@ export class InventoryService {
               ${variantQuery}
             FOR UPDATE
         `;
+
+        // Fallback to Base Product Main Inventory (variantId IS NULL) if variant inventory row is missing
+        if ((!invRows || invRows.length === 0) && params.variantId) {
+            invRows = await db.$queryRaw`
+                SELECT id, "currentStock" 
+                FROM "Inventory" 
+                WHERE "productId" = ${params.productId} 
+                  AND "locationId" = ${params.locationId} 
+                  AND "variantId" IS NULL
+                FOR UPDATE
+            `;
+        }
 
         let currentStock = 0;
         let invId: string | null = null;

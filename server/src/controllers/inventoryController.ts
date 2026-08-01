@@ -4,85 +4,61 @@ import { Prisma } from "@prisma/client";
 
 const consolidateStoreInventory = async (locationId: string) => {
     try {
-        const products = await prisma.product.findMany({
-            include: { variants: true }
-        });
+        const products = await prisma.product.findMany();
 
         for (const product of products) {
-            const hasVariants = product.variants.length > 0;
             const allInventory = await prisma.inventory.findMany({
                 where: { productId: product.id, locationId }
             });
 
             if (allInventory.length === 0) continue;
 
-            if (hasVariants) {
-                const primaryVariant = product.variants[0];
-                let primaryVarInv = allInventory.find(i => i.variantId === primaryVariant.id);
+            // Find or select the primary Base Product Inventory record (variantId = null)
+            let baseInv = allInventory.find(i => i.variantId === null);
+            let totalStock = 0;
+            const duplicateIdsToDelete: string[] = [];
 
-                if (!primaryVarInv) {
-                    primaryVarInv = await prisma.inventory.create({
-                        data: {
-                            productId: product.id,
-                            locationId,
-                            variantId: primaryVariant.id,
-                            currentStock: 0,
-                            thresholdStock: 5
-                        }
-                    });
-                }
+            for (const inv of allInventory) {
+                totalStock += Number(inv.currentStock || 0);
+            }
 
-                const baseInvs = allInventory.filter(i => i.variantId === null);
-                if (baseInvs.length > 0) {
-                    let extraStock = 0;
-                    const baseIdsToDelete: string[] = [];
-
-                    for (const baseInv of baseInvs) {
-                        extraStock += Number(baseInv.currentStock || 0);
-                        baseIdsToDelete.push(baseInv.id);
+            if (!baseInv) {
+                // If no base inventory record exists, convert the first inventory record or create base record
+                baseInv = await prisma.inventory.create({
+                    data: {
+                        productId: product.id,
+                        locationId,
+                        variantId: null,
+                        currentStock: new Prisma.Decimal(totalStock),
+                        thresholdStock: 5
                     }
+                });
 
-                    if (extraStock > 0) {
-                        await prisma.inventory.update({
-                            where: { id: primaryVarInv.id },
-                            data: {
-                                currentStock: new Prisma.Decimal(Number(primaryVarInv.currentStock) + extraStock)
-                            }
-                        });
-                    }
-
-                    if (baseIdsToDelete.length > 0) {
-                        await prisma.inventory.deleteMany({
-                            where: { id: { in: baseIdsToDelete } }
-                        });
-                    }
+                // Delete all old variant/non-base records
+                for (const inv of allInventory) {
+                    duplicateIdsToDelete.push(inv.id);
                 }
             } else {
-                const nullInvs = allInventory.filter(i => i.variantId === null);
-                if (nullInvs.length > 1) {
-                    const primary = nullInvs[0];
-                    const duplicates = nullInvs.slice(1);
-                    let totalExtra = 0;
-                    const dupIds: string[] = [];
-
-                    for (const dup of duplicates) {
-                        totalExtra += Number(dup.currentStock || 0);
-                        dupIds.push(dup.id);
+                // Primary base inventory exists: update it with total consolidated stock
+                await prisma.inventory.update({
+                    where: { id: baseInv.id },
+                    data: {
+                        currentStock: new Prisma.Decimal(totalStock)
                     }
+                });
 
-                    if (totalExtra > 0) {
-                        await prisma.inventory.update({
-                            where: { id: primary.id },
-                            data: {
-                                currentStock: new Prisma.Decimal(Number(primary.currentStock) + totalExtra)
-                            }
-                        });
+                // Delete all other inventory records (variants / duplicate base rows)
+                for (const inv of allInventory) {
+                    if (inv.id !== baseInv.id) {
+                        duplicateIdsToDelete.push(inv.id);
                     }
-
-                    await prisma.inventory.deleteMany({
-                        where: { id: { in: dupIds } }
-                    });
                 }
+            }
+
+            if (duplicateIdsToDelete.length > 0) {
+                await prisma.inventory.deleteMany({
+                    where: { id: { in: duplicateIdsToDelete } }
+                });
             }
         }
     } catch (err: any) {
@@ -183,65 +159,32 @@ export const syncInventory = async (req: Request, res: Response) => {
 
     try {
         const targetLocationId = locationId as string;
-        const products = await prisma.product.findMany({
-            include: { variants: true }
-        });
+        await consolidateStoreInventory(targetLocationId);
 
+        const products = await prisma.product.findMany();
         let count = 0;
+
         for (const product of products) {
-            if (product.variants.length > 0) {
-                // Delete redundant 0-stock null-variant inventory records when variants exist
-                await prisma.inventory.deleteMany({
-                    where: {
+            const existing = await prisma.inventory.findFirst({
+                where: {
+                    productId: product.id,
+                    locationId: targetLocationId,
+                    variantId: null
+                }
+            });
+
+            if (!existing) {
+                await prisma.inventory.create({
+                    data: {
                         productId: product.id,
                         locationId: targetLocationId,
                         variantId: null,
-                        currentStock: 0
+                        currentStock: 0,
+                        thresholdStock: 5
                     }
                 });
-
-                for (const variant of product.variants) {
-                    const existing = await prisma.inventory.findFirst({
-                        where: {
-                            productId: product.id,
-                            locationId: targetLocationId,
-                            variantId: variant.id
-                        }
-                    });
-                    if (!existing) {
-                        await prisma.inventory.create({
-                            data: {
-                                productId: product.id,
-                                locationId: targetLocationId,
-                                variantId: variant.id,
-                                currentStock: 0,
-                                thresholdStock: 5
-                            }
-                        });
-                    }
-                    count++;
-                }
-            } else {
-                const existing = await prisma.inventory.findFirst({
-                    where: {
-                        productId: product.id,
-                        locationId: targetLocationId,
-                        variantId: null
-                    }
-                });
-                if (!existing) {
-                    await prisma.inventory.create({
-                        data: {
-                            productId: product.id,
-                            locationId: targetLocationId,
-                            variantId: null,
-                            currentStock: 0,
-                            thresholdStock: 5
-                        }
-                    });
-                }
-                count++;
             }
+            count++;
         }
         res.json({ message: `Inventory synced for ${count} nodes`, count });
     } catch (error: any) {

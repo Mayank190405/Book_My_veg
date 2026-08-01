@@ -34,7 +34,7 @@ class InventoryService {
     static adjustGlobalInventory(db, params) {
         return __awaiter(this, void 0, void 0, function* () {
             const variantQuery = params.variantId ? client_1.Prisma.sql `AND "variantId" = ${params.variantId}` : client_1.Prisma.sql `AND "variantId" IS NULL`;
-            const invRows = yield db.$queryRaw `
+            let invRows = yield db.$queryRaw `
             SELECT id, "currentStock" 
             FROM "Inventory" 
             WHERE "productId" = ${params.productId} 
@@ -42,6 +42,17 @@ class InventoryService {
               ${variantQuery}
             FOR UPDATE
         `;
+            // Fallback to Base Product Main Inventory (variantId IS NULL) if variant inventory row is missing
+            if ((!invRows || invRows.length === 0) && params.variantId) {
+                invRows = yield db.$queryRaw `
+                SELECT id, "currentStock" 
+                FROM "Inventory" 
+                WHERE "productId" = ${params.productId} 
+                  AND "locationId" = ${params.locationId} 
+                  AND "variantId" IS NULL
+                FOR UPDATE
+            `;
+            }
             let currentStock = 0;
             let invId = null;
             if (!invRows || invRows.length === 0) {
