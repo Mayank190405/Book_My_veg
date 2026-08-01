@@ -26,7 +26,8 @@ import {
     Layers,
     ArrowUpRight,
     TrendingUp,
-    Skull
+    Skull,
+    Tag
 } from "lucide-react";
 import { useState, useEffect, useMemo } from "react";
 import { cn } from "@/lib/utils";
@@ -439,12 +440,19 @@ export default function AdminInventory() {
                                                 </div>
                                                 <div className="min-w-0">
                                                     <h4 className="text-sm font-bold text-slate-900 truncate">{item.product?.name}</h4>
-                                                    <div className="flex items-center gap-3 mt-1">
+                                                    <div className="flex flex-wrap items-center gap-2 mt-1">
                                                         {(item.product?.sku || item.product?.barcode) && (
                                                             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">ID: {item.product?.sku?.toUpperCase() || item.product?.barcode}</span>
                                                         )}
-                                                        {item.variant && (
-                                                            <span className="text-[9px] font-bold bg-blue-50 text-blue-600 px-2 py-0.5 rounded uppercase tracking-wider border border-blue-100">{item.variant.name}</span>
+                                                        {item.variant ? (
+                                                            <span className="text-[10px] font-semibold bg-blue-50 text-blue-700 dark:text-blue-400 px-2 py-0.5 rounded-md border border-blue-200 inline-flex items-center gap-1">
+                                                                <Tag className="w-3 h-3 text-blue-500" />
+                                                                Variant: {item.variant.name} {item.variant.weight ? `(${item.variant.weight} ${item.variant.weightUnit || ""})` : ""}
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-[10px] font-semibold bg-slate-100 text-slate-600 dark:text-slate-400 px-2 py-0.5 rounded-md border border-slate-200">
+                                                                Base Product Stock
+                                                            </span>
                                                         )}
                                                     </div>
                                                 </div>

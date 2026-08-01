@@ -17,21 +17,29 @@ export const getStoreInventory = async (req: Request, res: Response) => {
             include: {
                 product: {
                     select: {
+                        id: true,
                         name: true,
                         sku: true,
+                        barcode: true,
                         images: true,
+                        weightUnit: true,
                         category: { select: { name: true } }
                     }
                 },
                 variant: {
                     select: {
+                        id: true,
                         name: true,
                         weight: true,
-                        weightUnit: true
+                        weightUnit: true,
+                        price: true
                     }
                 }
             },
-            orderBy: { updatedAt: "desc" }
+            orderBy: [
+                { product: { name: "asc" } },
+                { updatedAt: "desc" }
+            ]
         });
         res.json(inventory);
     } catch (error: any) {
@@ -61,10 +69,10 @@ export const adjustStock = async (req: Request, res: Response) => {
             data: {
                 currentStock: nextStock,
                 thresholdStock: nextThreshold,
-                isLowStock: new Prisma.Decimal(nextStock).lte(nextThreshold),
-                lastRestocked: new Prisma.Decimal(nextStock).gt(current.currentStock as any) ? new Date() : current.lastRestocked
+                isLowStock: Number(nextStock) <= Number(nextThreshold)
             }
         });
+
         res.json(inventory);
     } catch (error: any) {
         res.status(500).json({ error: error.message });
@@ -91,6 +99,16 @@ export const syncInventory = async (req: Request, res: Response) => {
         let count = 0;
         for (const product of products) {
             if (product.variants.length > 0) {
+                // Delete redundant 0-stock null-variant inventory records when variants exist
+                await prisma.inventory.deleteMany({
+                    where: {
+                        productId: product.id,
+                        locationId: targetLocationId,
+                        variantId: null,
+                        currentStock: 0
+                    }
+                });
+
                 for (const variant of product.variants) {
                     const existing = await prisma.inventory.findFirst({
                         where: {

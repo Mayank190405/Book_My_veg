@@ -28,21 +28,29 @@ const getStoreInventory = (req, res) => __awaiter(void 0, void 0, void 0, functi
             include: {
                 product: {
                     select: {
+                        id: true,
                         name: true,
                         sku: true,
+                        barcode: true,
                         images: true,
+                        weightUnit: true,
                         category: { select: { name: true } }
                     }
                 },
                 variant: {
                     select: {
+                        id: true,
                         name: true,
                         weight: true,
-                        weightUnit: true
+                        weightUnit: true,
+                        price: true
                     }
                 }
             },
-            orderBy: { updatedAt: "desc" }
+            orderBy: [
+                { product: { name: "asc" } },
+                { updatedAt: "desc" }
+            ]
         });
         res.json(inventory);
     }
@@ -70,8 +78,7 @@ const adjustStock = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
             data: {
                 currentStock: nextStock,
                 thresholdStock: nextThreshold,
-                isLowStock: new client_1.Prisma.Decimal(nextStock).lte(nextThreshold),
-                lastRestocked: new client_1.Prisma.Decimal(nextStock).gt(current.currentStock) ? new Date() : current.lastRestocked
+                isLowStock: Number(nextStock) <= Number(nextThreshold)
             }
         });
         res.json(inventory);
@@ -98,6 +105,15 @@ const syncInventory = (req, res) => __awaiter(void 0, void 0, void 0, function* 
         let count = 0;
         for (const product of products) {
             if (product.variants.length > 0) {
+                // Delete redundant 0-stock null-variant inventory records when variants exist
+                yield prisma_1.default.inventory.deleteMany({
+                    where: {
+                        productId: product.id,
+                        locationId: targetLocationId,
+                        variantId: null,
+                        currentStock: 0
+                    }
+                });
                 for (const variant of product.variants) {
                     const existing = yield prisma_1.default.inventory.findFirst({
                         where: {
