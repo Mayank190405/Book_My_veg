@@ -468,7 +468,10 @@ export default function POSOperator() {
             const data = res.data;
 
             if (data.accessKey || data.paymentLink) {
-                const checkoutUrl = data.paymentLink || `https://${data.env === "prod" ? "pay" : "testpay"}.easebuzz.in/pay/${data.accessKey}`;
+                let checkoutUrl = data.paymentLink || `https://${data.env === "prod" ? "pay" : "testpay"}.easebuzz.in/pay/${data.accessKey}`;
+                if (typeof window !== "undefined" && window.location.protocol === "https:") {
+                    checkoutUrl = checkoutUrl.replace(/^http:/, "https:");
+                }
                 const sdkUrl = "https://ebz-static.s3.ap-south-1.amazonaws.com/easecheckout/v2.0.0/easebuzz-checkout-v2.min.js";
 
                 const triggerSdk = () => {

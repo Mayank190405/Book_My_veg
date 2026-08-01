@@ -1041,6 +1041,9 @@ const initiatePayDue = (req, res) => __awaiter(void 0, void 0, void 0, function*
         if (origin && (baseUrl.includes("localhost") || !process.env.CLIENT_URL)) {
             baseUrl = origin;
         }
+        if (protocol === "https" || (origin && origin.startsWith("https:"))) {
+            baseUrl = baseUrl.replace(/^http:/, "https:");
+        }
         if (process.env.EASEBUZZ_KEY || process.env.EASEBUZZ_MERCHANT_KEY) {
             try {
                 const easeResult = yield callEasebuzzInitiateApi({
@@ -1056,12 +1059,19 @@ const initiatePayDue = (req, res) => __awaiter(void 0, void 0, void 0, function*
             }
             catch (easebuzzError) {
                 logger_1.default.error(`[Initiate Pay Due] Easebuzz initiation failed: ${easebuzzError.message}`);
+                return res.status(502).json({
+                    message: `Payment gateway error: ${easebuzzError.message || "Easebuzz initiation failed"}. Please retry.`
+                });
             }
         }
-        return res.json({
-            txnid,
-            paymentLink: `${baseUrl.replace(/\/$/, "")}/payment/mock-gateway?orderId=${txnid}&amount=${amountToPay}`,
-        });
+        // Mock gateway fallback — only for local development when no Easebuzz keys are configured
+        if (baseUrl.includes("localhost") || baseUrl.includes("127.0.0.1")) {
+            return res.json({
+                txnid,
+                paymentLink: `${baseUrl.replace(/\/$/, "")}/payment/mock-gateway?orderId=${txnid}&amount=${amountToPay}`,
+            });
+        }
+        return res.status(500).json({ message: "Payment gateway not configured. Contact support." });
     }
     catch (error) {
         logger_1.default.error(`[Initiate Pay Due Error] ${error.message}`);
