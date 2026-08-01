@@ -370,29 +370,81 @@ export default function POSOperator() {
         } catch { toast.error("Failed to load history"); }
     };
 
-    const forwardWhatsAppLink = (type: "BILL" | "ALL_DUES", customBillId?: string) => {
+    const forwardWhatsAppLink = async (type: "BILL" | "ALL_DUES", customBillId?: string) => {
         if (!selectedCustomer?.phone) {
             toast.error("Customer phone number is missing");
             return;
         }
+
+        let targetBillId = customBillId || lastReceipt?.order?.id || inspectingOrder?.id || "";
+        let billTotal = grandTotal;
+
+        // If cart has active items, automatically push cart as a Due Sale order first!
+        if (type === "BILL" && !targetBillId && cart.length > 0) {
+            if (!activeShift) {
+                toast.error("Operational Block: No active shift found. Open a shift to proceed.");
+                setShowShiftModal(true);
+                return;
+            }
+            setIsProcessing(true);
+            try {
+                const res = await api.post("/pos/orders/process", {
+                    customerId: selectedCustomer?.id,
+                    items: cart.map(i => ({
+                        productId: i.id,
+                        variantId: i.variants?.[0]?.id,
+                        quantity: i.quantity,
+                        price: i.overridePrice !== undefined ? i.overridePrice : getPrice(i)
+                    })),
+                    paymentMethod: "CREDIT",
+                    discountAmount: discount,
+                    packerId: localStorage.getItem("selectedPackerId"),
+                    duePaymentAmount: grandTotal,
+                    paidAmount: 0,
+                    denominations: null
+                });
+
+                targetBillId = res.data.order.id;
+                billTotal = Number(res.data.order.totalAmount || grandTotal);
+
+                setLastReceipt({
+                    order: res.data.order,
+                    items: cart,
+                    customer: selectedCustomer,
+                    paymentMethod: "CREDIT",
+                    subtotal,
+                    discount,
+                    grandTotal,
+                    cashTotal: 0,
+                    changeDue: 0,
+                    dueSummary: res.data.dueSummary
+                });
+
+                setCart([]);
+                setDiscount(0);
+                setCouponCode("");
+                toast.success(`Bill #${targetBillId} pushed to customer Dues & ready for payment`);
+            } catch (e: any) {
+                toast.error(e?.response?.data?.message || "Failed to process due bill");
+                setIsProcessing(false);
+                return;
+            } finally {
+                setIsProcessing(false);
+            }
+        }
+
         const cleanPhone = selectedCustomer.phone.replace(/\D/g, "");
         const targetPhone = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
         const origin = typeof window !== "undefined" ? window.location.origin : "";
 
-        const billId = customBillId || lastReceipt?.id || inspectingOrder?.id || "";
-
         let link = "";
         let message = "";
 
-        if (type === "BILL" && billId) {
-            link = `${origin}/pay/userid=${selectedCustomer.id}&number=${selectedCustomer.phone}&billid=${billId}`;
-            message = `Hello ${selectedCustomer.name}, here is your bill invoice #${billId} for ₹${grandTotal.toFixed(2)}. Pay directly online here: ${link}`;
-        } else if (type === "BILL") {
-            link = `${origin}/pay/userid=${selectedCustomer.id}&number=${selectedCustomer.phone}`;
-            message = `Hello ${selectedCustomer.name}, your bill total is ₹${grandTotal.toFixed(2)}. Pay online directly here: ${link}`;
+        if (type === "BILL" && targetBillId) {
+            link = `${origin}/pay?userid=${selectedCustomer.id}&number=${selectedCustomer.phone}&billid=${targetBillId}`;
+            message = `Hello ${selectedCustomer.name}, here is your bill invoice #${targetBillId} for ₹${billTotal.toFixed(2)}. Pay directly online via Easebuzz here: ${link}`;
         } else {
-            link = `${origin}/pay/userid=${selectedCustomer.id}&number=${selectedCustomer.phone}`;
-            const dueAmt = customerHistory?.summary?.totalDue || grandTotal;
+            link = `${origin}/pay?userid=${selectedCustomer.id}&number=${selectedCustomer.phone}`;
             message = `Hello ${selectedCustomer.name}, view all your outstanding bills and settle dues for Book My Veg here: ${link}`;
         }
 
@@ -2526,10 +2578,10 @@ export default function POSOperator() {
                         <div>
                             <DialogTitle className="text-xl font-bold text-slate-900 flex items-center gap-2">
                                 <CreditCard className="h-5 w-5 text-emerald-600" />
-                                Digital Payment Gateway Portal
+                                Easebuzz Digital Payment Gateway Portal
                             </DialogTitle>
                             <DialogDescription className="text-xs text-slate-500">
-                                Complete payment directly inside the POS terminal interface.
+                                Process customer payment via Easebuzz directly inside POS terminal.
                             </DialogDescription>
                         </div>
                     </DialogHeader>

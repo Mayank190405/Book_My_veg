@@ -355,21 +355,34 @@ function PayContent({ slugParams }: PayPageProps) {
                         {/* Payment Input & Action */}
                         <div className="p-6 bg-white dark:bg-slate-900/80 border border-slate-200/90 dark:border-slate-800/80 rounded-[28px] space-y-5 shadow-md">
                             <div className="space-y-2">
-                                <label className="block text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                                    Enter Payment Amount (₹)
-                                </label>
+                                <div className="flex justify-between items-center">
+                                    <label className="block text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                                        {isSingleBill ? "Invoice Settlement Amount (₹)" : "Enter Payment Amount (₹)"}
+                                    </label>
+                                    {isSingleBill && (
+                                        <span className="text-[10px] font-bold bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 px-2.5 py-0.5 rounded-full border border-amber-200 dark:border-amber-500/20">
+                                            Full Bill Settlement
+                                        </span>
+                                    )}
+                                </div>
                                 <div className="relative">
                                     <input 
                                         type="number"
-                                        value={customAmount}
-                                        onChange={(e) => setCustomAmount(e.target.value)}
+                                        value={isSingleBill ? (bill?.dueAmount || customAmount) : customAmount}
+                                        onChange={(e) => !isSingleBill && setCustomAmount(e.target.value)}
+                                        readOnly={isSingleBill}
                                         placeholder="0.00"
-                                        className="w-full h-15 bg-slate-50 dark:bg-slate-950 border-2 border-slate-200 dark:border-slate-700/80 focus:border-emerald-500 rounded-2xl px-12 text-2xl font-black text-slate-900 dark:text-white outline-none transition-all tabular-nums [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                        className={cn(
+                                            "w-full h-15 bg-slate-50 dark:bg-slate-950 border-2 border-slate-200 dark:border-slate-700/80 focus:border-emerald-500 rounded-2xl px-12 text-2xl font-black text-slate-900 dark:text-white outline-none transition-all tabular-nums [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none",
+                                            isSingleBill && "cursor-not-allowed bg-slate-100/80 dark:bg-slate-900 border-emerald-500/40"
+                                        )}
                                     />
                                     <span className="absolute left-4 top-1/2 -translate-y-1/2 text-2xl font-black text-emerald-600 dark:text-emerald-500">₹</span>
                                 </div>
                                 <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
-                                    {!isSingleBill ? "Payments will automatically settle your oldest outstanding dues first." : "Pay full amount or partial instalment."}
+                                    {isSingleBill 
+                                        ? `Single bills are cleared bill-by-bill for full amount (₹${Number(bill?.dueAmount || 0).toFixed(2)}).` 
+                                        : "Payments will automatically settle your oldest outstanding dues first."}
                                 </p>
                             </div>
 
