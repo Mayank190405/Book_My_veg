@@ -69,32 +69,37 @@ const callEasebuzzInitiateApi = (params) => __awaiter(void 0, void 0, void 0, fu
         throw new Error("Easebuzz Key / Merchant Key not configured in environment variables");
     }
     if (serviceUrl) {
-        const apiName = "initiate_payment_iframe";
-        const easebuzzRes = yield axios_1.default.post(`${serviceUrl.replace(/\/$/, "")}/easebuzz?api_name=${apiName}`, {
-            txnid: params.txnid,
-            amount: params.amount.toFixed(2),
-            firstname: params.firstname,
-            email: params.email,
-            phone: sanitizePhone(params.phone),
-            productinfo: params.productinfo,
-            surl: params.callbackUrl,
-            furl: params.callbackUrl,
-        }, {
-            headers: { "Accept": "application/json", "Content-Type": "application/json" },
-            timeout: 10000
-        });
-        if (easebuzzRes.data && easebuzzRes.data.status === 1) {
-            const rawData = easebuzzRes.data.data;
-            const accessKey = typeof rawData === "string" ? rawData : ((rawData === null || rawData === void 0 ? void 0 : rawData.access_key) || rawData);
-            return {
-                iframe: true,
-                key: (rawData === null || rawData === void 0 ? void 0 : rawData.key) || key,
-                accessKey,
-                env: (rawData === null || rawData === void 0 ? void 0 : rawData.env) || (env === "prod" ? "prod" : "test"),
-                paymentLink: easebuzzRes.data.paymentLink || `https://${env === "prod" ? "pay" : "testpay"}.easebuzz.in/pay/${accessKey}`
-            };
+        try {
+            const apiName = "initiate_payment_iframe";
+            const easebuzzRes = yield axios_1.default.post(`${serviceUrl.replace(/\/$/, "")}/easebuzz?api_name=${apiName}`, {
+                txnid: params.txnid,
+                amount: params.amount.toFixed(2),
+                firstname: params.firstname,
+                email: params.email,
+                phone: sanitizePhone(params.phone),
+                productinfo: params.productinfo,
+                surl: params.callbackUrl,
+                furl: params.callbackUrl,
+            }, {
+                headers: { "Accept": "application/json", "Content-Type": "application/json" },
+                timeout: 10000
+            });
+            if (easebuzzRes.data && easebuzzRes.data.status === 1) {
+                const rawData = easebuzzRes.data.data;
+                const accessKey = typeof rawData === "string" ? rawData : ((rawData === null || rawData === void 0 ? void 0 : rawData.access_key) || rawData);
+                return {
+                    iframe: true,
+                    key: (rawData === null || rawData === void 0 ? void 0 : rawData.key) || key,
+                    accessKey,
+                    env: (rawData === null || rawData === void 0 ? void 0 : rawData.env) || (env === "prod" ? "prod" : "test"),
+                    paymentLink: easebuzzRes.data.paymentLink || `https://${env === "prod" ? "pay" : "testpay"}.easebuzz.in/pay/${accessKey}`
+                };
+            }
+            logger_1.default.warn(`[Easebuzz] Microservice returned non-success, falling through to direct API: ${(_a = easebuzzRes.data) === null || _a === void 0 ? void 0 : _a.message}`);
         }
-        throw new Error(((_a = easebuzzRes.data) === null || _a === void 0 ? void 0 : _a.message) || "Easebuzz microservice initiation failed");
+        catch (serviceErr) {
+            logger_1.default.warn(`[Easebuzz] Microservice failed (${serviceErr.message}), falling through to direct API`);
+        }
     }
     if (key && salt) {
         const amountStr = params.amount.toFixed(2);
