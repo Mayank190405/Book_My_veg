@@ -467,14 +467,19 @@ export default function POSOperator() {
             });
             const data = res.data;
 
-            if (data.iframe && data.accessKey) {
+            if (data.accessKey || data.paymentLink) {
+                const checkoutUrl = data.paymentLink || `https://${data.env === "prod" ? "pay" : "testpay"}.easebuzz.in/pay/${data.accessKey}`;
+                const sdkUrl = data.env === "prod"
+                    ? "https://pay.easebuzz.in/ebx/v2/easebuzz-checkout.js"
+                    : "https://testpay.easebuzz.in/ebx/v2/easebuzz-checkout.js";
+
                 const triggerSdk = () => {
                     const EasebuzzCheckout = (window as any).EasebuzzCheckout;
-                    if (EasebuzzCheckout) {
+                    if (EasebuzzCheckout && data.accessKey) {
                         setIsProcessing(false);
                         setShowPaymentDialog(false);
                         try {
-                            const checkoutObj = new EasebuzzCheckout(data.key, data.env);
+                            const checkoutObj = new EasebuzzCheckout(data.key || "EASEBUZZ", data.env || "test");
                             checkoutObj.initiatePayment({
                                 access_key: data.accessKey,
                                 onResponse: (response: any) => {
@@ -487,42 +492,40 @@ export default function POSOperator() {
                                 }
                             });
                         } catch (err) {
-                            if (data.paymentLink) {
-                                setPosPaymentIframeUrl(data.paymentLink);
-                                setShowPosIframeModal(true);
-                            }
+                            setPosPaymentIframeUrl(checkoutUrl);
+                            setShowPosIframeModal(true);
                         }
                     } else {
                         setIsProcessing(false);
-                        if (data.paymentLink) {
-                            setPosPaymentIframeUrl(data.paymentLink);
-                            setShowPosIframeModal(true);
-                        }
+                        setShowPaymentDialog(false);
+                        setPosPaymentIframeUrl(checkoutUrl);
+                        setShowPosIframeModal(true);
                     }
                 };
 
                 if (!(window as any).EasebuzzCheckout) {
                     const script = document.createElement("script");
-                    script.src = "https://ebz-static.s3.ap-south-1.amazonaws.com/easecheckout/v2.0.0/easebuzz-checkout-v2.min.js";
+                    script.src = sdkUrl;
                     script.async = true;
                     script.onload = triggerSdk;
                     script.onerror = () => {
-                        setIsProcessing(false);
-                        if (data.paymentLink) {
-                            setPosPaymentIframeUrl(data.paymentLink);
+                        const fallbackScript = document.createElement("script");
+                        fallbackScript.src = "https://ebz-static.s3.ap-south-1.amazonaws.com/easecheckout/v2.0.0/easebuzz-checkout-v2.min.js";
+                        fallbackScript.onload = triggerSdk;
+                        fallbackScript.onerror = () => {
+                            setIsProcessing(false);
+                            setShowPaymentDialog(false);
+                            setPosPaymentIframeUrl(checkoutUrl);
                             setShowPosIframeModal(true);
-                        }
+                        };
+                        document.body.appendChild(fallbackScript);
                     };
                     document.body.appendChild(script);
                 } else {
                     triggerSdk();
                 }
-            } else if (data.paymentLink) {
-                setPosPaymentIframeUrl(data.paymentLink);
-                setShowPosIframeModal(true);
-                setIsProcessing(false);
             } else {
-                throw new Error("No payment link returned");
+                throw new Error("No payment authorization key returned");
             }
         } catch (err: any) {
             setIsProcessing(false);
