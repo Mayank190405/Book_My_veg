@@ -9,7 +9,7 @@ import {
     Clock, User, Printer, AlertTriangle, ChevronDown, Receipt,
     Banknote, Smartphone, BookOpen, XCircle, Check, Package, Settings, SquarePen, Globe,
     ArrowLeft, Bell, Wallet, CheckCircle2, AlertCircle, ScanLine,
-    Power, PowerOff
+    Power, PowerOff, RefreshCw
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -102,6 +102,8 @@ export default function POSOperator() {
     const [cashReceived, setCashReceived] = useState<Record<number, number>>({});
     const [isProcessing, setIsProcessing] = useState(false);
     const [discount, setDiscount] = useState(0);
+    const [posPaymentIframeUrl, setPosPaymentIframeUrl] = useState<string | null>(null);
+    const [showPosIframeModal, setShowPosIframeModal] = useState(false);
 
     // Expense
     const [expenseData, setExpenseData] = useState({ amount: "", category: "MISC", description: "" });
@@ -400,7 +402,7 @@ export default function POSOperator() {
 
     const triggerEasebuzzCheckoutInPOS = async () => {
         if (!selectedCustomer?.id) {
-            toast.error("Customer required to initiate Easebuzz payment");
+            toast.error("Customer required to initiate payment");
             return;
         }
         setIsProcessing(true);
@@ -423,14 +425,18 @@ export default function POSOperator() {
                             onResponse: (response: any) => {
                                 setIsProcessing(false);
                                 if (response.status === "success") {
-                                    toast.success("Payment completed via Easebuzz");
+                                    toast.success("Payment completed successfully");
                                     setShowPaymentDialog(false);
+                                    setShowPosIframeModal(false);
                                 }
                             }
                         });
                     } else {
                         setIsProcessing(false);
-                        toast.error("Easebuzz Checkout SDK failed to load");
+                        if (data.paymentLink) {
+                            setPosPaymentIframeUrl(data.paymentLink);
+                            setShowPosIframeModal(true);
+                        }
                     }
                 };
 
@@ -441,21 +447,25 @@ export default function POSOperator() {
                     script.onload = triggerSdk;
                     script.onerror = () => {
                         setIsProcessing(false);
-                        toast.error("Failed to load Easebuzz script");
+                        if (data.paymentLink) {
+                            setPosPaymentIframeUrl(data.paymentLink);
+                            setShowPosIframeModal(true);
+                        }
                     };
                     document.body.appendChild(script);
                 } else {
                     triggerSdk();
                 }
             } else if (data.paymentLink) {
-                window.open(data.paymentLink, "_blank");
+                setPosPaymentIframeUrl(data.paymentLink);
+                setShowPosIframeModal(true);
                 setIsProcessing(false);
             } else {
                 throw new Error("No payment link returned");
             }
         } catch (err: any) {
             setIsProcessing(false);
-            toast.error(err.response?.data?.message || err.message || "Easebuzz checkout failed");
+            toast.error(err.response?.data?.message || err.message || "Payment initiation failed");
         }
     };
 
@@ -2505,6 +2515,58 @@ export default function POSOperator() {
                                 </Button>
                             </div>
                         </div>
+                    </div>
+                </DialogContent>
+            </Dialog>
+
+            {/* ── IN-APP DIGITAL PAYMENT POPUP MODAL ── */}
+            <Dialog open={showPosIframeModal} onOpenChange={setShowPosIframeModal}>
+                <DialogContent className="max-w-2xl bg-white rounded-3xl p-6 border-none shadow-2xl font-sans overflow-hidden">
+                    <DialogHeader className="pb-4 border-b border-slate-100 flex flex-row items-center justify-between">
+                        <div>
+                            <DialogTitle className="text-xl font-bold text-slate-900 flex items-center gap-2">
+                                <CreditCard className="h-5 w-5 text-emerald-600" />
+                                Digital Payment Gateway Portal
+                            </DialogTitle>
+                            <DialogDescription className="text-xs text-slate-500">
+                                Complete payment directly inside the POS terminal interface.
+                            </DialogDescription>
+                        </div>
+                    </DialogHeader>
+
+                    <div className="w-full h-[500px] rounded-2xl border border-slate-200 overflow-hidden bg-slate-50 my-2 relative">
+                        {posPaymentIframeUrl ? (
+                            <iframe
+                                src={posPaymentIframeUrl}
+                                className="w-full h-full border-none"
+                                title="POS Digital Payment Gateway"
+                            />
+                        ) : (
+                            <div className="flex flex-col items-center justify-center h-full text-slate-400">
+                                <RefreshCw className="h-8 w-8 animate-spin text-emerald-600 mb-2" />
+                                <p className="text-sm font-semibold">Loading payment portal...</p>
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+                        <button
+                            onClick={() => setShowPosIframeModal(false)}
+                            className="px-5 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider text-slate-500 hover:bg-slate-100 transition-colors"
+                        >
+                            Close Modal
+                        </button>
+                        <button
+                            onClick={() => {
+                                setShowPosIframeModal(false);
+                                setShowPaymentDialog(false);
+                                handleCheckout();
+                            }}
+                            className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold uppercase tracking-wider shadow-lg shadow-emerald-200 transition-all flex items-center gap-2"
+                        >
+                            <CheckCircle2 className="h-4 w-4" />
+                            <span>Confirm & Complete Sale</span>
+                        </button>
                     </div>
                 </DialogContent>
             </Dialog>
