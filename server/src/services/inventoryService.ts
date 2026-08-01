@@ -163,14 +163,25 @@ export class InventoryService {
     }, tx?: any) {
         const executeLogic = async (db: any) => {
             for (const item of params.items) {
-                const qtyToDeduct = new Prisma.Decimal(item.quantity);
+                let baseQtyRequired = Number(item.quantity);
+
+                if (item.variantId) {
+                    const [product, variant] = await Promise.all([
+                        db.product.findUnique({ where: { id: item.productId }, select: { weightUnit: true } }),
+                        db.productVariant.findUnique({ where: { id: item.variantId }, select: { weight: true, weightUnit: true } })
+                    ]);
+                    if (product && variant) {
+                        baseQtyRequired = convertVariantToBaseQuantity(variant.weight, variant.weightUnit, product.weightUnit, Number(item.quantity));
+                    }
+                }
+
+                const qtyToDeduct = new Prisma.Decimal(baseQtyRequired);
                 let remainingToDeduct = qtyToDeduct;
 
                 // 1. Fetch available batches for this product/location ordered by FIFO (receivedDate)
                 let batches = await db.batch.findMany({
                     where: {
                         productId: item.productId,
-                        variantId: item.variantId || null,
                         locationId: params.locationId,
                         remainingQty: { gt: 0 }
                     },
@@ -186,7 +197,6 @@ export class InventoryService {
                         where: {
                             productId: item.productId,
                             locationId: params.locationId,
-                            ...(item.variantId ? { variantId: item.variantId } : {}),
                             currentStock: { gt: 0 }
                         }
                     });

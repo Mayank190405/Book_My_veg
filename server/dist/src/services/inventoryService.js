@@ -148,13 +148,22 @@ class InventoryService {
         return __awaiter(this, void 0, void 0, function* () {
             const executeLogic = (db) => __awaiter(this, void 0, void 0, function* () {
                 for (const item of params.items) {
-                    const qtyToDeduct = new client_1.Prisma.Decimal(item.quantity);
+                    let baseQtyRequired = Number(item.quantity);
+                    if (item.variantId) {
+                        const [product, variant] = yield Promise.all([
+                            db.product.findUnique({ where: { id: item.productId }, select: { weightUnit: true } }),
+                            db.productVariant.findUnique({ where: { id: item.variantId }, select: { weight: true, weightUnit: true } })
+                        ]);
+                        if (product && variant) {
+                            baseQtyRequired = (0, unitConverter_1.convertVariantToBaseQuantity)(variant.weight, variant.weightUnit, product.weightUnit, Number(item.quantity));
+                        }
+                    }
+                    const qtyToDeduct = new client_1.Prisma.Decimal(baseQtyRequired);
                     let remainingToDeduct = qtyToDeduct;
                     // 1. Fetch available batches for this product/location ordered by FIFO (receivedDate)
                     let batches = yield db.batch.findMany({
                         where: {
                             productId: item.productId,
-                            variantId: item.variantId || null,
                             locationId: params.locationId,
                             remainingQty: { gt: 0 }
                         },
@@ -165,7 +174,11 @@ class InventoryService {
                     // ── SELF-HEALING: Reconcile with Master Inventory if batches are insufficient ── 
                     if (totalAvailable.lessThan(qtyToDeduct)) {
                         const masterInv = yield db.inventory.findFirst({
-                            where: Object.assign(Object.assign({ productId: item.productId, locationId: params.locationId }, (item.variantId ? { variantId: item.variantId } : {})), { currentStock: { gt: 0 } })
+                            where: {
+                                productId: item.productId,
+                                locationId: params.locationId,
+                                currentStock: { gt: 0 }
+                            }
                         });
                         if (masterInv && new client_1.Prisma.Decimal(masterInv.currentStock).greaterThan(totalAvailable)) {
                             const missingQty = new client_1.Prisma.Decimal(masterInv.currentStock).minus(totalAvailable);
