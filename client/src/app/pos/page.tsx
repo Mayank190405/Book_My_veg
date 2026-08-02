@@ -772,7 +772,16 @@ export default function POSOperator() {
         const printWindow = window.open('', '_blank');
         if (!printWindow) return;
 
-        const totalQty = lastReceipt.items?.reduce((acc: number, item: any) => acc + (item.quantity || 0), 0) || 0;
+        const formatDate = (dateInput: any) => {
+            const d = new Date(dateInput || Date.now());
+            const year = d.getFullYear();
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            const hours = String(d.getHours()).padStart(2, '0');
+            const minutes = String(d.getMinutes()).padStart(2, '0');
+            const seconds = String(d.getSeconds()).padStart(2, '0');
+            return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+        };
 
         const numberToWords = (num: number) => {
             const a = ['', 'one ', 'two ', 'three ', 'four ', 'five ', 'six ', 'seven ', 'eight ', 'nine ', 'ten ', 'eleven ', 'twelve ', 'thirteen ', 'fourteen ', 'fifteen ', 'sixteen ', 'seventeen ', 'eighteen ', 'nineteen '];
@@ -805,50 +814,75 @@ export default function POSOperator() {
             ? Number(lastReceipt.dueSummary.netOutstanding)
             : currentOrderDue;
 
+        const unitPriceSum = lastReceipt.items?.reduce((acc: number, item: any) => acc + Number(item.overridePrice !== undefined ? item.overridePrice : getPrice(item)), 0) || 0;
+        const lineTotalSum = lastReceipt.items?.reduce((acc: number, item: any) => acc + Number(item.overridePrice !== undefined ? item.overridePrice : getPrice(item)) * Number(item.quantity), 0) || 0;
+
+        const discountVal = Number(lastReceipt.discount || 0);
+        const rawTotal = lineTotalSum - discountVal;
+        const grandTotalVal = Math.round(rawTotal);
+        const roundingVal = grandTotalVal - rawTotal;
+        const paidAmount = Math.max(0, grandTotalVal - currentOrderDue);
+        const dueAmount = currentOrderDue;
+
         printWindow.document.write(`
             <html>
                 <head>
                     <title>Bill - ${lastReceipt?.order?.id?.slice(0, 8) || ''}</title>
-                    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+                    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
                     <style>
                         body { 
-                            font-family: 'Poppins', sans-serif; 
+                            font-family: 'Poppins', Arial, sans-serif; 
                             width: 58mm; 
                             margin: 0 auto; 
-                            padding: 3mm;
-                            font-size: 9px;
-                            line-height: 1.4;
-                            color: #1a1a1a;
+                            padding: 2mm;
+                            font-size: 8.5px;
+                            line-height: 1.3;
+                            color: #000;
                             background: #fff;
                         }
                         .text-center { text-align: center; }
                         .text-right { text-align: right; }
-                        .font-black { font-weight: 900; }
                         .font-bold { font-weight: 700; }
-                        .font-medium { font-weight: 500; }
                         .uppercase { text-transform: uppercase; }
-                        .text-xs { font-size: 7px; }
-                        .text-sm { font-size: 8px; }
-                        .text-lg { font-size: 13px; }
-                        .text-xl { font-size: 15px; }
                         
-                        .divider { border-top: 1px dashed #ddd; margin: 8px 0; }
-                        .divider-solid { border-top: 1px solid #1a1a1a; margin: 8px 0; }
+                        .divider { border-top: 1px dashed #999; margin: 6px 0; }
+                        .divider-solid { border-top: 1px solid #000; margin: 6px 0; }
                         
-                        .item-table { width: 100%; border-collapse: collapse; margin: 10px 0; }
-                        .item-table th { text-align: left; font-weight: 900; text-transform: uppercase; font-size: 7px; color: #666; padding-bottom: 4px; border-bottom: 1px solid #eee; }
-                        .item-table td { padding: 5px 0; border-bottom: 1px solid #f9f9f9; vertical-align: top; }
+                        .item-table { 
+                            width: 100%; 
+                            border-collapse: collapse; 
+                            margin: 8px 0; 
+                        }
+                        .item-table th, .item-table td { 
+                            border: 1px solid #999; 
+                            padding: 3px 4px; 
+                            font-size: 7.5px; 
+                            vertical-align: middle; 
+                            color: #000;
+                        }
+                        .item-table th { 
+                            font-weight: 700; 
+                            text-align: left;
+                        }
                         
-                        .qr-section { display: flex; flex-direction: column; align-items: center; margin-bottom: 12px; }
-                        .qr-code { width: 110px; height: 110px; padding: 4px; }
-
-                        .meta-row { display: flex; justify-content: space-between; margin-bottom: 3px; }
-                        .meta-label { color: #666; font-weight: 700; text-transform: uppercase; font-size: 7px; letter-spacing: 0.5px; }
-                        .meta-value { font-weight: 800; text-align: right; }
+                        .metadata-block {
+                            font-size: 8px;
+                            line-height: 1.35;
+                            margin-bottom: 6px;
+                            color: #000;
+                        }
                         
-                        .total-section { margin-top: 10px; }
-                        .total-row { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; }
-                        .grand-total { font-size: 14px; font-weight: 900; border-top: 2px solid #1a1a1a; border-bottom: 2px solid #1a1a1a; padding: 6px 0; margin-top: 5px; }
+                        .footer-block {
+                            margin-top: 10px; 
+                            border: 1px solid #999; 
+                            padding: 5px; 
+                            text-align: center; 
+                            font-size: 7.5px; 
+                            line-height: 1.4; 
+                            border-radius: 3px; 
+                            background-color: #f9f9f9;
+                            color: #000;
+                        }
 
                         @media print {
                             @page { margin: 0; }
@@ -858,128 +892,98 @@ export default function POSOperator() {
                 </head>
                 <body>
                     <!-- Store Branding -->
-                    <div class="text-center" style="margin-bottom: 10px;">
-                        <h1 class="font-black uppercase text-xl" style="letter-spacing: -0.5px; margin: 0 0 2px 0; line-height: 1.1;">${storeConfig?.name || 'MAIN HUB'}</h1>
-                        <p class="font-bold text-slate-500 uppercase tracking-tight text-[8px]" style="margin: 0;">Primary Distribution Center</p>
+                    <div class="text-center" style="margin-bottom: 8px;">
+                        <h1 class="font-bold uppercase" style="font-size: 13px; margin: 0 0 2px 0; line-height: 1.1;">${storeConfig?.name || 'MAIN HUB'}</h1>
+                        <p class="font-bold text-slate-500 uppercase tracking-tight text-[7.5px]" style="margin: 0;">Primary Distribution Center</p>
                     </div>
 
                     <!-- Store Contact Details -->
-                    <div class="text-center font-bold text-slate-900 uppercase tracking-tighter text-[9px] mb-4">
+                    <div class="text-center font-bold uppercase tracking-tighter text-[8px] mb-3">
                         <span>PH: ${storeConfig?.contactNumber || '8208363287'}</span>
-                        ${storeConfig?.gstNumber ? `<span style="margin: 0 4px;">•</span><span>GST: ${storeConfig.gstNumber}</span>` : '<span style="margin: 0 4px;">•</span><span>GST: N/A</span>'}
-                    </div>
-
-                    <!-- Public Pay Link QR Code -->
-                    <div class="qr-section" style="margin-top: 6px; margin-bottom: 6px; text-align: center;">
-                        <p class="font-black text-center text-xs uppercase tracking-widest mb-1" style="font-size: 8px; margin-bottom: 2px;">Scan To Pay Bill / View Dues</p>
-                        <img class="qr-code" style="width: 100px; height: 100px; margin: 0 auto; display: block;" src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(`${typeof window !== 'undefined' ? window.location.origin : ''}/pay/userid=${lastReceipt.userId || lastReceipt.customer?.id || ''}&number=${lastReceipt.customerPhone || lastReceipt.customer?.phone || ''}&billid=${lastReceipt.id || lastReceipt.order?.id || ''}`)}" />
+                        ${storeConfig?.gstNumber ? `<span style="margin: 0 3px;">•</span><span>GST: ${storeConfig.gstNumber}</span>` : '<span style="margin: 0 3px;">•</span><span>GST: N/A</span>'}
                     </div>
 
                     <div class="divider-solid"></div>
 
                     <!-- Metadata Rows -->
-                    <div class="metadata">
-                        <div class="meta-row">
-                            <span class="meta-label">Invoice</span>
-                            <span class="meta-value font-black">#${lastReceipt.order?.id?.slice(-6).toUpperCase()}</span>
+                    <div class="metadata-block">
+                        <div><strong>Date:</strong> ${formatDate(lastReceipt.order?.createdAt)}</div>
+                        <div><strong>Invoice No.:</strong> ${lastReceipt.order?.id?.slice(-5).toUpperCase() || ''}</div>
+                        <div><strong>Reference No:</strong> ${lastReceipt.order?.id || ''}</div>
+                        <div style="margin-top: 2px;">
+                            <strong>Customer:</strong> ${lastReceipt.customer?.name || "Walk-In"}
+                            ${lastReceipt.customer?.phone ? `, <strong>Ph:</strong> ${lastReceipt.customer.phone}` : ''}
+                            ${(lastReceipt.customer?.addresses?.[0]?.fullAddress || lastReceipt.customer?.profileAddress) ? ` <strong>Address:</strong> ${lastReceipt.customer?.addresses?.[0]?.fullAddress || lastReceipt.customer?.profileAddress}` : ''}
                         </div>
-                        <div class="meta-row">
-                            <span class="meta-label">Date</span>
-                            <span class="meta-value">${new Date(lastReceipt.order?.createdAt || Date.now()).toLocaleDateString()} ${new Date(lastReceipt.order?.createdAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                        </div>
-                        <div class="meta-row">
-                            <span class="meta-label">Customer</span>
-                            <span class="meta-value">${lastReceipt.customer?.name || "Walk-In"}</span>
-                        </div>
-                        ${lastReceipt.customer?.phone ? `
-                        <div class="meta-row">
-                            <span class="meta-label">Contact</span>
-                            <span class="meta-value">${lastReceipt.customer.phone}</span>
-                        </div>
-                        ` : ''}
-                        ${(lastReceipt.customer?.addresses?.[0]?.fullAddress || lastReceipt.customer?.profileAddress) ? `
-                        <div class="meta-row" style="align-items: flex-start;">
-                            <span class="meta-label" style="margin-top: 2px;">Delivery</span>
-                            <span class="meta-value" style="font-size: 8px;">${lastReceipt.customer?.addresses?.[0]?.fullAddress || lastReceipt.customer?.profileAddress}</span>
-                        </div>
-                        ` : ''}
                     </div>
-
-                    <div class="divider-solid"></div>
 
                     <!-- Itemized Breakdown -->
                     <table class="item-table">
                         <thead>
                             <tr>
-                                <th style="width: 45%;">Item Description</th>
-                                <th style="width: 15%; text-align: center;">Qty</th>
-                                <th style="width: 15%; text-align: center;">Discount</th>
-                                <th style="width: 25%; text-align: right;">Amount</th>
+                                <th style="width: 10%;">Sr.No</th>
+                                <th style="width: 45%;">Name</th>
+                                <th style="width: 15%; text-align: left;">Price</th>
+                                <th style="width: 12%; text-align: center;">QTY</th>
+                                <th style="width: 18%; text-align: right;">Amt</th>
                             </tr>
                         </thead>
                         <tbody>
-                            ${lastReceipt.items?.map((item: any) => {
+                            ${lastReceipt.items?.map((item: any, idx: number) => {
                                 const orig = getPrice(item);
                                 const act = Number(item.overridePrice !== undefined ? item.overridePrice : orig);
-                                const disc = Math.max(0, orig - act) * Number(item.quantity);
                                 const rowAmt = act * Number(item.quantity);
                                 return `
                                     <tr>
-                                        <td>
-                                            <div class="font-black uppercase">${item.name}</div>
-                                            <div class="text-xs font-medium text-slate-500 uppercase tracking-tighter">@ ₹${act.toFixed(2)}</div>
-                                        </td>
-                                        <td class="text-center font-bold" style="font-size: 9px;">${Number(item.quantity).toFixed(2)}</td>
-                                        <td class="text-center font-bold text-rose-500" style="font-size: 9px;">${disc > 0 ? `₹${disc.toFixed(2)}` : '-'}</td>
-                                        <td class="text-right font-black" style="font-size: 9px;">₹${rowAmt.toFixed(2)}</td>
+                                        <td>${idx + 1}</td>
+                                        <td>${item.name}</td>
+                                        <td>Rs.${act.toFixed(2)}</td>
+                                        <td class="text-center">${Number(item.quantity).toFixed(3)}</td>
+                                        <td class="text-right">Rs.${rowAmt.toFixed(2)}</td>
                                     </tr>
                                 `;
                             }).join('')}
+                            
+                            <!-- Totals Rows -->
+                            <tr style="font-weight: bold; border-top: 2px solid #000;">
+                                <td colspan="2">Total</td>
+                                <td>Rs.${unitPriceSum.toFixed(2)}</td>
+                                <td></td>
+                                <td class="text-right">Rs.${lineTotalSum.toFixed(2)}</td>
+                            </tr>
+                            
+                            ${discountVal > 0 ? `
+                            <tr>
+                                <td colspan="4">Discount</td>
+                                <td class="text-right">Rs.${discountVal.toFixed(2)}</td>
+                            </tr>
+                            ` : ''}
+
+                            <tr>
+                                <td colspan="4">rounding</td>
+                                <td class="text-right">Rs.${(roundingVal >= 0 ? '+' : '')}${roundingVal.toFixed(2)}</td>
+                            </tr>
+                            
+                            <tr style="font-weight: bold; border-top: 1px solid #000; border-bottom: 2px solid #000;">
+                                <td colspan="4">Grand Total ( ${numberToWords(grandTotalVal).replace('RUPEES ONLY', 'ONLY').toUpperCase()} )</td>
+                                <td class="text-right">Rs.${grandTotalVal.toFixed(2)}</td>
+                            </tr>
+                            
+                            <tr>
+                                <td colspan="4">Paid Amount</td>
+                                <td class="text-right">Rs.${paidAmount.toFixed(2)}</td>
+                            </tr>
+                            
+                            <tr style="font-weight: bold;">
+                                <td colspan="4">Due Amount</td>
+                                <td class="text-right">Rs.${dueAmount.toFixed(2)}</td>
+                            </tr>
                         </tbody>
                     </table>
 
-                    <div class="total-section">
-                        <div class="total-row text-sm font-bold">
-                            <span>SUBTOTAL (${lastReceipt.items?.length})</span>
-                            <span>₹${lastReceipt.subtotal?.toFixed(2)}</span>
-                        </div>
-                        <div class="total-row text-sm font-bold">
-                            <span>DISCOUNT</span>
-                            <span>-₹${lastReceipt.discount?.toFixed(2)}</span>
-                        </div>
-                        
-                        <div class="total-row grand-total">
-                            <span class="uppercase">Grand Total</span>
-                            <span>₹${lastReceipt.grandTotal?.toFixed(2)}</span>
-                        </div>
-                        <p class="text-[7px] font-black uppercase text-center mt-2">${numberToWords(lastReceipt.grandTotal)}</p>
-                    </div>
-
-                    <div class="divider-solid"></div>
-
-                    <div class="metadata" style="margin-top: 5px;">
-                        <div class="meta-row">
-                            <span class="meta-label">Settled (Paid)</span>
-                            <span class="meta-value">₹${(lastReceipt.grandTotal - currentOrderDue).toFixed(2)}</span>
-                        </div>
-                        <div class="meta-row" style="color: ${currentOrderDue > 0 ? '#ef4444' : 'inherit'}">
-                            <span class="meta-label">Outstanding Due</span>
-                            <span class="meta-value">₹${currentOrderDue.toFixed(2)}</span>
-                        </div>
-                        ${settledFromOld > 0 ? `
-                        <div class="meta-row" style="color: #10b981;">
-                            <span class="meta-label">Old Dues Settled</span>
-                            <span class="meta-value">₹${settledFromOld.toFixed(2)}</span>
-                        </div>
-                        ` : ''}
-                        <div class="meta-row" style="color: ${netOutstanding > 0 ? '#ef4444' : 'inherit'}; border-top: 1px dashed #ddd; padding-top: 3px; margin-top: 3px;">
-                            <span class="meta-label">Total Outstanding Due</span>
-                            <span class="meta-value">₹${netOutstanding.toFixed(2)}</span>
-                        </div>
-                    </div>
-
-                    <div class="text-center mt-6" style="padding-top: 10px;">
-                        <p class="font-black uppercase tracking-widest" style="font-size: 8px;">Thank You</p>
+                    <div class="footer-block">
+                        Thank you for shopping with us. Please visit again<br/>
+                        Products you purchase can only be replaced within 12 hours of the bill being generated.
                     </div>
 
                     <script>
