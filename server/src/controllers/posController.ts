@@ -68,26 +68,53 @@ export const createOrUpdateCustomer = async (req: AuthenticatedRequest, res: Res
             });
             return res.json({ message: "Customer updated", customer });
         } else {
-            // New Customer
-            const customer = await prisma.user.create({
-                data: {
-                    name,
-                    phone,
-                    email,
-                    role: "USER",
-                    password: "POS_AUTO_GENERATED_" + Math.random().toString(36).slice(-8),
-                    ...(address && {
-                        addresses: {
-                            create: {
-                                fullAddress: address,
-                                isDefault: true
-                            }
-                        }
-                    })
-                },
-                include: { addresses: { where: { isDefault: true } } }
+            // Check if customer with the same phone already exists
+            const existingCustomer = await prisma.user.findFirst({
+                where: { phone }
             });
-            return res.json({ message: "Customer created", customer });
+
+            if (existingCustomer) {
+                // Update the existing customer instead
+                const customer = await prisma.user.update({
+                    where: { id: existingCustomer.id },
+                    data: {
+                        name,
+                        email,
+                        ...(address && {
+                            addresses: {
+                                upsert: {
+                                    where: { id: (await prisma.address.findFirst({ where: { userId: existingCustomer.id, isDefault: true } }))?.id || 'new-address-id' },
+                                    update: { fullAddress: address },
+                                    create: { fullAddress: address, isDefault: true }
+                                }
+                            }
+                        })
+                    },
+                    include: { addresses: { where: { isDefault: true } } }
+                });
+                return res.json({ message: "Customer updated", customer });
+            } else {
+                // New Customer
+                const customer = await prisma.user.create({
+                    data: {
+                        name,
+                        phone,
+                        email,
+                        role: "USER",
+                        password: "POS_AUTO_GENERATED_" + Math.random().toString(36).slice(-8),
+                        ...(address && {
+                            addresses: {
+                                create: {
+                                    fullAddress: address,
+                                    isDefault: true
+                                }
+                            }
+                        })
+                    },
+                    include: { addresses: { where: { isDefault: true } } }
+                });
+                return res.json({ message: "Customer created", customer });
+            }
         }
     } catch (error) {
         next(error);
