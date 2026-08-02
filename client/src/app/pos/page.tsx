@@ -830,7 +830,7 @@ export default function POSOperator() {
             <html>
                 <head>
                     <title>Bill - ${lastReceipt?.order?.id?.slice(0, 8) || ''}</title>
-                    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+                    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;800;900&display=swap" rel="stylesheet">
                     <style>
                         body { 
                             font-family: 'Poppins', Arial, sans-serif; 
@@ -841,13 +841,14 @@ export default function POSOperator() {
                             line-height: 1.3;
                             color: #000;
                             background: #fff;
+                            font-weight: 600;
                         }
                         .text-center { text-align: center; }
                         .text-right { text-align: right; }
-                        .font-bold { font-weight: 700; }
+                        .font-bold { font-weight: 800; }
                         .uppercase { text-transform: uppercase; }
                         
-                        .divider { border-top: 1px dashed #999; margin: 6px 0; }
+                        .divider { border-top: 1px dashed #000; margin: 6px 0; }
                         .divider-solid { border-top: 1px solid #000; margin: 6px 0; }
                         
                         .item-table { 
@@ -856,14 +857,15 @@ export default function POSOperator() {
                             margin: 8px 0; 
                         }
                         .item-table th, .item-table td { 
-                            border: 1px solid #999; 
+                            border: 1px solid #000; 
                             padding: 3px 4px; 
                             font-size: 7.5px; 
                             vertical-align: middle; 
                             color: #000;
+                            font-weight: 600;
                         }
                         .item-table th { 
-                            font-weight: 700; 
+                            font-weight: 800; 
                             text-align: left;
                         }
                         
@@ -872,6 +874,7 @@ export default function POSOperator() {
                             line-height: 1.35;
                             margin-bottom: 6px;
                             color: #000;
+                            font-weight: 600;
                         }
 
                         .qr-section { 
@@ -885,7 +888,7 @@ export default function POSOperator() {
                             width: 90px; 
                             height: 90px; 
                             padding: 3px; 
-                            border: 1px solid #ccc; 
+                            border: 1px solid #000; 
                             border-radius: 4px; 
                             margin: 0 auto; 
                             display: block; 
@@ -893,7 +896,7 @@ export default function POSOperator() {
                         
                         .footer-block {
                             margin-top: 10px; 
-                            border: 1px solid #999; 
+                            border: 1px solid #000; 
                             padding: 5px; 
                             text-align: center; 
                             font-size: 7.5px; 
@@ -901,6 +904,7 @@ export default function POSOperator() {
                             border-radius: 3px; 
                             background-color: #f9f9f9;
                             color: #000;
+                            font-weight: 700;
                         }
 
                         @media print {
