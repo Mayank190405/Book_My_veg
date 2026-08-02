@@ -816,6 +816,7 @@ export default function POSOperator() {
 
         const unitPriceSum = lastReceipt.items?.reduce((acc: number, item: any) => acc + Number(item.overridePrice !== undefined ? item.overridePrice : getPrice(item)), 0) || 0;
         const lineTotalSum = lastReceipt.items?.reduce((acc: number, item: any) => acc + Number(item.overridePrice !== undefined ? item.overridePrice : getPrice(item)) * Number(item.quantity), 0) || 0;
+        const totalDiscountVal = lastReceipt.items?.reduce((acc: number, item: any) => acc + (Math.max(0, getPrice(item) - Number(item.overridePrice !== undefined ? item.overridePrice : getPrice(item))) * Number(item.quantity)), 0) || 0;
 
         const discountVal = Number(lastReceipt.discount || 0);
         const rawTotal = lineTotalSum - discountVal;
@@ -871,6 +872,23 @@ export default function POSOperator() {
                             margin-bottom: 6px;
                             color: #000;
                         }
+
+                        .qr-section { 
+                            display: flex; 
+                            flex-direction: column; 
+                            align-items: center; 
+                            margin: 6px 0; 
+                            text-align: center; 
+                        }
+                        .qr-code { 
+                            width: 90px; 
+                            height: 90px; 
+                            padding: 3px; 
+                            border: 1px solid #ccc; 
+                            border-radius: 4px; 
+                            margin: 0 auto; 
+                            display: block; 
+                        }
                         
                         .footer-block {
                             margin-top: 10px; 
@@ -903,6 +921,12 @@ export default function POSOperator() {
                         ${storeConfig?.gstNumber ? `<span style="margin: 0 3px;">•</span><span>GST: ${storeConfig.gstNumber}</span>` : '<span style="margin: 0 3px;">•</span><span>GST: N/A</span>'}
                     </div>
 
+                    <!-- Public Pay Link QR Code -->
+                    <div class="qr-section">
+                        <p class="font-bold uppercase" style="font-size: 8px; margin: 0 0 4px 0;">Scan To Pay Bill / View Dues</p>
+                        <img class="qr-code" src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(`${typeof window !== 'undefined' ? window.location.origin : ''}/pay/userid=${lastReceipt.userId || lastReceipt.customer?.id || ''}&number=${lastReceipt.customerPhone || lastReceipt.customer?.phone || ''}&billid=${lastReceipt.id || lastReceipt.order?.id || ''}`)}" />
+                    </div>
+
                     <div class="divider-solid"></div>
 
                     <!-- Metadata Rows -->
@@ -921,9 +945,10 @@ export default function POSOperator() {
                     <table class="item-table">
                         <thead>
                             <tr>
-                                <th style="width: 10%;">Sr.No</th>
-                                <th style="width: 45%;">Name</th>
+                                <th style="width: 8%;">Sr.No</th>
+                                <th style="width: 32%;">Name</th>
                                 <th style="width: 15%; text-align: left;">Price</th>
+                                <th style="width: 15%; text-align: left;">Discount</th>
                                 <th style="width: 12%; text-align: center;">QTY</th>
                                 <th style="width: 18%; text-align: right;">Amt</th>
                             </tr>
@@ -932,12 +957,14 @@ export default function POSOperator() {
                             ${lastReceipt.items?.map((item: any, idx: number) => {
                                 const orig = getPrice(item);
                                 const act = Number(item.overridePrice !== undefined ? item.overridePrice : orig);
+                                const discUnit = Math.max(0, orig - act);
                                 const rowAmt = act * Number(item.quantity);
                                 return `
                                     <tr>
                                         <td>${idx + 1}</td>
                                         <td>${item.name}</td>
                                         <td>Rs.${act.toFixed(2)}</td>
+                                        <td>Rs.${discUnit.toFixed(2)}</td>
                                         <td class="text-center">${Number(item.quantity).toFixed(3)}</td>
                                         <td class="text-right">Rs.${rowAmt.toFixed(2)}</td>
                                     </tr>
@@ -948,34 +975,35 @@ export default function POSOperator() {
                             <tr style="font-weight: bold; border-top: 2px solid #000;">
                                 <td colspan="2">Total</td>
                                 <td>Rs.${unitPriceSum.toFixed(2)}</td>
+                                <td>Rs.${totalDiscountVal.toFixed(2)}</td>
                                 <td></td>
                                 <td class="text-right">Rs.${lineTotalSum.toFixed(2)}</td>
                             </tr>
                             
                             ${discountVal > 0 ? `
                             <tr>
-                                <td colspan="4">Discount</td>
+                                <td colspan="5">Discount</td>
                                 <td class="text-right">Rs.${discountVal.toFixed(2)}</td>
                             </tr>
                             ` : ''}
 
                             <tr>
-                                <td colspan="4">rounding</td>
+                                <td colspan="5">rounding</td>
                                 <td class="text-right">Rs.${(roundingVal >= 0 ? '+' : '')}${roundingVal.toFixed(2)}</td>
                             </tr>
                             
                             <tr style="font-weight: bold; border-top: 1px solid #000; border-bottom: 2px solid #000;">
-                                <td colspan="4">Grand Total ( ${numberToWords(grandTotalVal).replace('RUPEES ONLY', 'ONLY').toUpperCase()} )</td>
+                                <td colspan="5">Grand Total ( ${numberToWords(grandTotalVal).replace('RUPEES ONLY', 'ONLY').toUpperCase()} )</td>
                                 <td class="text-right">Rs.${grandTotalVal.toFixed(2)}</td>
                             </tr>
                             
                             <tr>
-                                <td colspan="4">Paid Amount</td>
+                                <td colspan="5">Paid Amount</td>
                                 <td class="text-right">Rs.${paidAmount.toFixed(2)}</td>
                             </tr>
                             
                             <tr style="font-weight: bold;">
-                                <td colspan="4">Due Amount</td>
+                                <td colspan="5">Due Amount</td>
                                 <td class="text-right">Rs.${dueAmount.toFixed(2)}</td>
                             </tr>
                         </tbody>
