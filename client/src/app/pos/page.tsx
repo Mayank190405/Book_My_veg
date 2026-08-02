@@ -815,6 +815,7 @@ export default function POSOperator() {
             : currentOrderDue;
 
         const unitPriceSum = lastReceipt.items?.reduce((acc: number, item: any) => acc + Number(getPrice(item)), 0) || 0;
+        const unitPriceDiscountedSum = lastReceipt.items?.reduce((acc: number, item: any) => acc + Number(item.overridePrice !== undefined ? item.overridePrice : getPrice(item)), 0) || 0;
         const lineTotalSum = lastReceipt.items?.reduce((acc: number, item: any) => acc + Number(item.overridePrice !== undefined ? item.overridePrice : getPrice(item)) * Number(item.quantity), 0) || 0;
         const totalDiscountVal = lastReceipt.items?.reduce((acc: number, item: any) => acc + (Math.max(0, getPrice(item) - Number(item.overridePrice !== undefined ? item.overridePrice : getPrice(item))) * Number(item.quantity)), 0) || 0;
 
@@ -945,12 +946,13 @@ export default function POSOperator() {
                     <table class="item-table">
                         <thead>
                             <tr>
-                                <th style="width: 8%;">Sr.No</th>
-                                <th style="width: 32%;">Name</th>
-                                <th style="width: 15%; text-align: left;">Price</th>
-                                <th style="width: 15%; text-align: left;">Discount</th>
-                                <th style="width: 12%; text-align: center;">QTY</th>
-                                <th style="width: 18%; text-align: right;">Amt</th>
+                                <th style="width: 7%;">Sr.No</th>
+                                <th style="width: 25%;">Name</th>
+                                <th style="width: 14%; text-align: left;">Price</th>
+                                <th style="width: 14%; text-align: left;">Discount</th>
+                                <th style="width: 16%; text-align: left;">Disc.Price</th>
+                                <th style="width: 10%; text-align: center;">QTY</th>
+                                <th style="width: 14%; text-align: right;">Amt</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -965,6 +967,7 @@ export default function POSOperator() {
                                         <td>${item.name}</td>
                                         <td>Rs.${orig.toFixed(2)}</td>
                                         <td>Rs.${discUnit.toFixed(2)}</td>
+                                        <td>Rs.${act.toFixed(2)}</td>
                                         <td class="text-center">${Number(item.quantity).toFixed(3)}</td>
                                         <td class="text-right">Rs.${rowAmt.toFixed(2)}</td>
                                     </tr>
@@ -976,34 +979,33 @@ export default function POSOperator() {
                                 <td colspan="2">Total</td>
                                 <td>Rs.${unitPriceSum.toFixed(2)}</td>
                                 <td>Rs.${totalDiscountVal.toFixed(2)}</td>
+                                <td>Rs.${unitPriceDiscountedSum.toFixed(2)}</td>
                                 <td></td>
                                 <td class="text-right">Rs.${lineTotalSum.toFixed(2)}</td>
                             </tr>
                             
-                            ${discountVal > 0 ? `
                             <tr>
-                                <td colspan="5">Discount</td>
-                                <td class="text-right">Rs.${discountVal.toFixed(2)}</td>
+                                <td colspan="6">Total Discount</td>
+                                <td class="text-right">Rs.${(totalDiscountVal + discountVal).toFixed(2)}</td>
                             </tr>
-                            ` : ''}
 
                             <tr>
-                                <td colspan="5">rounding</td>
+                                <td colspan="6">rounding</td>
                                 <td class="text-right">Rs.${(roundingVal >= 0 ? '+' : '')}${roundingVal.toFixed(2)}</td>
                             </tr>
                             
                             <tr style="font-weight: bold; border-top: 1px solid #000; border-bottom: 2px solid #000;">
-                                <td colspan="5">Grand Total ( ${numberToWords(grandTotalVal).replace('RUPEES ONLY', 'ONLY').toUpperCase()} )</td>
+                                <td colspan="6">Grand Total ( ${numberToWords(grandTotalVal).replace('RUPEES ONLY', 'ONLY').toUpperCase()} )</td>
                                 <td class="text-right">Rs.${grandTotalVal.toFixed(2)}</td>
                             </tr>
                             
                             <tr>
-                                <td colspan="5">Paid Amount</td>
+                                <td colspan="6">Paid Amount</td>
                                 <td class="text-right">Rs.${paidAmount.toFixed(2)}</td>
                             </tr>
                             
                             <tr style="font-weight: bold;">
-                                <td colspan="5">Due Amount</td>
+                                <td colspan="6">Due Amount</td>
                                 <td class="text-right">Rs.${dueAmount.toFixed(2)}</td>
                             </tr>
                         </tbody>
