@@ -911,22 +911,30 @@ export default function POSOperator() {
                     <table class="item-table">
                         <thead>
                             <tr>
-                                <th style="width: 60%;">Item Description</th>
+                                <th style="width: 45%;">Item Description</th>
                                 <th style="width: 15%; text-align: center;">Qty</th>
+                                <th style="width: 15%; text-align: center;">Discount</th>
                                 <th style="width: 25%; text-align: right;">Amount</th>
                             </tr>
                         </thead>
                         <tbody>
-                            ${lastReceipt.items?.map((item: any) => `
-                                <tr>
-                                    <td>
-                                        <div class="font-black uppercase">${item.name}</div>
-                                        <div class="text-xs font-medium text-slate-500 uppercase tracking-tighter">@ ₹${Number(item.overridePrice !== undefined ? item.overridePrice : getPrice(item)).toFixed(2)}</div>
-                                    </td>
-                                    <td class="text-center font-bold" style="font-size: 9px;">${Number(item.quantity).toFixed(2)}</td>
-                                    <td class="text-right font-black" style="font-size: 9px;">₹${(getPrice(item) * item.quantity).toFixed(2)}</td>
-                                </tr>
-                            `).join('')}
+                            ${lastReceipt.items?.map((item: any) => {
+                                const orig = getPrice(item);
+                                const act = Number(item.overridePrice !== undefined ? item.overridePrice : orig);
+                                const disc = Math.max(0, orig - act) * Number(item.quantity);
+                                const rowAmt = act * Number(item.quantity);
+                                return `
+                                    <tr>
+                                        <td>
+                                            <div class="font-black uppercase">${item.name}</div>
+                                            <div class="text-xs font-medium text-slate-500 uppercase tracking-tighter">@ ₹${act.toFixed(2)}</div>
+                                        </td>
+                                        <td class="text-center font-bold" style="font-size: 9px;">${Number(item.quantity).toFixed(2)}</td>
+                                        <td class="text-center font-bold text-rose-500" style="font-size: 9px;">${disc > 0 ? `₹${disc.toFixed(2)}` : '-'}</td>
+                                        <td class="text-right font-black" style="font-size: 9px;">₹${rowAmt.toFixed(2)}</td>
+                                    </tr>
+                                `;
+                            }).join('')}
                         </tbody>
                     </table>
 
@@ -1177,13 +1185,14 @@ export default function POSOperator() {
                     <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col overflow-hidden min-h-0">
                         {/* Header Row — FORCED HORIZONTAL GRID */}
                         <div
-                            style={{ gridTemplateColumns: "1.5fr 80px 110px 45px 85px 35px" }}
+                            style={{ gridTemplateColumns: "1.5fr 80px 110px 45px 75px 85px 35px" }}
                             className="grid h-10 bg-[#57C7C5] text-white shrink-0 border-b border-white/10 uppercase text-[10px] font-black"
                         >
                             <div className="flex items-center px-4 border-r border-white/10">Product</div>
                             <div className="flex items-center justify-center border-r border-white/10">Price</div>
                             <div className="flex items-center justify-center border-r border-white/10">Qty</div>
                             <div className="flex items-center justify-center border-r border-white/10">Unit</div>
+                            <div className="flex items-center justify-center border-r border-white/10">Discount</div>
                             <div className="flex items-center justify-center border-r border-white/10">Sub total</div>
                             <div className="flex items-center justify-center"><Trash2 className="h-3.5 w-3.5" /></div>
                         </div>
@@ -1208,74 +1217,84 @@ export default function POSOperator() {
                                         return Object.entries(grouped).map(([catName, items]) => (
                                             <div key={catName}>
                                                 <div className="bg-[#f0faf9] px-3 py-1 text-[10px] font-black text-teal-700 uppercase tracking-wider border-b border-teal-100">{catName}</div>
-                                                {items.map((item, idx: number) => (
-                                                    <div key={idx}
-                                                        style={{ gridTemplateColumns: "2fr 80px 110px 45px 85px 35px" }}
-                                                        className={cn(
-                                                            "grid items-stretch border-b border-[#57C7C5]/10",
-                                                            idx % 2 === 0 ? "bg-[#FDF2F3]/50" : "bg-white"
-                                                        )}
-                                                    >
-                                                        {/* Product */}
-                                                        <div className="px-4 py-2 flex items-center justify-between border-r border-[#57C7C5]/10 overflow-hidden min-w-0">
-                                                            <div className="flex flex-col min-w-0 flex-1">
-                                                                <span className="text-xs font-black text-slate-800 tracking-tight truncate leading-tight">
-                                                                    {item.name || "(No Name Found)"}
-                                                                </span>
-                                                                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
-                                                                    {item.sku || "NO_SKU"}
-                                                                </span>
+                                                {items.map((item, idx: number) => {
+                                                    const origPrice = getPrice(item);
+                                                    const actPrice = item.overridePrice !== undefined ? item.overridePrice : origPrice;
+                                                    const itemDisc = Math.max(0, origPrice - actPrice) * item.quantity;
+                                                    return (
+                                                        <div key={idx}
+                                                            style={{ gridTemplateColumns: "1.5fr 80px 110px 45px 75px 85px 35px" }}
+                                                            className={cn(
+                                                                "grid items-stretch border-b border-[#57C7C5]/10",
+                                                                idx % 2 === 0 ? "bg-[#FDF2F3]/50" : "bg-white"
+                                                            )}
+                                                        >
+                                                            {/* Product */}
+                                                            <div className="px-4 py-2 flex items-center justify-between border-r border-[#57C7C5]/10 overflow-hidden min-w-0">
+                                                                <div className="flex flex-col min-w-0 flex-1">
+                                                                    <span className="text-xs font-black text-slate-800 tracking-tight truncate leading-tight">
+                                                                        {item.name || "(No Name Found)"}
+                                                                    </span>
+                                                                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
+                                                                        {item.sku || "NO_SKU"}
+                                                                    </span>
+                                                                </div>
                                                             </div>
-                                                        </div>
 
-                                                        {/* Price (Boxed) */}
-                                                        <div className="flex items-center justify-center px-1 border-r border-[#57C7C5]/10">
-                                                            <div className="bg-white border border-slate-300 rounded overflow-hidden">
-                                                                <input
-                                                                    type="number"
-                                                                    value={item.overridePrice !== undefined ? item.overridePrice : getPrice(item)}
-                                                                    onChange={e => {
-                                                                        const newPrice = parseFloat(e.target.value) || 0;
-                                                                        updatePrice(item.id, newPrice);
-                                                                    }}
-                                                                    className="w-full h-6 text-center text-[10px] font-bold text-slate-900 bg-transparent outline-none focus:bg-teal-50"
-                                                                />
+                                                            {/* Price (Boxed) */}
+                                                            <div className="flex items-center justify-center px-1 border-r border-[#57C7C5]/10">
+                                                                <div className="bg-white border border-slate-300 rounded overflow-hidden">
+                                                                    <input
+                                                                        type="number"
+                                                                        value={item.overridePrice !== undefined ? item.overridePrice : origPrice}
+                                                                        onChange={e => {
+                                                                            const newPrice = parseFloat(e.target.value) || 0;
+                                                                            updatePrice(item.id, newPrice);
+                                                                        }}
+                                                                        className="w-full h-6 text-center text-[10px] font-bold text-slate-900 bg-transparent outline-none focus:bg-teal-50"
+                                                                    />
+                                                                </div>
                                                             </div>
-                                                        </div>
 
-                                                        {/* Qty (Buttons + Box) */}
-                                                        <div className="flex items-center justify-center gap-1 border-r border-[#57C7C5]/10 px-1">
-                                                            <button onClick={() => addToCart(item, -1)} className="text-slate-900 font-bold text-lg hover:text-red-500">−</button>
-                                                            <div className="bg-white border border-slate-300 rounded overflow-hidden">
-                                                                <input
-                                                                    type="number"
-                                                                    step="0.001"
-                                                                    value={item.quantity}
-                                                                    onChange={e => {
-                                                                        const newQty = parseFloat(e.target.value) || 0;
-                                                                        setCart(prev => prev.map(ci => ci.id === item.id ? { ...ci, quantity: Math.max(0.001, newQty) } : ci));
-                                                                    }}
-                                                                    className="w-10 h-6 text-center text-[11px] font-black text-slate-900 outline-none p-0"
-                                                                />
+                                                            {/* Qty (Buttons + Box) */}
+                                                            <div className="flex items-center justify-center gap-1 border-r border-[#57C7C5]/10 px-1">
+                                                                <button onClick={() => addToCart(item, -1)} className="text-slate-900 font-bold text-lg hover:text-red-500">−</button>
+                                                                <div className="bg-white border border-slate-300 rounded overflow-hidden">
+                                                                    <input
+                                                                        type="number"
+                                                                        step="0.001"
+                                                                        value={item.quantity}
+                                                                        onChange={e => {
+                                                                            const newQty = parseFloat(e.target.value) || 0;
+                                                                            setCart(prev => prev.map(ci => ci.id === item.id ? { ...ci, quantity: Math.max(0.001, newQty) } : ci));
+                                                                        }}
+                                                                        className="w-10 h-6 text-center text-[11px] font-black text-slate-900 outline-none p-0"
+                                                                    />
+                                                                </div>
+                                                                <button onClick={() => addToCart(item, 1)} className="text-slate-900 font-bold text-lg hover:text-teal-500">+</button>
                                                             </div>
-                                                            <button onClick={() => addToCart(item, 1)} className="text-slate-900 font-bold text-lg hover:text-teal-500">+</button>
-                                                        </div>
 
-                                                        <div className="flex items-center justify-center text-[9px] font-black text-slate-500 uppercase border-r border-[#57C7C5]/10">
-                                                            {item.variants?.[0]?.weightUnit || item.weightUnit || "kg"}
-                                                        </div>
+                                                            <div className="flex items-center justify-center text-[9px] font-black text-slate-500 uppercase border-r border-[#57C7C5]/10">
+                                                                {item.variants?.[0]?.weightUnit || item.weightUnit || "kg"}
+                                                            </div>
 
-                                                        {/* Sub total */}
-                                                        <div className="flex items-center justify-center text-[12px] font-black text-slate-900 tabular-nums border-r border-[#57C7C5]/10 px-1 truncate">
-                                                            {(getPrice(item) * item.quantity).toFixed(2)}
-                                                        </div>
+                                                            {/* Discount */}
+                                                            <div className="flex items-center justify-center text-[11px] font-black text-rose-500 tabular-nums border-r border-[#57C7C5]/10 px-1 truncate">
+                                                                {itemDisc > 0 ? `₹${itemDisc.toFixed(2)}` : "₹0.00"}
+                                                            </div>
 
-                                                        {/* Delete */}
-                                                        <button onClick={() => addToCart(item, -item.quantity)} className="flex items-center justify-center text-slate-900 hover:text-red-600">
-                                                            <X className="h-3.5 w-3.5" strokeWidth={4} />
-                                                        </button>
-                                                    </div>
-                                                ))}
+                                                            {/* Sub total */}
+                                                            <div className="flex items-center justify-center text-[12px] font-black text-slate-900 tabular-nums border-r border-[#57C7C5]/10 px-1 truncate">
+                                                                {(actPrice * item.quantity).toFixed(2)}
+                                                            </div>
+
+                                                            {/* Delete */}
+                                                            <button onClick={() => addToCart(item, -item.quantity)} className="flex items-center justify-center text-slate-900 hover:text-red-600">
+                                                                <X className="h-3.5 w-3.5" strokeWidth={4} />
+                                                            </button>
+                                                        </div>
+                                                    );
+                                                })}
                                             </div>
                                         ));
                                     })()}
@@ -1941,10 +1960,6 @@ export default function POSOperator() {
                                             </span>
                                         </div>
                                     )}
-                                    <div className="flex justify-between items-center">
-                                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Settlement Date</span>
-                                        <span className="font-black text-slate-900">{new Date(lastReceipt.order?.createdAt || Date.now()).toLocaleDateString()}</span>
-                                    </div>
                                     <div className="flex justify-between items-center bg-slate-50 p-2 rounded-lg border border-slate-100">
                                         <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Billed By</span>
                                         <span className="font-black text-slate-900 uppercase">{lastReceipt.order?.staff?.name || user?.name || "System"}</span>
@@ -1953,28 +1968,36 @@ export default function POSOperator() {
 
                                 {/* Items Header */}
                                 <div className="grid grid-cols-12 gap-2 border-b-2 border-slate-900 pb-2 mb-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">
-                                    <div className="col-span-8">Product / Service</div>
+                                    <div className="col-span-6">Product / Service</div>
                                     <div className="col-span-2 text-center">Qty</div>
+                                    <div className="col-span-2 text-center">Discount</div>
                                     <div className="col-span-2 text-right">Amt</div>
                                 </div>
 
                                 {/* Items List */}
                                 <div className="space-y-4 mb-6">
-                                    {lastReceipt.items?.map((item: any, i: number) => (
-                                        <div key={i} className="grid grid-cols-12 gap-2 items-start py-1">
-                                            <div className="col-span-8">
-                                                <p className="font-black text-[12px] text-slate-900 uppercase leading-none">{item.name}</p>
-                                                <div className="flex items-center gap-2 mt-1">
-                                                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">@ ₹{Number(item.overridePrice !== undefined ? item.overridePrice : getPrice(item)).toFixed(2)} / unit</p>
-                                                    {item.overridePrice !== undefined && getPrice(item) !== item.overridePrice && (
-                                                        <span className="text-[8px] font-black text-rose-400 line-through">₹{getPrice(item).toFixed(2)}</span>
-                                                    )}
+                                    {lastReceipt.items?.map((item: any, i: number) => {
+                                        const orig = getPrice(item);
+                                        const act = Number(item.overridePrice !== undefined ? item.overridePrice : orig);
+                                        const disc = Math.max(0, orig - act) * Number(item.quantity);
+                                        const rowAmt = act * Number(item.quantity);
+                                        return (
+                                            <div key={i} className="grid grid-cols-12 gap-2 items-start py-1">
+                                                <div className="col-span-6">
+                                                    <p className="font-black text-[12px] text-slate-900 uppercase leading-none">{item.name}</p>
+                                                    <div className="flex items-center gap-2 mt-1">
+                                                        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">@ ₹{act.toFixed(2)} / unit</p>
+                                                        {item.overridePrice !== undefined && orig !== act && (
+                                                            <span className="text-[8px] font-black text-rose-400 line-through">₹{orig.toFixed(2)}</span>
+                                                        )}
+                                                    </div>
                                                 </div>
+                                                <div className="col-span-2 text-center font-black text-slate-900 text-[11px] tabular-nums">{Number(item.quantity).toFixed(2)}</div>
+                                                <div className="col-span-2 text-center font-black text-rose-500 text-[11px] tabular-nums">{disc > 0 ? `₹${disc.toFixed(2)}` : "-"}</div>
+                                                <div className="col-span-2 text-right font-black text-slate-900 text-[11px] tabular-nums">₹{rowAmt.toFixed(2)}</div>
                                             </div>
-                                            <div className="col-span-2 text-center font-black text-slate-900 text-[11px] tabular-nums">{Number(item.quantity).toFixed(2)}</div>
-                                            <div className="col-span-2 text-right font-black text-slate-900 text-[11px] tabular-nums">₹{(Number(item.overridePrice !== undefined ? item.overridePrice : getPrice(item)) * Number(item.quantity)).toFixed(2)}</div>
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
 
                                 {/* Totals Section */}
