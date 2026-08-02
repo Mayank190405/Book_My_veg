@@ -814,7 +814,7 @@ export default function POSOperator() {
             ? Number(lastReceipt.dueSummary.netOutstanding)
             : currentOrderDue;
 
-        const unitPriceSum = lastReceipt.items?.reduce((acc: number, item: any) => acc + Number(item.overridePrice !== undefined ? item.overridePrice : getPrice(item)), 0) || 0;
+        const unitPriceSum = lastReceipt.items?.reduce((acc: number, item: any) => acc + Number(getPrice(item)), 0) || 0;
         const lineTotalSum = lastReceipt.items?.reduce((acc: number, item: any) => acc + Number(item.overridePrice !== undefined ? item.overridePrice : getPrice(item)) * Number(item.quantity), 0) || 0;
         const totalDiscountVal = lastReceipt.items?.reduce((acc: number, item: any) => acc + (Math.max(0, getPrice(item) - Number(item.overridePrice !== undefined ? item.overridePrice : getPrice(item))) * Number(item.quantity)), 0) || 0;
 
@@ -963,7 +963,7 @@ export default function POSOperator() {
                                     <tr>
                                         <td>${idx + 1}</td>
                                         <td>${item.name}</td>
-                                        <td>Rs.${act.toFixed(2)}</td>
+                                        <td>Rs.${orig.toFixed(2)}</td>
                                         <td>Rs.${discUnit.toFixed(2)}</td>
                                         <td class="text-center">${Number(item.quantity).toFixed(3)}</td>
                                         <td class="text-right">Rs.${rowAmt.toFixed(2)}</td>
