@@ -1093,6 +1093,12 @@ export const getPayInfo = async (req: Request, res: Response) => {
                     paymentStatus: order.paymentStatus,
                     status: order.status,
                     createdAt: order.createdAt,
+                    user: order.user ? {
+                        id: order.user.id,
+                        name: order.user.name,
+                        phone: order.user.phone,
+                        email: order.user.email
+                    } : null,
                     items: order.items.map((i: any) => {
                         const basePrice = i.product?.basePrice ? Number(i.product.basePrice) : Number(i.sellingPrice);
                         const discount = Math.max(0, basePrice - Number(i.sellingPrice));
