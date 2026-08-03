@@ -1194,7 +1194,9 @@ export const initiatePayDue = async (req: Request, res: Response) => {
         const effectiveUserId = customer?.id || userId || "ANONYMOUS";
         const customerName = customer?.name || "Customer";
         const customerPhone = customer?.phone || phone || "9999999999";
-        const customerEmail = customer?.email || "customer@example.com";
+        const rawEmail = (customer?.email || "").trim();
+        const isValidEmail = rawEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail);
+        const customerEmail = isValidEmail ? rawEmail : `pay.${(customerPhone || "0000000000").replace(/\D/g, "").slice(-10)}@bookmyveg.co.in`;
 
         // Easebuzz requires a unique txnid for every initiation attempt.
         // Always generate a unique one — never reuse order.id directly since it may
