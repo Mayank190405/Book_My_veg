@@ -164,36 +164,10 @@ export const getConversation = async (phone: string): Promise<any> => {
     return null;
 };
 
-export const sendOrderConfirmationViaWhatsapp = async (phone: string, orderId: string, amount: number) => {
-    const cleanPhone = phone.replace(/\D/g, "");
-    const formattedPhone = cleanPhone.startsWith("91") ? cleanPhone : `91${cleanPhone}`;
-
-    const payload = {
-        templateName: "order_confirmation",
-        to: formattedPhone,
-        variables: {
-            body: [orderId, String(amount)]
-        }
-    };
-
-    try {
-        console.log(`[WhatsApp Notification] Sending order confirmation template to ${formattedPhone} for order ${orderId}...`);
-
-        const response = await axios.post(MBGCARD_API_URL, payload, {
-            timeout: 10000,
-            headers: {
-                'Content-Type': 'application/json',
-                'accept': '*/*',
-                'x-api-key': MBGCARD_API_TOKEN
-            }
-        });
-        console.log("MBG Card WhatsApp Response:", response.data);
-        return response.data;
-    } catch (error: any) {
-        console.error("Error sending WhatsApp order confirmation:", error.message);
-        console.log(`[WhatsApp Notification Fallback] Order #${orderId} confirmed for ₹${amount}.`);
-        return { status: "success", fallback: true };
-    }
+export const sendOrderConfirmationViaWhatsapp = async (phone: string, customerName: string, orderId: string, amount: number) => {
+    return sendTemplateViaChatHub(phone, "order_confirmation", {
+        body: [customerName, orderId, String(amount)]
+    });
 };
 
 /**

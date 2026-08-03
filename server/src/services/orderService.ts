@@ -257,11 +257,11 @@ export const orderService = {
         // ── WhatsApp Notification Dispatch (Outside Transaction Block) ─────
         if (order.status === "CONFIRMED") {
             try {
-                const user = await prisma.user.findUnique({ where: { id: data.userId }, select: { phone: true } });
+                const user = await prisma.user.findUnique({ where: { id: data.userId }, select: { name: true, phone: true } });
                 const phone = user?.phone;
                 if (phone) {
                     const { sendOrderConfirmationViaWhatsapp } = require("./mbgcard");
-                    sendOrderConfirmationViaWhatsapp(phone, order.id, Number(order.totalAmount)).catch((err: any) => {
+                    sendOrderConfirmationViaWhatsapp(phone, user.name || "Customer", order.id, Number(order.totalAmount)).catch((err: any) => {
                         console.error("[OrderService] WhatsApp dispatch failure:", err);
                     });
                 }
