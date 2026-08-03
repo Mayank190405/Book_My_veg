@@ -166,11 +166,12 @@ export default function InvoicePage({ params }: InvoicePageProps) {
                         <table className="w-full text-xs text-slate-800 dark:text-slate-300 border-collapse print:text-[7.5px] print:text-black">
                             <thead>
                                 <tr className="border-t border-b border-slate-300 dark:border-emerald-500/20 font-bold text-slate-950 dark:text-white print:border-black print:text-black">
-                                    <th className="py-2 text-left w-8 print:py-1">Sr.</th>
+                                    <th className="py-2 text-left w-8 print:py-1">Sr.No</th>
                                     <th className="py-2 text-left print:py-1">Name</th>
-                                    <th className="py-2 text-center w-12 print:py-1">Price</th>
-                                    <th className="py-2 text-center w-12 print:py-1">Qty</th>
-                                    <th className="py-2 text-right w-16 print:py-1">Amt</th>
+                                    <th className="py-2 text-center w-16 print:py-1">Price</th>
+                                    <th className="py-2 text-center w-16 print:py-1">Discount</th>
+                                    <th className="py-2 text-center w-12 print:py-1">QTY</th>
+                                    <th className="py-2 text-right w-20 print:py-1">Amt</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50 print:divide-black">
@@ -179,6 +180,7 @@ export default function InvoicePage({ params }: InvoicePageProps) {
                                         <td className="py-2 text-slate-400 dark:text-slate-500 print:py-1 print:text-black font-mono">{idx + 1}</td>
                                         <td className="py-2 font-bold text-slate-950 dark:text-white print:py-1 print:text-black">{item.name}</td>
                                         <td className="py-2 text-center print:py-1 font-mono">Rs.{item.sellingPrice.toFixed(2)}</td>
+                                        <td className="py-2 text-center print:py-1 font-mono text-amber-600 dark:text-amber-400 print:text-black">Rs.{Number(item.discount || 0).toFixed(2)}</td>
                                         <td className="py-2 text-center font-bold print:py-1 font-mono">{Number(item.quantity).toFixed(3)}</td>
                                         <td className="py-2 text-right font-bold print:py-1 font-mono text-slate-950 dark:text-white print:text-black">Rs.{(item.sellingPrice * item.quantity).toFixed(2)}</td>
                                     </tr>

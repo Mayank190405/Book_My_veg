@@ -1093,12 +1093,18 @@ export const getPayInfo = async (req: Request, res: Response) => {
                     paymentStatus: order.paymentStatus,
                     status: order.status,
                     createdAt: order.createdAt,
-                    items: order.items.map((i: any) => ({
-                        id: i.id,
-                        name: i.product?.name || "Item",
-                        quantity: i.quantity,
-                        sellingPrice: Number(i.sellingPrice)
-                    }))
+                    items: order.items.map((i: any) => {
+                        const basePrice = i.product?.basePrice ? Number(i.product.basePrice) : Number(i.sellingPrice);
+                        const discount = Math.max(0, basePrice - Number(i.sellingPrice));
+                        return {
+                            id: i.id,
+                            name: i.product?.name || "Item",
+                            quantity: Number(i.quantity),
+                            sellingPrice: Number(i.sellingPrice),
+                            basePrice: basePrice,
+                            discount: discount
+                        };
+                    })
                 };
             }
         }
