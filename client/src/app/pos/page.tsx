@@ -455,6 +455,54 @@ export default function POSOperator() {
         window.open(waUrl, "_blank");
     };
 
+    const checkPOSPaymentStatusAndClose = async () => {
+        const targetBillId = lastReceipt?.order?.id || inspectingOrder?.id || editingOrderId || "";
+        if (!targetBillId) {
+            setShowPosIframeModal(false);
+            setShowPaymentDialog(false);
+            return;
+        }
+
+        setIsProcessing(true);
+        try {
+            const res = await api.get(`/pay/pay-info?billid=${targetBillId}`);
+            const isPaid = res.data.bill?.isPaid || res.data.bill?.paymentStatus === "COMPLETED" || res.data.bill?.paymentStatus === "PAID";
+
+            if (isPaid) {
+                toast.success("Easebuzz Payment verified successfully!");
+                setLastReceipt((prev: any) => {
+                    if (!prev) return prev;
+                    return {
+                        ...prev,
+                        order: {
+                            ...prev.order,
+                            isPaid: true,
+                            paymentStatus: "COMPLETED"
+                        }
+                    };
+                });
+                setShowPosIframeModal(false);
+                setShowPaymentDialog(false);
+                setShowReceiptDialog(true);
+                setTimeout(() => {
+                    handlePrintReceipt();
+                }, 500);
+            } else {
+                toast.warning("Payment not verified yet. Order saved to dues.");
+                setShowPosIframeModal(false);
+                setShowPaymentDialog(false);
+                setShowReceiptDialog(true);
+            }
+        } catch (err) {
+            toast.error("Could not verify payment status automatically.");
+            setShowPosIframeModal(false);
+            setShowPaymentDialog(false);
+            setShowReceiptDialog(true);
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
     const triggerEasebuzzCheckoutInPOS = async () => {
         if (!selectedCustomer?.id) {
             toast.error("Customer required to initiate payment");
@@ -462,10 +510,67 @@ export default function POSOperator() {
         }
         setIsProcessing(true);
         try {
+            let targetBillId = lastReceipt?.order?.id || inspectingOrder?.id || editingOrderId || "";
+
+            // If there's active items in the cart, create the bill first!
+            if (cart.length > 0) {
+                if (!activeShift) {
+                    toast.error("Operational Block: No active shift found. Open a shift to proceed.");
+                    setShowShiftModal(true);
+                    setIsProcessing(false);
+                    return;
+                }
+                
+                const res = await api.post("/pos/orders/process", {
+                    customerId: selectedCustomer?.id,
+                    items: cart.map(i => ({
+                        productId: i.id,
+                        variantId: i.variants?.[0]?.id,
+                        quantity: i.quantity,
+                        price: i.overridePrice !== undefined ? i.overridePrice : getPrice(i)
+                    })),
+                    paymentMethod: "CREDIT", // Create as Credit/Due first
+                    discountAmount: discount,
+                    packerId: localStorage.getItem("selectedPackerId"),
+                    duePaymentAmount: grandTotal,
+                    paidAmount: 0,
+                    denominations: null,
+                    orderId: editingOrderId || undefined
+                });
+
+                const savedOrder = res.data.order;
+                targetBillId = savedOrder.id;
+
+                setLastReceipt({
+                    order: savedOrder,
+                    items: [...cart],
+                    customer: selectedCustomer,
+                    paymentMethod: "CREDIT",
+                    subtotal,
+                    discount,
+                    grandTotal,
+                    cashTotal: 0,
+                    changeDue: 0,
+                    dueSummary: res.data.dueSummary
+                });
+
+                setCart([]);
+                setDiscount(0);
+                setCouponCode("");
+                setEditingOrderId(null);
+                toast.success(`Bill #${targetBillId} generated. Initiating digital payment...`);
+            }
+
+            if (!targetBillId) {
+                toast.error("No active bill or cart found to pay.");
+                setIsProcessing(false);
+                return;
+            }
+
             const res = await api.post("/pay/pay-due", {
                 userId: selectedCustomer?.id,
                 phone: selectedCustomer?.phone,
-                billId: lastReceipt?.id || inspectingOrder?.id,
+                billId: targetBillId,
                 amount: grandTotal
             });
             const data = res.data;
@@ -492,6 +597,21 @@ export default function POSOperator() {
                                         toast.success("Payment completed via Easebuzz");
                                         setShowPaymentDialog(false);
                                         setShowPosIframeModal(false);
+                                        setLastReceipt((prev: any) => {
+                                            if (!prev) return prev;
+                                            return {
+                                                ...prev,
+                                                order: {
+                                                    ...prev.order,
+                                                    isPaid: true,
+                                                    paymentStatus: "COMPLETED"
+                                                }
+                                            };
+                                        });
+                                        setShowReceiptDialog(true);
+                                        setTimeout(() => {
+                                            handlePrintReceipt();
+                                        }, 500);
                                     }
                                 }
                             });
@@ -932,10 +1052,12 @@ export default function POSOperator() {
                     </div>
 
                     <!-- Public Pay Link QR Code -->
+                    ${dueAmount > 0 ? `
                     <div class="qr-section">
                         <p class="font-bold uppercase" style="font-size: 8px; margin: 0 0 4px 0;">Scan To Pay Bill / View Dues</p>
                         <img class="qr-code" src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(`${typeof window !== 'undefined' ? window.location.origin : ''}/pay/userid=${lastReceipt.userId || lastReceipt.customer?.id || ''}&number=${lastReceipt.customerPhone || lastReceipt.customer?.phone || ''}&billid=${lastReceipt.id || lastReceipt.order?.id || ''}`)}" />
                     </div>
+                    ` : ''}
 
                     <div class="divider-solid"></div>
 
@@ -1747,7 +1869,12 @@ export default function POSOperator() {
                                     { key: "UPI", icon: Smartphone, label: "Digital Pay" },
                                     { key: "CREDIT", icon: BookOpen, label: "Due Sale" }
                                 ].map(m => (
-                                    <button key={m.key} onClick={() => setPaymentMethod(m.key)}
+                                    <button key={m.key} onClick={() => {
+                                        setPaymentMethod(m.key);
+                                        if (m.key === "UPI") {
+                                            triggerEasebuzzCheckoutInPOS();
+                                        }
+                                    }}
                                         className={cn("flex-1 h-full rounded-[1.5rem] flex items-center justify-center gap-3 text-[10px] font-black uppercase tracking-[0.2em] border-[4px] transition-all active:scale-[0.98]",
                                             paymentMethod === m.key ? "bg-white border-emerald-500 text-emerald-600 shadow-2xl shadow-emerald-500/10" : "bg-white border-white text-slate-400 hover:border-slate-100 shadow-sm")}>
                                         <m.icon className="h-6 w-6 text-emerald-500" /> {m.label}
@@ -1857,32 +1984,29 @@ export default function POSOperator() {
                                 </div>
                             ) : (
                                 <div className="flex-1 flex flex-col items-center justify-center text-center gap-6 p-8 bg-teal-500/5 rounded-[3.5rem] border-4 border-dashed border-teal-500/10">
-                                    <div className="w-44 h-44 bg-white rounded-[3rem] shadow-2xl flex items-center justify-center p-4 border-6 border-teal-500/10 relative group hover:scale-105 transition-all duration-500">
-                                        <img
-                                            src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(`${typeof window !== 'undefined' ? window.location.origin : ''}/pay/userid=${selectedCustomer?.id || ''}&number=${selectedCustomer?.phone || ''}`)}`}
-                                            alt="UPI Pay QR"
-                                            className="w-full h-full object-contain"
-                                        />
-                                        <div className="absolute inset-x-0 -bottom-8 text-[9px] font-black text-teal-600 uppercase tracking-[0.3em] animate-pulse whitespace-nowrap text-center">Live Merchant Gateway</div>
+                                    <div className="w-24 h-24 bg-teal-500 rounded-[2.5rem] flex items-center justify-center shadow-2xl shadow-teal-500/40 border-6 border-white/20">
+                                        <Smartphone className="h-10 w-10 text-white animate-bounce" />
                                     </div>
-                                    <div className="space-y-1">
-                                        <p className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Digital Pay Options</p>
-                                        <p className="text-xs font-bold text-slate-400">Choose preferred digital collection method below</p>
+                                    <div className="space-y-2">
+                                        <p className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Easebuzz Secure Checkout</p>
+                                        <p className="text-xs font-bold text-slate-400 max-w-sm">
+                                            The Easebuzz checkout dialog has been launched automatically. To re-initiate the payment, click the button below.
+                                        </p>
                                     </div>
 
-                                    <div className="grid grid-cols-2 gap-4 w-full max-w-md pt-2">
-                                        <button
-                                            onClick={() => forwardWhatsAppLink("BILL")}
-                                            className="px-4 py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-black text-xs uppercase tracking-wider shadow-xl flex items-center justify-center gap-2 active:scale-95 transition-all"
-                                        >
-                                            <Smartphone className="h-4 w-4" /> Forward on WhatsApp
-                                        </button>
-                                        <button
+                                    <div className="flex flex-col gap-3 w-full max-w-md pt-2">
+                                        <Button
                                             onClick={triggerEasebuzzCheckoutInPOS}
                                             disabled={isProcessing}
-                                            className="px-4 py-3.5 bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white rounded-2xl font-black text-xs uppercase tracking-wider shadow-xl flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-50"
+                                            className="h-14 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs uppercase tracking-wider shadow-xl rounded-2xl transition-all active:scale-95 disabled:opacity-50"
                                         >
-                                            <CreditCard className="h-4 w-4" /> Pay by Easebuzz
+                                            <CreditCard className="h-4 w-4 mr-2" /> Pay by Easebuzz
+                                        </Button>
+                                        <button
+                                            onClick={() => forwardWhatsAppLink("BILL")}
+                                            className="h-14 border-slate-200 text-slate-500 hover:bg-slate-100 rounded-2xl font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 active:scale-95 transition-all"
+                                        >
+                                            <Smartphone className="h-4 w-4" /> Share link on WhatsApp
                                         </button>
                                     </div>
                                 </div>
@@ -2106,15 +2230,17 @@ export default function POSOperator() {
                                 )}
 
                                 {/* Public Pay QR Code Section */}
-                                <div className="mt-6 p-4 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col items-center justify-center text-center">
-                                    <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest mb-2">Scan To Pay Bill / Settle Dues Online</p>
-                                    <img 
-                                        src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(`${typeof window !== 'undefined' ? window.location.origin : ''}/pay/userid=${lastReceipt.customer?.id || ''}&number=${lastReceipt.customer?.phone || ''}&billid=${lastReceipt.id || lastReceipt.order?.id || ''}`)}`}
-                                        alt="Public Pay QR"
-                                        className="w-28 h-28 object-contain rounded-lg border p-1 bg-white"
-                                    />
-                                    <p className="text-[8px] font-bold text-slate-400 mt-1 uppercase">Direct Bill Payment Gateway</p>
-                                </div>
+                                {lastReceipt && !lastReceipt.order?.isPaid && lastReceipt.order?.paymentStatus !== "COMPLETED" && lastReceipt.order?.paymentStatus !== "PAID" && (
+                                    <div className="mt-6 p-4 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col items-center justify-center text-center">
+                                        <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest mb-2">Scan To Pay Bill / Settle Dues Online</p>
+                                        <img 
+                                            src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(`${typeof window !== 'undefined' ? window.location.origin : ''}/pay/userid=${lastReceipt.customer?.id || ''}&number=${lastReceipt.customer?.phone || ''}&billid=${lastReceipt.id || lastReceipt.order?.id || ''}`)}`}
+                                            alt="Public Pay QR"
+                                            className="w-28 h-28 object-contain rounded-lg border p-1 bg-white"
+                                        />
+                                        <p className="text-[8px] font-bold text-slate-400 mt-1 uppercase">Direct Bill Payment Gateway</p>
+                                    </div>
+                                )}
 
                                 {/* Footer Thank You Section */}
                                 <div className="text-center pt-6">
@@ -2125,9 +2251,24 @@ export default function POSOperator() {
 
                             {/* Actions Area */}
                             <div className="p-6 bg-slate-50 border-t flex flex-col sm:flex-row gap-3">
-                                <Button onClick={handlePrintReceipt} className="flex-[2] h-14 bg-slate-900 hover:bg-black text-white font-black uppercase text-xs tracking-widest shadow-xl shadow-slate-900/20 rounded-2xl transition-all active:scale-95">
-                                    <Printer className="h-5 w-5 mr-3" /> Execute Printing
-                                </Button>
+                                {(() => {
+                                    const isPrintBlocked = lastReceipt?.paymentMethod === "UPI" && !lastReceipt?.order?.isPaid && lastReceipt?.order?.paymentStatus !== "COMPLETED" && lastReceipt?.order?.paymentStatus !== "PAID";
+                                    return (
+                                        <Button 
+                                            onClick={handlePrintReceipt} 
+                                            disabled={isPrintBlocked}
+                                            className={cn(
+                                                "flex-[2] h-14 font-black uppercase text-xs tracking-widest shadow-xl rounded-2xl transition-all active:scale-95",
+                                                isPrintBlocked 
+                                                    ? "bg-slate-300 text-slate-500 cursor-not-allowed shadow-none" 
+                                                    : "bg-slate-900 hover:bg-black text-white shadow-slate-900/20"
+                                            )}
+                                        >
+                                            <Printer className="h-5 w-5 mr-3" /> 
+                                            {isPrintBlocked ? "Print Blocked: Pay Pending" : "Execute Printing"}
+                                        </Button>
+                                    );
+                                })()}
                                 <Button onClick={() => forwardWhatsAppLink("BILL", lastReceipt.id || lastReceipt.order?.id)} className="flex-1 h-14 bg-emerald-600 hover:bg-emerald-500 text-white font-black uppercase text-xs tracking-widest shadow-xl rounded-2xl transition-all active:scale-95">
                                     <Smartphone className="h-5 w-5 mr-2" /> Share WA
                                 </Button>
@@ -2733,15 +2874,11 @@ export default function POSOperator() {
                             Close Modal
                         </button>
                         <button
-                            onClick={() => {
-                                setShowPosIframeModal(false);
-                                setShowPaymentDialog(false);
-                                handleCheckout();
-                            }}
+                            onClick={checkPOSPaymentStatusAndClose}
                             className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold uppercase tracking-wider shadow-lg shadow-emerald-200 transition-all flex items-center gap-2"
                         >
                             <CheckCircle2 className="h-4 w-4" />
-                            <span>Confirm & Complete Sale</span>
+                            <span>Verify Payment & Print</span>
                         </button>
                     </div>
                 </DialogContent>
