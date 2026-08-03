@@ -135,7 +135,8 @@ export const processPOSOrder = async (req: AuthenticatedRequest, res: Response, 
         duePaymentAmount = 0,
         paidAmount = 0, // NEW: Amount paid specifically for THIS bill
         suspend = false,
-        denominations
+        denominations,
+        orderId // NEW: Edit Bill support
     } = req.body;
     
     const staffId = req.user?.userId;
@@ -146,6 +147,21 @@ export const processPOSOrder = async (req: AuthenticatedRequest, res: Response, 
     }
 
     try {
+        let existingOrder = null;
+        let existingPaidTotal = 0;
+        if (orderId) {
+            existingOrder = await prisma.order.findUnique({
+                where: { id: orderId },
+                include: { items: true, payments: true }
+            });
+            if (!existingOrder) {
+                return next(new AppError("Order not found for editing", 404));
+            }
+            existingPaidTotal = existingOrder.payments
+                .filter((p: any) => p.status === "SUCCESS")
+                .reduce((sum: number, p: any) => sum + Number(p.amount), 0);
+        }
+
         // Fetch current due BEFORE processing
         const prevOrders = await prisma.order.findMany({
             where: { 
@@ -173,42 +189,88 @@ export const processPOSOrder = async (req: AuthenticatedRequest, res: Response, 
 
             // Determine payment status for THIS bill
             const effectivePaid = paymentMethod === "CREDIT" ? 0 : Number(paidAmount || totalAmount);
-            const isFull = effectivePaid >= totalAmount;
-            const pStatus = effectivePaid <= 0 ? "PENDING" : (isFull ? "COMPLETED" : "PARTIAL");
+            const totalPaidAmount = existingPaidTotal + effectivePaid;
+            const isFull = totalPaidAmount >= totalAmount;
+            const pStatus = totalPaidAmount <= 0 ? "PENDING" : (isFull ? "COMPLETED" : "PARTIAL");
 
-            const order = await tx.order.create({
-                data: {
-                    id: generateOrderId(),
-                    userId: customerId,
-                    locationId,
-                    totalAmount: new Prisma.Decimal(totalAmount),
-                    discountAmount: new Prisma.Decimal(discountAmount || 0),
-                    status: (suspend ? "PENDING" : "CONFIRMED") as OrderStatus,
-                    paymentStatus: pStatus,
-                    isPaid: isFull,
-                    shippingAddress: { type: "POS_IN_STORE", note: "Handover at Counter" } as any,
-                    channel: Channel.POS,
-                    notes: `POS Transaction by ${staffId}${!staffExists ? " (SESSION_RECOVERED)" : ""}`,
-                    packerId,
-                    staffId: validatedStaffId, // Use validated ID
-                    items: {
-                        create: items.map((item: any) => ({
-                            productId: item.productId,
-                            variantId: item.variantId,
-                            quantity: item.quantity,
-                            sellingPrice: new Prisma.Decimal(item.price),
-                            locationId
-                        }))
-                    },
-                    statusHistory: {
-                        create: {
-                            status: (suspend ? "PENDING" : "CONFIRMED") as OrderStatus,
-                            remark: `POS Checkout (${pStatus})`,
-                            changedBy: staffId
+            let order;
+            if (existingOrder) {
+                // 1. Restore stock first if not cancelled or pending
+                if (existingOrder.status !== "PENDING" && existingOrder.status !== "CANCELLED") {
+                    await InventoryService.restoreStock({
+                        items: existingOrder.items.map((i: any) => ({
+                            productId: i.productId,
+                            variantId: i.variantId || null,
+                            quantity: Number(i.quantity)
+                        })),
+                        locationId,
+                        staffId,
+                        referenceId: existingOrder.id
+                    }, tx);
+                }
+
+                // 2. Delete old order items
+                await tx.orderItem.deleteMany({
+                    where: { orderId: existingOrder.id }
+                });
+
+                // 3. Update order fields and create new items
+                order = await tx.order.update({
+                    where: { id: existingOrder.id },
+                    data: {
+                        totalAmount: new Prisma.Decimal(totalAmount),
+                        discountAmount: new Prisma.Decimal(discountAmount || 0),
+                        status: (suspend ? "PENDING" : (existingOrder.status === "PENDING" ? "CONFIRMED" : existingOrder.status)) as OrderStatus,
+                        paymentStatus: pStatus,
+                        isPaid: isFull,
+                        packerId,
+                        staffId: validatedStaffId,
+                        items: {
+                            create: items.map((item: any) => ({
+                                productId: item.productId,
+                                variantId: item.variantId,
+                                quantity: item.quantity,
+                                sellingPrice: new Prisma.Decimal(item.price),
+                                locationId
+                            }))
                         }
                     }
-                }
-            });
+                });
+            } else {
+                order = await tx.order.create({
+                    data: {
+                        id: generateOrderId(),
+                        userId: customerId,
+                        locationId,
+                        totalAmount: new Prisma.Decimal(totalAmount),
+                        discountAmount: new Prisma.Decimal(discountAmount || 0),
+                        status: (suspend ? "PENDING" : "CONFIRMED") as OrderStatus,
+                        paymentStatus: pStatus,
+                        isPaid: isFull,
+                        shippingAddress: { type: "POS_IN_STORE", note: "Handover at Counter" } as any,
+                        channel: Channel.POS,
+                        notes: `POS Transaction by ${staffId}${!staffExists ? " (SESSION_RECOVERED)" : ""}`,
+                        packerId,
+                        staffId: validatedStaffId, // Use validated ID
+                        items: {
+                            create: items.map((item: any) => ({
+                                productId: item.productId,
+                                variantId: item.variantId,
+                                quantity: item.quantity,
+                                sellingPrice: new Prisma.Decimal(item.price),
+                                locationId
+                            }))
+                        },
+                        statusHistory: {
+                            create: {
+                                status: (suspend ? "PENDING" : "CONFIRMED") as OrderStatus,
+                                remark: `POS Checkout (${pStatus})`,
+                                changedBy: staffId
+                            }
+                        }
+                    }
+                });
+            }
 
             if (!suspend) {
                 await InventoryService.deductStock({

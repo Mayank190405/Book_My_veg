@@ -88,6 +88,7 @@ export default function POSOperator() {
     const [showSettleDialog, setShowSettleDialog] = useState(false);
     const [showVoidHistoryDialog, setShowVoidHistoryDialog] = useState(false);
     const [inspectingOrder, setInspectingOrder] = useState<any>(null);
+    const [editingOrderId, setEditingOrderId] = useState<string | null>(null);
     const [isStoreOpen, setIsStoreOpen] = useState(true);
     const [settleAmount, setSettleAmount] = useState(0);
     const [showExpenseDialog, setShowExpenseDialog] = useState(false);
@@ -401,7 +402,8 @@ export default function POSOperator() {
                     packerId: localStorage.getItem("selectedPackerId"),
                     duePaymentAmount: grandTotal,
                     paidAmount: 0,
-                    denominations: null
+                    denominations: null,
+                    orderId: editingOrderId || undefined
                 });
 
                 targetBillId = res.data.order.id;
@@ -421,6 +423,7 @@ export default function POSOperator() {
                 });
 
                 setCart([]);
+                setEditingOrderId(null);
                 setDiscount(0);
                 setCouponCode("");
                 toast.success(`Bill #${targetBillId} pushed to customer Dues & ready for payment`);
@@ -553,7 +556,8 @@ export default function POSOperator() {
                 denominations: paymentMethod === "CASH" ? {
                     received: cashReceived,
                     change: changeBreakdown
-                } : null
+                } : null,
+                orderId: editingOrderId || undefined
             });
             if (paymentMethod === "CASH") {
                 const newDrawer = { ...drawerDenominations };
@@ -584,6 +588,7 @@ export default function POSOperator() {
             setShowPaymentDialog(false);
             setShowReceiptDialog(true);
             setCart([]);
+            setEditingOrderId(null);
             setCashReceived({});
             setDiscount(0);
             setCouponCode("");
@@ -1218,6 +1223,31 @@ export default function POSOperator() {
                             )}
                         </div>
                     </div>
+
+                    {/* Editing Order Indicator */}
+                    {editingOrderId && (
+                        <div className="bg-amber-500 text-slate-950 px-4 py-3 rounded-xl flex items-center justify-between shadow-md mb-2 animate-pulse shrink-0">
+                            <div className="flex items-center gap-2">
+                                <AlertTriangle className="h-4 w-4 shrink-0 text-slate-950" />
+                                <div className="text-xs font-black uppercase tracking-wider">
+                                    Editing Bill #{editingOrderId.slice(-6)}
+                                </div>
+                            </div>
+                            <Button 
+                                size="sm" 
+                                variant="ghost" 
+                                className="h-7 px-3 bg-amber-600 hover:bg-amber-700 text-white font-black text-[10px] uppercase rounded-lg"
+                                onClick={() => {
+                                    setCart([]);
+                                    setDiscount(0);
+                                    setEditingOrderId(null);
+                                    toast.info("Edit mode cancelled.");
+                                }}
+                            >
+                                Cancel Edit
+                            </Button>
+                        </div>
+                    )}
 
                     {/* Cart Table — Matches POS Spec Reference */}
                     <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col overflow-hidden min-h-0">
@@ -2371,19 +2401,45 @@ export default function POSOperator() {
 
                                             <div className="h-px bg-slate-100" />
 
-                                            <div className="flex gap-2">
+                                            <div className="flex flex-col gap-2">
+                                                <div className="flex gap-2">
+                                                    <Button
+                                                        onClick={() => cancelOrder(order.id)}
+                                                        className="flex-1 h-10 bg-red-600 text-white font-black text-[10px] uppercase rounded-xl shadow-lg shadow-red-100 transition-all hover:bg-red-700"
+                                                    >
+                                                        Void Full Bill
+                                                    </Button>
+                                                    <Button
+                                                        variant="outline"
+                                                        className="flex-1 h-10 border-slate-200 text-slate-900 font-black text-[10px] uppercase rounded-xl hover:bg-slate-50"
+                                                        onClick={() => setInspectingOrder(order)}
+                                                    >
+                                                        View Items / Partial
+                                                    </Button>
+                                                </div>
                                                 <Button
-                                                    onClick={() => cancelOrder(order.id)}
-                                                    className="flex-1 h-10 bg-red-600 text-white font-black text-[10px] uppercase rounded-xl shadow-lg shadow-red-100 transition-all hover:bg-red-700"
+                                                    className="w-full h-10 bg-slate-900 text-white font-black text-[10px] uppercase rounded-xl hover:bg-black transition-all shadow-md shadow-slate-900/10"
+                                                    onClick={() => {
+                                                        const mappedItems = order.items.map((oi: any) => ({
+                                                            id: oi.productId,
+                                                            name: oi.product?.name || oi.productName || "Unknown Product",
+                                                            sku: oi.product?.sku || oi.productId?.slice(0, 8),
+                                                            quantity: Number(oi.quantity),
+                                                            price: Number(oi.product?.pricing?.[0]?.price || oi.sellingPrice || 0),
+                                                            overridePrice: Number(oi.sellingPrice),
+                                                            pricing: oi.product?.pricing || [{ price: Number(oi.sellingPrice) }]
+                                                        }));
+                                                        setCart(mappedItems);
+                                                        setDiscount(Number(order.discountAmount || 0));
+                                                        if (order.user) {
+                                                            setSelectedCustomer(order.user);
+                                                        }
+                                                        setEditingOrderId(order.id);
+                                                        setShowVoidHistoryDialog(false);
+                                                        toast.success(`Loaded Bill #${order.id.slice(-6)} into cart for editing.`);
+                                                    }}
                                                 >
-                                                    Void Full Bill
-                                                </Button>
-                                                <Button
-                                                    variant="outline"
-                                                    className="flex-1 h-10 border-slate-200 text-slate-900 font-black text-[10px] uppercase rounded-xl hover:bg-slate-50"
-                                                    onClick={() => setInspectingOrder(order)}
-                                                >
-                                                    View Items / Partial
+                                                    Edit / Modify Bill
                                                 </Button>
                                             </div>
                                         </div>
