@@ -1,4 +1,4 @@
-import { Request, Response } from "express";
+import { Request, Response, NextFunction } from "express";
 import { OrderStatus as PrismaOrderStatus } from "@prisma/client";
 import prisma from "../config/prisma";
 import { createJuspaySession, getJuspayOrderStatus, refundJuspayOrder } from "../services/juspayService";
@@ -1234,6 +1234,82 @@ export const initiatePayDue = async (req: Request, res: Response) => {
     } catch (error: any) {
         logger.error(`[Initiate Pay Due Error] ${error.message}`);
         return res.status(500).json({ message: "Failed to initiate payment" });
+    }
+};
+
+export const publicCustomerOnboard = async (req: Request, res: Response, next: NextFunction) => {
+    const { name, phone, email, address } = req.body;
+
+    if (!name || !phone) {
+        return res.status(400).json({ message: "Name and Phone Number are required" });
+    }
+
+    const cleanPhone = phone.replace(/\D/g, "");
+    if (cleanPhone.length !== 10) {
+        return res.status(400).json({ message: "Invalid phone number. Must be exactly 10 digits." });
+    }
+
+    try {
+        // Search lookup to avoid duplicate phone crashes
+        let customer = await prisma.user.findFirst({
+            where: {
+                OR: [
+                    { phone: cleanPhone },
+                    { phone: `+91${cleanPhone}` },
+                    { phone: `91${cleanPhone}` }
+                ]
+            },
+            include: { addresses: true }
+        });
+
+        if (customer) {
+            // Update existing customer details
+            customer = await prisma.user.update({
+                where: { id: customer.id },
+                data: {
+                    name,
+                    ...(email && { email }),
+                    ...(address && {
+                        profileAddress: address,
+                        addresses: {
+                            upsert: {
+                                where: {
+                                    id: customer.addresses?.[0]?.id || "new-address-id"
+                                },
+                                update: { fullAddress: address },
+                                create: { fullAddress: address, isDefault: true }
+                            }
+                        }
+                    })
+                },
+                include: { addresses: true }
+            });
+            return res.json({ message: "Customer details updated successfully", customer });
+        } else {
+            // Create a new Customer
+            customer = await prisma.user.create({
+                data: {
+                    name,
+                    phone: cleanPhone,
+                    ...(email && { email }),
+                    role: "USER",
+                    password: "POS_AUTO_GENERATED_" + Math.random().toString(36).slice(-8),
+                    profileAddress: address || "",
+                    ...(address && {
+                        addresses: {
+                            create: {
+                                fullAddress: address,
+                                isDefault: true
+                            }
+                        }
+                    })
+                },
+                include: { addresses: true }
+            });
+            return res.status(201).json({ message: "Customer registered successfully", customer });
+        }
+    } catch (error) {
+        next(error);
     }
 };
 

@@ -1610,6 +1610,22 @@ export default function POSOperator() {
                                 className="h-12 px-5 bg-teal-500 hover:bg-teal-400 text-white rounded-lg font-bold text-[10px] uppercase tracking-wider flex items-center gap-2">
                                 <UserPlus className="h-4 w-4" /> New
                             </button>
+                            <button 
+                                onClick={() => {
+                                    const cleanPhone = customerSearch.replace(/\D/g, "");
+                                    const invitePhone = cleanPhone.length === 10 ? cleanPhone : "";
+                                    
+                                    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://bookmyveg.co.in';
+                                    const onboardLink = `${origin}/onboard${invitePhone ? `?phone=${invitePhone}` : ''}`;
+                                    const message = `Hello! Welcome to Book My Veg. Please complete your onboarding by entering your name and delivery address here: ${onboardLink}`;
+                                    
+                                    const waUrl = `https://wa.me/${invitePhone ? `91${invitePhone}` : ''}?text=${encodeURIComponent(message)}`;
+                                    window.open(waUrl, "_blank");
+                                }}
+                                className="h-12 px-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-bold text-[10px] uppercase tracking-wider flex items-center gap-2"
+                            >
+                                <Smartphone className="h-4 w-4" /> Invite
+                            </button>
                         </div>
                         <div className="flex gap-2 mt-2">
                             <div className="flex-1 relative">
