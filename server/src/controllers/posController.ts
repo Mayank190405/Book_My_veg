@@ -113,6 +113,17 @@ export const createOrUpdateCustomer = async (req: AuthenticatedRequest, res: Res
                     },
                     include: { addresses: { where: { isDefault: true } } }
                 });
+
+                // Trigger welcome registration WhatsApp notification!
+                try {
+                    const { sendRegistrationThankYouViaWhatsapp } = require("../services/mbgcard");
+                    sendRegistrationThankYouViaWhatsapp(customer.phone, customer.name || "Customer").catch((err: any) => {
+                        console.error("[POS] Welcome WhatsApp dispatch failure:", err);
+                    });
+                } catch (err) {
+                    console.error("[POS] Failed to send welcome WhatsApp:", err);
+                }
+
                 return res.json({ message: "Customer created", customer });
             }
         }
@@ -407,12 +418,25 @@ export const processPOSOrder = async (req: AuthenticatedRequest, res: Response, 
         // ── WhatsApp Notification Dispatch ────────────────────────────────
         if (customerId && !suspend) {
             try {
-                const user = await prisma.user.findUnique({ where: { id: customerId }, select: { phone: true } });
+                const user = await prisma.user.findUnique({ where: { id: customerId }, select: { name: true, phone: true } });
                 if (user?.phone) {
-                    const { sendOrderConfirmationViaWhatsapp } = require("../services/mbgcard");
-                    sendOrderConfirmationViaWhatsapp(user.phone, (result as any).id, Number((result as any).totalAmount)).catch((err: any) => {
-                        console.error("[POSController] WhatsApp dispatch failure:", err);
-                    });
+                    const orderId = (result as any).id;
+                    const totalAmount = Number((result as any).totalAmount);
+                    const paymentMode = paymentMethod === "CASH" ? "CASH" : (paymentMethod === "CREDIT" ? "DUE ON ACCOUNT" : "DIGITAL PAY");
+                    const isPaid = (result as any).isPaid || (result as any).paymentStatus === "COMPLETED" || (result as any).paymentStatus === "PAID";
+
+                    const { sendInvoicePaidViaWhatsapp, sendInvoiceDueViaWhatsapp } = require("../services/mbgcard");
+                    
+                    if (isPaid) {
+                        sendInvoicePaidViaWhatsapp(user.phone, user.name || "Customer", orderId, totalAmount, paymentMode, orderId).catch((err: any) => {
+                            console.error("[POSController] WhatsApp Invoice Paid dispatch failure:", err);
+                        });
+                    } else {
+                        const dueAmount = totalAmount;
+                        sendInvoiceDueViaWhatsapp(user.phone, user.name || "Customer", orderId, totalAmount, paymentMode, dueAmount, customerId, orderId).catch((err: any) => {
+                            console.error("[POSController] WhatsApp Invoice Due dispatch failure:", err);
+                        });
+                    }
                 }
             } catch (err) {
                 console.error("[POSController] Failed to send WhatsApp:", err);

@@ -241,3 +241,91 @@ export const sendTemplateViaChatHub = async (
         throw error;
     }
 };
+
+export const sendFeedbackRequestViaWhatsapp = async (phone: string, customerName: string, orderId: string) => {
+    const origin = process.env.CLIENT_URL || "https://bookmyveg.co.in";
+    const feedbackLink = `${origin}/feedback?orderId=${orderId}`;
+    return sendTemplateViaChatHub(phone, "feedback_request", {
+        body: [customerName, feedbackLink]
+    });
+};
+
+export const sendInvoicePaidViaWhatsapp = async (
+    phone: string,
+    customerName: string,
+    invoiceNo: string,
+    totalAmount: number,
+    paymentMode: string,
+    orderId: string
+) => {
+    const origin = process.env.CLIENT_URL || "https://bookmyveg.co.in";
+    const invoicePdfLink = `${origin}/invoice/${orderId}`;
+    return sendTemplateViaChatHub(phone, "bill_created", {
+        body: [customerName, invoiceNo, String(totalAmount), paymentMode, invoicePdfLink]
+    });
+};
+
+export const sendInvoiceDueViaWhatsapp = async (
+    phone: string,
+    customerName: string,
+    invoiceNo: string,
+    totalAmount: number,
+    paymentMode: string,
+    dueAmount: number,
+    userId: string,
+    orderId: string
+) => {
+    const origin = process.env.CLIENT_URL || "https://bookmyveg.co.in";
+    const invoicePdfLink = `${origin}/invoice/${orderId}`;
+    const publicPayLink = `${origin}/pay?userid=${userId}&number=${phone}&billid=${orderId}`;
+    return sendTemplateViaChatHub(phone, "bill_created_due", {
+        body: [customerName, invoiceNo, String(totalAmount), String(dueAmount), invoicePdfLink, publicPayLink]
+    });
+};
+
+export const sendPaymentReminderViaWhatsapp = async (
+    phone: string,
+    customerName: string,
+    dueAmount: number,
+    invoiceNo: string,
+    userId: string,
+    orderId: string
+) => {
+    const origin = process.env.CLIENT_URL || "https://bookmyveg.co.in";
+    const publicPayLink = `${origin}/pay?userid=${userId}&number=${phone}&billid=${orderId}`;
+    return sendTemplateViaChatHub(phone, "due_payment_reminder", {
+        body: [customerName, String(dueAmount), invoiceNo, publicPayLink]
+    });
+};
+
+export const sendPaymentReceivedViaWhatsapp = async (
+    phone: string,
+    customerName: string,
+    invoiceNo: string,
+    paidAmount: number,
+    paymentMode: string
+) => {
+    return sendTemplateViaChatHub(phone, "payment_received", {
+        body: [customerName, invoiceNo, String(paidAmount), paymentMode]
+    });
+};
+
+export const sendOrderStatusUpdateViaWhatsapp = async (
+    phone: string,
+    customerName: string,
+    orderId: string,
+    statusName: string
+) => {
+    return sendTemplateViaChatHub(phone, "order_status_update", {
+        body: [statusName, orderId, customerName]
+    });
+};
+
+export const sendRegistrationThankYouViaWhatsapp = async (
+    phone: string,
+    customerName: string
+) => {
+    return sendTemplateViaChatHub(phone, "registration_thank_you", {
+        body: [customerName]
+    });
+};

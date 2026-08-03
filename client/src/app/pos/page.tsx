@@ -2574,6 +2574,27 @@ export default function POSOperator() {
                                                         View Items / Partial
                                                     </Button>
                                                 </div>
+                                                {(() => {
+                                                    const orderPaid = order.isPaid || order.paymentStatus === "COMPLETED" || order.paymentStatus === "PAID" || (order.payments?.filter((p: any) => p.status === "SUCCESS").reduce((sum: number, p: any) => sum + Number(p.amount), 0) || 0) >= Number(order.totalAmount);
+                                                    if (!orderPaid) {
+                                                        return (
+                                                            <Button
+                                                                onClick={async () => {
+                                                                    try {
+                                                                        await api.post("/pay/send-reminder", { orderId: order.id });
+                                                                        toast.success("WhatsApp Payment Reminder sent successfully!");
+                                                                    } catch (err: any) {
+                                                                        toast.error(err.response?.data?.message || "Failed to send WhatsApp reminder.");
+                                                                    }
+                                                                }}
+                                                                className="w-full h-10 bg-amber-600 hover:bg-amber-700 text-white font-black text-[10px] uppercase rounded-xl shadow-md shadow-amber-500/10 flex items-center justify-center gap-1.5"
+                                                            >
+                                                                <Smartphone className="w-4 h-4" /> Send Payment Reminder (WA)
+                                                            </Button>
+                                                        );
+                                                    }
+                                                    return null;
+                                                })()}
                                                 <Button
                                                     className="w-full h-10 bg-slate-900 text-white font-black text-[10px] uppercase rounded-xl hover:bg-black transition-all shadow-md shadow-slate-900/10"
                                                     onClick={() => {

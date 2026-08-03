@@ -579,9 +579,15 @@ const completeOrderPayment = async (orderId: string, paymentDetails: any) => {
         const user = existing.user;
         if (user && user.phone) {
             try {
-                const { sendOrderConfirmationViaWhatsapp } = require("../services/mbgcard");
-                sendOrderConfirmationViaWhatsapp(user.phone, orderId, Number(existing.totalAmount)).catch((err: any) => {
-                    console.error("[PaymentController] WhatsApp dispatch failure:", err);
+                const { sendPaymentReceivedViaWhatsapp } = require("../services/mbgcard");
+                sendPaymentReceivedViaWhatsapp(
+                    user.phone, 
+                    user.name || "Customer", 
+                    orderId, 
+                    Number(paymentDetails.amount || existing.totalAmount), 
+                    paymentDetails.payment_method_type || "ONLINE"
+                ).catch((err: any) => {
+                    console.error("[PaymentController] WhatsApp Payment Received dispatch failure:", err);
                 });
             } catch (err) {
                 console.error("[PaymentController] Failed to send WhatsApp:", err);
@@ -1306,10 +1312,94 @@ export const publicCustomerOnboard = async (req: Request, res: Response, next: N
                 },
                 include: { addresses: true }
             });
+
+            // Trigger welcome registration WhatsApp notification!
+            try {
+                const { sendRegistrationThankYouViaWhatsapp } = require("../services/mbgcard");
+                sendRegistrationThankYouViaWhatsapp(customer.phone, customer.name || "Customer").catch((err: any) => {
+                    console.error("[Onboarding] Welcome WhatsApp dispatch failure:", err);
+                });
+            } catch (err) {
+                console.error("[Onboarding] Failed to send welcome WhatsApp:", err);
+            }
+
             return res.status(201).json({ message: "Customer registered successfully", customer });
         }
     } catch (error) {
         next(error);
+    }
+};
+
+export const saveOrderFeedback = async (req: Request, res: Response, next: NextFunction) => {
+    const { orderId, rating, feedback } = req.body;
+
+    if (!orderId) {
+        return res.status(400).json({ message: "Order ID is required" });
+    }
+
+    if (!rating || rating < 1 || rating > 5) {
+        return res.status(400).json({ message: "Valid rating (1-5) is required" });
+    }
+
+    try {
+        const order = await prisma.order.findUnique({
+            where: { id: orderId }
+        });
+
+        if (!order) {
+            return res.status(404).json({ message: "Order not found" });
+        }
+
+        const updatedOrder = await prisma.order.update({
+            where: { id: orderId },
+            data: {
+                rating: parseInt(rating),
+                feedback: feedback || null
+            }
+        });
+
+        return res.json({ message: "Feedback submitted successfully", order: updatedOrder });
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const sendPaymentReminderController = async (req: Request, res: Response, next: NextFunction) => {
+    const { orderId } = req.body;
+
+    if (!orderId) {
+        return res.status(400).json({ message: "Order ID is required" });
+    }
+
+    try {
+        const order = await prisma.order.findUnique({
+            where: { id: orderId },
+            include: { user: true, payments: true }
+        });
+
+        if (!order) {
+            return res.status(404).json({ message: "Order not found" });
+        }
+
+        if (order.isPaid || order.paymentStatus === "COMPLETED" || order.paymentStatus === "PAID") {
+            return res.status(400).json({ message: "Order is already fully paid" });
+        }
+
+        const user = order.user;
+        if (!user || !user.phone) {
+            return res.status(400).json({ message: "Customer phone number not found" });
+        }
+
+        const paid = order.payments.filter((p: any) => p.status === "SUCCESS").reduce((sum: number, p: any) => sum + Number(p.amount), 0);
+        const dueAmount = Math.max(0, Number(order.totalAmount) - paid);
+
+        const { sendPaymentReminderViaWhatsapp } = require("../services/mbgcard");
+        await sendPaymentReminderViaWhatsapp(user.phone, user.name || "Customer", dueAmount, order.id, user.id, order.id);
+
+        return res.json({ message: "Payment reminder sent successfully via WhatsApp" });
+    } catch (error: any) {
+        logger.error(`[Send Payment Reminder Error] ${error.message}`);
+        return res.status(500).json({ message: "Failed to send WhatsApp reminder" });
     }
 };
 

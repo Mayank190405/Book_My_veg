@@ -46,6 +46,7 @@ import logger from "./utils/logger";
 import prisma from "./config/prisma";
 import { SearchService } from "./services/searchService";
 import { startMetricsFlushWorker } from "./services/metricsFlushWorker";
+import { startPaymentReminderWorker } from "./services/paymentReminderWorker";
 
 // Bootstrap auto-cancel queue worker (registers Bull processor)
 import "./queues/autoCancelQueue";
@@ -163,6 +164,9 @@ server.listen(PORT, async () => {
     
     // Start background metrics flush daemon
     startMetricsFlushWorker();
+    
+    // Start background unpaid invoice reminders and feedback dispatch
+    startPaymentReminderWorker();
     
     // Initialize Search Index Settings
     try {

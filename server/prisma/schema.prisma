@@ -295,6 +295,9 @@ model Order {
   items             OrderItem[]
   statusHistory     OrderStatusHistory[]
   payments          Payment[]
+  rating            Int?
+  feedback          String?
+  feedbackSent      Boolean              @default(false)
 
   @@index([userId])
   @@index([locationId])
