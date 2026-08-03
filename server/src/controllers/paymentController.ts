@@ -506,17 +506,7 @@ const completeOrderPayment = async (orderId: string, paymentDetails: any) => {
     }
     if (paymentDetails.status === "CHARGED" || paymentDetails.status === "SUCCESS") {
         await prisma.$transaction(async (tx: any) => {
-            const pendingCodPayment = await tx.payment.findFirst({
-                where: { orderId: orderId, method: "COD", status: "PENDING" }
-            });
-
-            const newPaymentStatus = pendingCodPayment ? "PARTIAL" : "PAID";
-
-            await tx.order.update({
-                where: { id: orderId },
-                data: { paymentStatus: newPaymentStatus, status: "CONFIRMED" as PrismaOrderStatus },
-            });
-
+            // Record the payment first
             const pendingPayment = await tx.payment.findFirst({
                 where: { orderId: orderId, status: "PENDING", method: "ONLINE" }
             }) || await tx.payment.findFirst({
@@ -547,12 +537,42 @@ const completeOrderPayment = async (orderId: string, paymentDetails: any) => {
                 });
             }
 
+            // Now recalculate total paid from ALL successful payments
+            const allPayments = await tx.payment.findMany({
+                where: { orderId: orderId, status: "SUCCESS" }
+            });
+            const totalPaid = allPayments.reduce((sum: number, p: any) => sum + Number(p.amount), 0);
+            const orderTotal = Number(existing.totalAmount);
+            const isFull = totalPaid >= orderTotal;
+
+            // Determine payment status
+            const newPaymentStatus = isFull ? "COMPLETED" : "PARTIAL";
+
+            // Only update status to CONFIRMED if order is still in a pre-confirmed state
+            // Do NOT revert DELIVERED/SHIPPED/etc. orders back to CONFIRMED
+            const nonRevertableStatuses = ["DELIVERED", "SHIPPED", "OUT_FOR_DELIVERY", "COMPLETED"];
+            const shouldUpdateStatus = !nonRevertableStatuses.includes(existing.status);
+
+            await tx.order.update({
+                where: { id: orderId },
+                data: {
+                    isPaid: isFull,
+                    paymentStatus: newPaymentStatus,
+                    ...(shouldUpdateStatus && { status: "CONFIRMED" as PrismaOrderStatus }),
+                },
+            });
+
             // Create in-app system notification for the user
+            const notifTitle = isFull ? "Payment Complete" : "Payment Received";
+            const notifBody = isFull
+                ? `Your bill #${orderId} of ₹${orderTotal} has been fully paid. Thank you!`
+                : `Payment of ₹${Number(paymentDetails.amount).toFixed(2)} received for bill #${orderId}. Remaining: ₹${(orderTotal - totalPaid).toFixed(2)}`;
+
             await tx.notification.create({
                 data: {
                     userId: existing.userId,
-                    title: "Order Confirmed",
-                    body: `Your order #${orderId} of ₹${existing.totalAmount} has been successfully placed! We are preparing it for delivery.`,
+                    title: notifTitle,
+                    body: notifBody,
                     type: "ORDER",
                     isRead: false
                 }
@@ -561,8 +581,8 @@ const completeOrderPayment = async (orderId: string, paymentDetails: any) => {
             await tx.orderStatusHistory.create({
                 data: {
                     orderId: orderId,
-                    status: "CONFIRMED" as PrismaOrderStatus,
-                    remark: "Payment confirmed via Juspay",
+                    status: (shouldUpdateStatus ? "CONFIRMED" : existing.status) as PrismaOrderStatus,
+                    remark: `Payment of ₹${Number(paymentDetails.amount).toFixed(2)} received via ${paymentDetails.payment_method_type || "ONLINE"}${isFull ? " (Fully Paid)" : " (Partial)"}`,
                     changedBy: "SYSTEM",
                 },
             });
