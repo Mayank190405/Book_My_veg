@@ -8,7 +8,8 @@ import {
     cancelPOSOrder,
     getStoreConfig,
     collectDuePayment,
-    settleAccountBalance
+    settleAccountBalance,
+    getWebOrders
 } from "../controllers/posController";
 import { authenticate, authorize } from "../middleware/auth";
 
@@ -25,6 +26,7 @@ router.post("/customers/:customerId/settle", settleAccountBalance);
 
 // ─── Transaction Node ─────────────────────────────────────────────────────────
 router.post("/orders/process", processPOSOrder);
+router.get("/orders/web", getWebOrders);
 router.get("/products/store", getStoreProducts);
 
 // ─── Store Config ─────────────────────────────────────────────────────────────

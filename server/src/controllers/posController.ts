@@ -44,8 +44,45 @@ export const searchCustomer = async (req: AuthenticatedRequest, res: Response, n
     }
 };
 
+// ─── Web Orders for POS ───────────────────────────────────────────────────────
+
+export const getWebOrders = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+        const orders = await prisma.order.findMany({
+            where: {
+                channel: Channel.WEB,
+                status: { in: ["PENDING", "CONFIRMED"] },
+            },
+            include: {
+                user: { select: { id: true, name: true, phone: true } },
+                items: { include: { product: { select: { name: true } } } },
+            },
+            orderBy: { createdAt: "desc" },
+            take: 50,
+        });
+
+        // Map to a shape the POS UI expects
+        const mapped = orders.map(o => ({
+            id: o.id,
+            customerName: o.user?.name || "Walk-In",
+            customerPhone: o.user?.phone || "",
+            items: o.items,
+            totalAmount: o.totalAmount,
+            status: o.status,
+            createdAt: o.createdAt,
+            user: o.user,
+        }));
+
+        res.json(mapped);
+    } catch (error) {
+        next(error);
+    }
+};
+
 export const createOrUpdateCustomer = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     const { id, name, phone, email, address } = req.body;
+    // Treat empty email as null to avoid unique constraint violations
+    const sanitizedEmail = email && email.trim() !== "" ? email.trim() : null;
     try {
         if (id) {
             const customer = await prisma.user.update({
@@ -53,7 +90,7 @@ export const createOrUpdateCustomer = async (req: AuthenticatedRequest, res: Res
                 data: { 
                     name, 
                     phone, 
-                    email,
+                    email: sanitizedEmail,
                     ...(address && {
                         addresses: {
                             upsert: {
@@ -79,7 +116,7 @@ export const createOrUpdateCustomer = async (req: AuthenticatedRequest, res: Res
                     where: { id: existingCustomer.id },
                     data: {
                         name,
-                        email,
+                        email: sanitizedEmail,
                         ...(address && {
                             addresses: {
                                 upsert: {
@@ -99,7 +136,7 @@ export const createOrUpdateCustomer = async (req: AuthenticatedRequest, res: Res
                     data: {
                         name,
                         phone,
-                        email,
+                        email: sanitizedEmail,
                         role: "USER",
                         password: "POS_AUTO_GENERATED_" + Math.random().toString(36).slice(-8),
                         ...(address && {

@@ -96,7 +96,7 @@ export default function POSOperator() {
     const [webOrders, setWebOrders] = useState<any[]>([]);
 
     // Customer form
-    const [customerFormData, setCustomerFormData] = useState({ id: "", name: "", phone: "", email: "", address: "" });
+    const [customerFormData, setCustomerFormData] = useState({ id: "", name: "", phone: "", address: "" });
 
     // Payment
     const [paymentMethod, setPaymentMethod] = useState("CASH");
@@ -355,11 +355,11 @@ export default function POSOperator() {
     const handleCustomerUpsert = async () => {
         if (!customerFormData.name || !customerFormData.phone) { toast.error("Name and phone are required"); return; }
         try {
-            const res = await api.post("/pos/customers/upsert", customerFormData);
+            const res = await api.post("/pos/customers/upsert", { ...customerFormData, email: null });
             setSelectedCustomer(res.data.customer || res.data);
             toast.success(customerFormData.id ? "Customer updated" : "Customer created");
             setShowCustomerDialog(false);
-            setCustomerFormData({ id: "", name: "", phone: "", email: "", address: "" });
+            setCustomerFormData({ id: "", name: "", phone: "", address: "" });
         } catch { toast.error("Failed to save customer"); }
     };
 
@@ -1176,7 +1176,7 @@ export default function POSOperator() {
 
     const fetchWebOrders = useCallback(async () => {
         try {
-            const res = await api.get("/orders?source=WEBSITE&status=PENDING");
+            const res = await api.get("/pos/orders/web");
             setWebOrders(Array.isArray(res.data) ? res.data : []);
         } catch (error) {
             console.error("Failed to fetch web orders", error);
@@ -1628,7 +1628,7 @@ export default function POSOperator() {
                                     </div>
                                 )}
                             </div>
-                            <button onClick={() => { setCustomerFormData({ id: "", name: "", phone: "", email: "", address: "" }); setShowCustomerDialog(true); }}
+                            <button onClick={() => { setCustomerFormData({ id: "", name: "", phone: "", address: "" }); setShowCustomerDialog(true); }}
                                 className="h-12 px-5 bg-teal-500 hover:bg-teal-400 text-white rounded-lg font-bold text-[10px] uppercase tracking-wider flex items-center gap-2">
                                 <UserPlus className="h-4 w-4" /> New
                             </button>
@@ -1748,10 +1748,6 @@ export default function POSOperator() {
                         <div>
                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">Mobile Number *</label>
                             <input value={customerFormData.phone} onChange={e => setCustomerFormData(p => ({ ...p, phone: e.target.value }))} placeholder="10-digit mobile number" className="w-full h-12 bg-slate-50 border border-slate-200 rounded-xl px-4 text-sm font-bold text-slate-900 focus:bg-white focus:ring-2 ring-teal-500/20 outline-none transition-all" />
-                        </div>
-                        <div>
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">Email Address (Optional)</label>
-                            <input value={customerFormData.email} onChange={e => setCustomerFormData(p => ({ ...p, email: e.target.value }))} placeholder="customer@example.com" className="w-full h-12 bg-slate-50 border border-slate-200 rounded-xl px-4 text-sm font-bold text-slate-900 focus:bg-white focus:ring-2 ring-teal-500/20 outline-none transition-all" />
                         </div>
                         <div>
                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">Full Address</label>
