@@ -524,15 +524,22 @@ export const getStoreProducts = async (req: AuthenticatedRequest, res: Response,
                 slug: true,
                 description: true,
                 images: true,
+                basePrice: true,
                 weightUnit: true,
                 categoryId: true,
                 inventory: { where: { locationId } },
                 variants: {
-                    include: {
-                        pricing: { where: { channel: Channel.WEB, isActive: true } }
+                    select: {
+                        id: true,
+                        name: true,
+                        price: true,
+                        weight: true,
+                        weightUnit: true,
+                        isActive: true,
+                        pricing: { where: { isActive: true } }
                     }
                 },
-                pricing: { where: { channel: Channel.WEB, isActive: true } }
+                pricing: { where: { isActive: true } }
             }
         });
         res.json(products);

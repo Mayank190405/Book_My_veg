@@ -311,7 +311,15 @@ export default function POSOperator() {
         setShowScanner(false);
     };
 
-    const getPrice = (p: any) => Number(p.pricing?.[0]?.price || p.basePrice || 0);
+    const getPrice = (p: any) => {
+        const vPrice = p?.variants?.[0]?.price;
+        if (vPrice !== undefined && vPrice !== null && Number(vPrice) > 0) return Number(vPrice);
+        const bPrice = p?.basePrice;
+        if (bPrice !== undefined && bPrice !== null && Number(bPrice) > 0) return Number(bPrice);
+        const prPrice = p?.pricing?.[0]?.price;
+        if (prPrice !== undefined && prPrice !== null && Number(prPrice) > 0) return Number(prPrice);
+        return Number(p?.price || 0);
+    };
 
     const addToCart = (product: any, quantity: number = 1) => {
         setCart(prev => {

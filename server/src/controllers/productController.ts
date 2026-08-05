@@ -300,53 +300,58 @@ export const updateProduct = async (req: Request, res: Response) => {
                 include: { variants: true }
             });
 
-            // Sync POS Pricing for all variants
+            // Sync Pricing across all channels for all variants
             if (p.variants && p.variants.length > 0) {
                 for (const [idx, v] of p.variants.entries()) {
                     const originalVariant = variants ? variants[idx] : null;
                     const priceVal = originalVariant ? originalVariant.price : v.price;
 
-                    const existingPricing = await tx.pricing.findFirst({ 
-                        where: { variantId: v.id, channel: 'POS' } 
+                    // Update existing pricing records for this variant
+                    await tx.pricing.updateMany({
+                        where: { variantId: v.id },
+                        data: { price: new Prisma.Decimal(priceVal || 0) }
                     });
 
-                    if (existingPricing) {
-                        await tx.pricing.update({
-                            where: { id: existingPricing.id },
-                            data: { price: new Prisma.Decimal(priceVal || 0) }
+                    // Ensure both POS and WEB channels exist
+                    for (const ch of ['POS', 'WEB'] as const) {
+                        const exists = await tx.pricing.findFirst({
+                            where: { variantId: v.id, channel: ch }
                         });
-                    } else {
+                        if (!exists) {
+                            await tx.pricing.create({
+                                data: {
+                                    productId: p.id,
+                                    variantId: v.id,
+                                    channel: ch,
+                                    price: new Prisma.Decimal(priceVal || 0),
+                                    isActive: true
+                                }
+                            });
+                        }
+                    }
+                }
+            } else {
+                // Base product pricing sync if no variants
+                const priceVal = productInfo.basePrice || p.basePrice;
+                await tx.pricing.updateMany({
+                    where: { productId: p.id, variantId: null },
+                    data: { price: new Prisma.Decimal(priceVal || 0) }
+                });
+
+                for (const ch of ['POS', 'WEB'] as const) {
+                    const exists = await tx.pricing.findFirst({
+                        where: { productId: p.id, variantId: null, channel: ch }
+                    });
+                    if (!exists) {
                         await tx.pricing.create({
                             data: {
                                 productId: p.id,
-                                variantId: v.id,
-                                channel: 'POS',
+                                channel: ch,
                                 price: new Prisma.Decimal(priceVal || 0),
                                 isActive: true
                             }
                         });
                     }
-                }
-            } else {
-                // Base product pricing sync if no variants
-                const existingPricing = await tx.pricing.findFirst({ 
-                    where: { productId: p.id, variantId: null, channel: 'POS' } 
-                });
-                const priceVal = productInfo.basePrice || p.basePrice;
-                if (existingPricing) {
-                    await tx.pricing.update({
-                        where: { id: existingPricing.id },
-                        data: { price: new Prisma.Decimal(priceVal || 0) }
-                    });
-                } else {
-                    await tx.pricing.create({
-                        data: {
-                            productId: p.id,
-                            channel: 'POS',
-                            price: new Prisma.Decimal(priceVal || 0),
-                            isActive: true
-                        }
-                    });
                 }
             }
             return p;
@@ -991,7 +996,66 @@ export const uploadProductImage = async (req: Request, res: Response) => {
         res.status(200).json({ url: publicUrl, filename: randomName });
     } catch (error) {
         console.error("Error saving uploaded image:", error);
-        res.status(500).json({ message: "Error saving uploaded image to file storage" });
+        res.status(500).json({ message: "Failed to upload image" });
     }
 };
 
+export const syncAllProductPricing = async () => {
+    try {
+        const products = await prisma.product.findMany({
+            include: { variants: true }
+        });
+
+        for (const p of products) {
+            if (p.variants && p.variants.length > 0) {
+                for (const v of p.variants) {
+                    const priceVal = v.price;
+                    await prisma.pricing.updateMany({
+                        where: { variantId: v.id },
+                        data: { price: priceVal }
+                    });
+                    for (const ch of ['POS', 'WEB'] as const) {
+                        const exists = await prisma.pricing.findFirst({
+                            where: { variantId: v.id, channel: ch }
+                        });
+                        if (!exists) {
+                            await prisma.pricing.create({
+                                data: {
+                                    productId: p.id,
+                                    variantId: v.id,
+                                    channel: ch,
+                                    price: priceVal,
+                                    isActive: true
+                                }
+                            });
+                        }
+                    }
+                }
+            } else if (p.basePrice) {
+                const priceVal = p.basePrice;
+                await prisma.pricing.updateMany({
+                    where: { productId: p.id, variantId: null },
+                    data: { price: priceVal }
+                });
+                for (const ch of ['POS', 'WEB'] as const) {
+                    const exists = await prisma.pricing.findFirst({
+                        where: { productId: p.id, variantId: null, channel: ch }
+                    });
+                    if (!exists) {
+                        await prisma.pricing.create({
+                            data: {
+                                productId: p.id,
+                                channel: ch,
+                                price: priceVal,
+                                isActive: true
+                            }
+                        });
+                    }
+                }
+            }
+        }
+        console.log("[PricingSync] Product pricing sync complete across all channels");
+    } catch (err) {
+        console.error("[PricingSync] Failed to sync product pricing across channels:", err);
+    }
+};
