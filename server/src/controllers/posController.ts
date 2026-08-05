@@ -529,10 +529,10 @@ export const getStoreProducts = async (req: AuthenticatedRequest, res: Response,
                 inventory: { where: { locationId } },
                 variants: {
                     include: {
-                        pricing: { where: { channel: Channel.POS, isActive: true } }
+                        pricing: { where: { channel: Channel.WEB, isActive: true } }
                     }
                 },
-                pricing: { where: { channel: Channel.POS, isActive: true } }
+                pricing: { where: { channel: Channel.WEB, isActive: true } }
             }
         });
         res.json(products);
