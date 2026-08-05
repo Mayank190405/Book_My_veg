@@ -1466,8 +1466,9 @@ export default function POSOperator() {
                                                                 <button onClick={() => addToCart(item, -1)} className="text-slate-900 font-bold text-lg hover:text-red-500">−</button>
                                                                 <div className="bg-white border border-slate-300 rounded overflow-hidden">
                                                                     <input
-                                                                        type="text"
-                                                                        inputMode="decimal"
+                                                                        type="number"
+                                                                        step="any"
+                                                                        min="0"
                                                                         defaultValue={item.quantity}
                                                                         key={`${item.id}-${item.quantity}`}
                                                                         onFocus={e => e.target.select()}
@@ -1480,7 +1481,7 @@ export default function POSOperator() {
                                                                             }
                                                                         }}
                                                                         onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }}
-                                                                        className="w-14 h-6 text-center text-[11px] font-black text-slate-900 outline-none p-0"
+                                                                        className="w-14 h-6 text-center text-[11px] font-black text-slate-900 outline-none p-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                                                     />
                                                                 </div>
                                                                 <button onClick={() => addToCart(item, 1)} className="text-slate-900 font-bold text-lg hover:text-teal-500">+</button>
