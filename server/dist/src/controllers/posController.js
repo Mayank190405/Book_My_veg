@@ -54,7 +54,7 @@ const searchCustomer = (req, res, next) => __awaiter(void 0, void 0, void 0, fun
 });
 exports.searchCustomer = searchCustomer;
 const createOrUpdateCustomer = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a;
+    var _a, _b;
     const { id, name, phone, email, address } = req.body;
     try {
         if (id) {
@@ -76,21 +76,55 @@ const createOrUpdateCustomer = (req, res, next) => __awaiter(void 0, void 0, voi
             return res.json({ message: "Customer updated", customer });
         }
         else {
-            // New Customer
-            const customer = yield prisma_1.default.user.create({
-                data: Object.assign({ name,
-                    phone,
-                    email, role: "USER", password: "POS_AUTO_GENERATED_" + Math.random().toString(36).slice(-8) }, (address && {
-                    addresses: {
-                        create: {
-                            fullAddress: address,
-                            isDefault: true
-                        }
-                    }
-                })),
-                include: { addresses: { where: { isDefault: true } } }
+            // Check if customer with the same phone already exists
+            const existingCustomer = yield prisma_1.default.user.findFirst({
+                where: { phone }
             });
-            return res.json({ message: "Customer created", customer });
+            if (existingCustomer) {
+                // Update the existing customer instead
+                const customer = yield prisma_1.default.user.update({
+                    where: { id: existingCustomer.id },
+                    data: Object.assign({ name,
+                        email }, (address && {
+                        addresses: {
+                            upsert: {
+                                where: { id: ((_b = (yield prisma_1.default.address.findFirst({ where: { userId: existingCustomer.id, isDefault: true } }))) === null || _b === void 0 ? void 0 : _b.id) || 'new-address-id' },
+                                update: { fullAddress: address },
+                                create: { fullAddress: address, isDefault: true }
+                            }
+                        }
+                    })),
+                    include: { addresses: { where: { isDefault: true } } }
+                });
+                return res.json({ message: "Customer updated", customer });
+            }
+            else {
+                // New Customer
+                const customer = yield prisma_1.default.user.create({
+                    data: Object.assign({ name,
+                        phone,
+                        email, role: "USER", password: "POS_AUTO_GENERATED_" + Math.random().toString(36).slice(-8) }, (address && {
+                        addresses: {
+                            create: {
+                                fullAddress: address,
+                                isDefault: true
+                            }
+                        }
+                    })),
+                    include: { addresses: { where: { isDefault: true } } }
+                });
+                // Trigger welcome registration WhatsApp notification!
+                try {
+                    const { sendRegistrationThankYouViaWhatsapp } = require("../services/mbgcard");
+                    sendRegistrationThankYouViaWhatsapp(customer.phone, customer.name || "Customer").catch((err) => {
+                        console.error("[POS] Welcome WhatsApp dispatch failure:", err);
+                    });
+                }
+                catch (err) {
+                    console.error("[POS] Failed to send welcome WhatsApp:", err);
+                }
+                return res.json({ message: "Customer created", customer });
+            }
         }
     }
     catch (error) {
@@ -102,13 +136,28 @@ exports.createOrUpdateCustomer = createOrUpdateCustomer;
 const processPOSOrder = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     var _a, _b, _c;
     const { customerId, items, paymentMethod, paymentDetails, discountAmount, couponId, packerId, duePaymentAmount = 0, paidAmount = 0, // NEW: Amount paid specifically for THIS bill
-    suspend = false, denominations } = req.body;
+    suspend = false, denominations, orderId // NEW: Edit Bill support
+     } = req.body;
     const staffId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.userId;
     const locationId = (_b = req.user) === null || _b === void 0 ? void 0 : _b.locationId;
     if (!staffId || !locationId) {
         return next(new errors_1.AppError("Operational context missing (Staff/Location)", 401));
     }
     try {
+        let existingOrder = null;
+        let existingPaidTotal = 0;
+        if (orderId) {
+            existingOrder = yield prisma_1.default.order.findUnique({
+                where: { id: orderId },
+                include: { items: true, payments: true }
+            });
+            if (!existingOrder) {
+                return next(new errors_1.AppError("Order not found for editing", 404));
+            }
+            existingPaidTotal = existingOrder.payments
+                .filter((p) => p.status === "SUCCESS")
+                .reduce((sum, p) => sum + Number(p.amount), 0);
+        }
         // Fetch current due BEFORE processing
         const prevOrders = yield prisma_1.default.order.findMany({
             where: {
@@ -133,41 +182,86 @@ const processPOSOrder = (req, res, next) => __awaiter(void 0, void 0, void 0, fu
             const totalAmount = itemTotals - (discountAmount || 0);
             // Determine payment status for THIS bill
             const effectivePaid = paymentMethod === "CREDIT" ? 0 : Number(paidAmount || totalAmount);
-            const isFull = effectivePaid >= totalAmount;
-            const pStatus = effectivePaid <= 0 ? "PENDING" : (isFull ? "COMPLETED" : "PARTIAL");
-            const order = yield tx.order.create({
-                data: {
-                    id: (0, idGenerator_1.generateOrderId)(),
-                    userId: customerId,
-                    locationId,
-                    totalAmount: new client_1.Prisma.Decimal(totalAmount),
-                    discountAmount: new client_1.Prisma.Decimal(discountAmount || 0),
-                    status: (suspend ? "PENDING" : "CONFIRMED"),
-                    paymentStatus: pStatus,
-                    isPaid: isFull,
-                    shippingAddress: { type: "POS_IN_STORE", note: "Handover at Counter" },
-                    channel: client_1.Channel.POS,
-                    notes: `POS Transaction by ${staffId}${!staffExists ? " (SESSION_RECOVERED)" : ""}`,
-                    packerId,
-                    staffId: validatedStaffId, // Use validated ID
-                    items: {
-                        create: items.map((item) => ({
-                            productId: item.productId,
-                            variantId: item.variantId,
-                            quantity: item.quantity,
-                            sellingPrice: new client_1.Prisma.Decimal(item.price),
-                            locationId
-                        }))
-                    },
-                    statusHistory: {
-                        create: {
-                            status: (suspend ? "PENDING" : "CONFIRMED"),
-                            remark: `POS Checkout (${pStatus})`,
-                            changedBy: staffId
+            const totalPaidAmount = existingPaidTotal + effectivePaid;
+            const isFull = totalPaidAmount >= totalAmount;
+            const pStatus = totalPaidAmount <= 0 ? "PENDING" : (isFull ? "COMPLETED" : "PARTIAL");
+            let order;
+            if (existingOrder) {
+                // 1. Restore stock first if not cancelled or pending
+                if (existingOrder.status !== "PENDING" && existingOrder.status !== "CANCELLED") {
+                    yield inventoryService_1.InventoryService.restoreStock({
+                        items: existingOrder.items.map((i) => ({
+                            productId: i.productId,
+                            variantId: i.variantId || null,
+                            quantity: Number(i.quantity)
+                        })),
+                        locationId,
+                        staffId,
+                        referenceId: existingOrder.id
+                    }, tx);
+                }
+                // 2. Delete old order items
+                yield tx.orderItem.deleteMany({
+                    where: { orderId: existingOrder.id }
+                });
+                // 3. Update order fields and create new items
+                order = yield tx.order.update({
+                    where: { id: existingOrder.id },
+                    data: {
+                        totalAmount: new client_1.Prisma.Decimal(totalAmount),
+                        discountAmount: new client_1.Prisma.Decimal(discountAmount || 0),
+                        status: (suspend ? "PENDING" : (existingOrder.status === "PENDING" ? "CONFIRMED" : existingOrder.status)),
+                        paymentStatus: pStatus,
+                        isPaid: isFull,
+                        packerId,
+                        staffId: validatedStaffId,
+                        items: {
+                            create: items.map((item) => ({
+                                productId: item.productId,
+                                variantId: item.variantId,
+                                quantity: item.quantity,
+                                sellingPrice: new client_1.Prisma.Decimal(item.price),
+                                locationId
+                            }))
                         }
                     }
-                }
-            });
+                });
+            }
+            else {
+                order = yield tx.order.create({
+                    data: {
+                        id: (0, idGenerator_1.generateOrderId)(),
+                        userId: customerId,
+                        locationId,
+                        totalAmount: new client_1.Prisma.Decimal(totalAmount),
+                        discountAmount: new client_1.Prisma.Decimal(discountAmount || 0),
+                        status: (suspend ? "PENDING" : "CONFIRMED"),
+                        paymentStatus: pStatus,
+                        isPaid: isFull,
+                        shippingAddress: { type: "POS_IN_STORE", note: "Handover at Counter" },
+                        channel: client_1.Channel.POS,
+                        notes: `POS Transaction by ${staffId}${!staffExists ? " (SESSION_RECOVERED)" : ""}`,
+                        packerId,
+                        staffId: validatedStaffId, // Use validated ID
+                        items: {
+                            create: items.map((item) => ({
+                                productId: item.productId,
+                                variantId: item.variantId,
+                                quantity: item.quantity,
+                                sellingPrice: new client_1.Prisma.Decimal(item.price),
+                                locationId
+                            }))
+                        },
+                        statusHistory: {
+                            create: {
+                                status: (suspend ? "PENDING" : "CONFIRMED"),
+                                remark: `POS Checkout (${pStatus})`,
+                                changedBy: staffId
+                            }
+                        }
+                    }
+                });
+            }
             if (!suspend) {
                 yield inventoryService_1.InventoryService.deductStock({
                     items: items.map((i) => ({ productId: i.productId, variantId: i.variantId, quantity: i.quantity })),
@@ -289,12 +383,24 @@ const processPOSOrder = (req, res, next) => __awaiter(void 0, void 0, void 0, fu
         // ── WhatsApp Notification Dispatch ────────────────────────────────
         if (customerId && !suspend) {
             try {
-                const user = yield prisma_1.default.user.findUnique({ where: { id: customerId }, select: { phone: true } });
+                const user = yield prisma_1.default.user.findUnique({ where: { id: customerId }, select: { name: true, phone: true } });
                 if (user === null || user === void 0 ? void 0 : user.phone) {
-                    const { sendOrderConfirmationViaWhatsapp } = require("../services/mbgcard");
-                    sendOrderConfirmationViaWhatsapp(user.phone, result.id, Number(result.totalAmount)).catch((err) => {
-                        console.error("[POSController] WhatsApp dispatch failure:", err);
-                    });
+                    const orderId = result.id;
+                    const totalAmount = Number(result.totalAmount);
+                    const paymentMode = paymentMethod === "CASH" ? "CASH" : (paymentMethod === "CREDIT" ? "DUE ON ACCOUNT" : "DIGITAL PAY");
+                    const isPaid = result.isPaid || result.paymentStatus === "COMPLETED" || result.paymentStatus === "PAID";
+                    const { sendInvoicePaidViaWhatsapp, sendInvoiceDueViaWhatsapp } = require("../services/mbgcard");
+                    if (isPaid) {
+                        sendInvoicePaidViaWhatsapp(user.phone, user.name || "Customer", orderId, totalAmount, paymentMode, orderId).catch((err) => {
+                            console.error("[POSController] WhatsApp Invoice Paid dispatch failure:", err);
+                        });
+                    }
+                    else {
+                        const dueAmount = totalAmount;
+                        sendInvoiceDueViaWhatsapp(user.phone, user.name || "Customer", orderId, totalAmount, paymentMode, dueAmount, customerId, orderId).catch((err) => {
+                            console.error("[POSController] WhatsApp Invoice Due dispatch failure:", err);
+                        });
+                    }
                 }
             }
             catch (err) {

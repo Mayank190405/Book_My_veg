@@ -12,7 +12,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.initiatePayDue = exports.getPayInfo = exports.checkPaymentEligibility = exports.refundPayment = exports.handleEasebuzzCallback = exports.handleWebhook = exports.verifyPayment = exports.getOrderStatus = exports.settleDuesForCustomer = exports.generatePaymentLink = exports.initiatePayment = void 0;
+exports.sendPaymentReminderController = exports.saveOrderFeedback = exports.publicCustomerOnboard = exports.initiatePayDue = exports.getPayInfo = exports.checkPaymentEligibility = exports.refundPayment = exports.handleEasebuzzCallback = exports.handleWebhook = exports.verifyPayment = exports.getOrderStatus = exports.settleDuesForCustomer = exports.generatePaymentLink = exports.initiatePayment = void 0;
 const prisma_1 = __importDefault(require("../config/prisma"));
 const juspayService_1 = require("../services/juspayService");
 const productController_1 = require("./productController");
@@ -521,9 +521,9 @@ const completeOrderPayment = (orderId, paymentDetails) => __awaiter(void 0, void
         const user = existing.user;
         if (user && user.phone) {
             try {
-                const { sendOrderConfirmationViaWhatsapp } = require("../services/mbgcard");
-                sendOrderConfirmationViaWhatsapp(user.phone, orderId, Number(existing.totalAmount)).catch((err) => {
-                    console.error("[PaymentController] WhatsApp dispatch failure:", err);
+                const { sendPaymentReceivedViaWhatsapp } = require("../services/mbgcard");
+                sendPaymentReceivedViaWhatsapp(user.phone, user.name || "Customer", orderId, Number(paymentDetails.amount || existing.totalAmount), paymentDetails.payment_method_type || "ONLINE").catch((err) => {
+                    console.error("[PaymentController] WhatsApp Payment Received dispatch failure:", err);
                 });
             }
             catch (err) {
@@ -751,8 +751,13 @@ const handleWebhook = (req, res) => __awaiter(void 0, void 0, void 0, function* 
         if (!txnid || !status)
             return res.status(400).json({ message: "Missing txnid or status" });
         const isSuccess = (status || "").toLowerCase() === "success";
+        // Resolve original orderId from txnid (strip timestamp suffix)
+        let resolvedOrderId = txnid;
+        if (!txnid.startsWith("DUE_") && !txnid.startsWith("SETTLE_")) {
+            resolvedOrderId = txnid.replace(/_\d{3,}$/, "");
+        }
         try {
-            yield completeOrderPayment(txnid, {
+            yield completeOrderPayment(resolvedOrderId, {
                 status: isSuccess ? "CHARGED" : "FAILED",
                 txn_id: easebuzz_id || txnid,
                 amount: Number(amount),
@@ -808,18 +813,29 @@ const handleEasebuzzCallback = (req, res) => __awaiter(void 0, void 0, void 0, f
         return res.redirect(`${clientUrl}/payment/success?status=failed&message=Missing transaction ID`);
     }
     const isSuccess = (status || "").toLowerCase() === "success";
+    // Recover the original orderId from the txnid.
+    // txnid formats:
+    //   "BMVXXXXXXXXXX_123456"  → order id is "BMVXXXXXXXXXX"
+    //   "DUE_BILLID_1234567890" → handled by completeOrderPayment's DUE_ branch
+    //   "SETTLE_USERID_1234567890" → handled by completeOrderPayment's SETTLE_ branch
+    //   "BMVXXXXXXXXXX" (legacy, no suffix)
+    let resolvedOrderId = txnid;
+    if (!txnid.startsWith("DUE_") && !txnid.startsWith("SETTLE_")) {
+        // Strip the _NNNNNN timestamp suffix added for uniqueness
+        resolvedOrderId = txnid.replace(/_\d{3,}$/, "");
+    }
     try {
-        yield completeOrderPayment(txnid, {
+        yield completeOrderPayment(resolvedOrderId, {
             status: isSuccess ? "CHARGED" : "FAILED",
             txn_id: easebuzz_id || txnid,
             amount: Number(amount),
             payment_method_type: mode || "ONLINE"
         });
-        return res.redirect(`${clientUrl}/payment/success?order_id=${txnid}&status=${isSuccess ? "success" : "failed"}`);
+        return res.redirect(`${clientUrl}/payment/success?order_id=${resolvedOrderId}&status=${isSuccess ? "success" : "failed"}`);
     }
     catch (error) {
         logger_1.default.error(`[Easebuzz Callback] Error completing payment: ${error.message}`);
-        return res.redirect(`${clientUrl}/payment/success?order_id=${txnid}&status=failed&message=Payment completion failed`);
+        return res.redirect(`${clientUrl}/payment/success?order_id=${resolvedOrderId}&status=failed&message=Payment completion failed`);
     }
 });
 exports.handleEasebuzzCallback = handleEasebuzzCallback;
@@ -1028,12 +1044,27 @@ const initiatePayDue = (req, res) => __awaiter(void 0, void 0, void 0, function*
         const customerName = (customer === null || customer === void 0 ? void 0 : customer.name) || "Customer";
         const customerPhone = (customer === null || customer === void 0 ? void 0 : customer.phone) || phone || "9999999999";
         const customerEmail = (customer === null || customer === void 0 ? void 0 : customer.email) || "customer@example.com";
-        let txnid = billId ? `DUE_${billId}_${Date.now()}` : `SETTLE_${effectiveUserId}_${Date.now()}`;
+        // Easebuzz requires a unique txnid for every initiation attempt.
+        // Always generate a unique one — never reuse order.id directly since it may
+        // have been consumed by a previous (possibly failed) Easebuzz transaction.
+        const timestamp = Date.now();
+        let txnid;
+        let productInfoLabel;
         if (billId) {
             const order = yield prisma_1.default.order.findUnique({ where: { id: billId } });
             if (order && !order.isPaid) {
-                txnid = order.id;
+                // Unique txnid referencing the order, with a short suffix to avoid collisions
+                txnid = `${order.id}_${String(timestamp).slice(-6)}`;
+                productInfoLabel = `Bill Payment ${order.id}`;
             }
+            else {
+                txnid = `DUE_${billId}_${timestamp}`;
+                productInfoLabel = `Bill Payment ${billId}`;
+            }
+        }
+        else {
+            txnid = `SETTLE_${effectiveUserId}_${timestamp}`;
+            productInfoLabel = `Account Settlement ${effectiveUserId}`;
         }
         const amountToPay = Number(amount);
         if (!amountToPay || amountToPay <= 0) {
@@ -1057,7 +1088,7 @@ const initiatePayDue = (req, res) => __awaiter(void 0, void 0, void 0, function*
                     firstname: customerName,
                     email: customerEmail,
                     phone: customerPhone,
-                    productinfo: billId ? `Bill Payment ${billId}` : `Account Settlement ${effectiveUserId}`,
+                    productinfo: productInfoLabel,
                     callbackUrl
                 });
                 return res.json(Object.assign({ txnid }, easeResult));
@@ -1084,3 +1115,137 @@ const initiatePayDue = (req, res) => __awaiter(void 0, void 0, void 0, function*
     }
 });
 exports.initiatePayDue = initiatePayDue;
+const publicCustomerOnboard = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a, _b;
+    const { name, phone, email, address } = req.body;
+    if (!name || !phone) {
+        return res.status(400).json({ message: "Name and Phone Number are required" });
+    }
+    const cleanPhone = phone.replace(/\D/g, "");
+    if (cleanPhone.length !== 10) {
+        return res.status(400).json({ message: "Invalid phone number. Must be exactly 10 digits." });
+    }
+    try {
+        // Search lookup to avoid duplicate phone crashes
+        let customer = yield prisma_1.default.user.findFirst({
+            where: {
+                OR: [
+                    { phone: cleanPhone },
+                    { phone: `+91${cleanPhone}` },
+                    { phone: `91${cleanPhone}` }
+                ]
+            },
+            include: { addresses: true }
+        });
+        if (customer) {
+            // Update existing customer details
+            customer = yield prisma_1.default.user.update({
+                where: { id: customer.id },
+                data: Object.assign(Object.assign({ name }, (email && { email })), (address && {
+                    profileAddress: address,
+                    addresses: {
+                        upsert: {
+                            where: {
+                                id: ((_b = (_a = customer.addresses) === null || _a === void 0 ? void 0 : _a[0]) === null || _b === void 0 ? void 0 : _b.id) || "new-address-id"
+                            },
+                            update: { fullAddress: address },
+                            create: { fullAddress: address, isDefault: true }
+                        }
+                    }
+                })),
+                include: { addresses: true }
+            });
+            return res.json({ message: "Customer details updated successfully", customer });
+        }
+        else {
+            // Create a new Customer
+            customer = yield prisma_1.default.user.create({
+                data: Object.assign(Object.assign(Object.assign({ name, phone: cleanPhone }, (email && { email })), { role: "USER", password: "POS_AUTO_GENERATED_" + Math.random().toString(36).slice(-8), profileAddress: address || "" }), (address && {
+                    addresses: {
+                        create: {
+                            fullAddress: address,
+                            isDefault: true
+                        }
+                    }
+                })),
+                include: { addresses: true }
+            });
+            // Trigger welcome registration WhatsApp notification!
+            try {
+                const { sendRegistrationThankYouViaWhatsapp } = require("../services/mbgcard");
+                sendRegistrationThankYouViaWhatsapp(customer.phone, customer.name || "Customer").catch((err) => {
+                    console.error("[Onboarding] Welcome WhatsApp dispatch failure:", err);
+                });
+            }
+            catch (err) {
+                console.error("[Onboarding] Failed to send welcome WhatsApp:", err);
+            }
+            return res.status(201).json({ message: "Customer registered successfully", customer });
+        }
+    }
+    catch (error) {
+        next(error);
+    }
+});
+exports.publicCustomerOnboard = publicCustomerOnboard;
+const saveOrderFeedback = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    const { orderId, rating, feedback } = req.body;
+    if (!orderId) {
+        return res.status(400).json({ message: "Order ID is required" });
+    }
+    if (!rating || rating < 1 || rating > 5) {
+        return res.status(400).json({ message: "Valid rating (1-5) is required" });
+    }
+    try {
+        const order = yield prisma_1.default.order.findUnique({
+            where: { id: orderId }
+        });
+        if (!order) {
+            return res.status(404).json({ message: "Order not found" });
+        }
+        const updatedOrder = yield prisma_1.default.order.update({
+            where: { id: orderId },
+            data: {
+                rating: parseInt(rating),
+                feedback: feedback || null
+            }
+        });
+        return res.json({ message: "Feedback submitted successfully", order: updatedOrder });
+    }
+    catch (error) {
+        next(error);
+    }
+});
+exports.saveOrderFeedback = saveOrderFeedback;
+const sendPaymentReminderController = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    const { orderId } = req.body;
+    if (!orderId) {
+        return res.status(400).json({ message: "Order ID is required" });
+    }
+    try {
+        const order = yield prisma_1.default.order.findUnique({
+            where: { id: orderId },
+            include: { user: true, payments: true }
+        });
+        if (!order) {
+            return res.status(404).json({ message: "Order not found" });
+        }
+        if (order.isPaid || order.paymentStatus === "COMPLETED" || order.paymentStatus === "PAID") {
+            return res.status(400).json({ message: "Order is already fully paid" });
+        }
+        const user = order.user;
+        if (!user || !user.phone) {
+            return res.status(400).json({ message: "Customer phone number not found" });
+        }
+        const paid = order.payments.filter((p) => p.status === "SUCCESS").reduce((sum, p) => sum + Number(p.amount), 0);
+        const dueAmount = Math.max(0, Number(order.totalAmount) - paid);
+        const { sendPaymentReminderViaWhatsapp } = require("../services/mbgcard");
+        yield sendPaymentReminderViaWhatsapp(user.phone, user.name || "Customer", dueAmount, order.id, user.id, order.id);
+        return res.json({ message: "Payment reminder sent successfully via WhatsApp" });
+    }
+    catch (error) {
+        logger_1.default.error(`[Send Payment Reminder Error] ${error.message}`);
+        return res.status(500).json({ message: "Failed to send WhatsApp reminder" });
+    }
+});
+exports.sendPaymentReminderController = sendPaymentReminderController;

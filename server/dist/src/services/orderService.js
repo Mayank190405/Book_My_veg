@@ -223,11 +223,11 @@ exports.orderService = {
             // ── WhatsApp Notification Dispatch (Outside Transaction Block) ─────
             if (order.status === "CONFIRMED") {
                 try {
-                    const user = yield prisma_1.default.user.findUnique({ where: { id: data.userId }, select: { phone: true } });
+                    const user = yield prisma_1.default.user.findUnique({ where: { id: data.userId }, select: { name: true, phone: true } });
                     const phone = user === null || user === void 0 ? void 0 : user.phone;
                     if (phone) {
                         const { sendOrderConfirmationViaWhatsapp } = require("./mbgcard");
-                        sendOrderConfirmationViaWhatsapp(phone, order.id, Number(order.totalAmount)).catch((err) => {
+                        sendOrderConfirmationViaWhatsapp(phone, user.name || "Customer", order.id, Number(order.totalAmount)).catch((err) => {
                             console.error("[OrderService] WhatsApp dispatch failure:", err);
                         });
                     }

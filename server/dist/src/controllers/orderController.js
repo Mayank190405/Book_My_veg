@@ -278,6 +278,19 @@ const updateOrderStatus = (req, res, next) => __awaiter(void 0, void 0, void 0, 
                     data: { isPaid: true, paymentStatus: "COMPLETED" }
                 });
             }
+            // Trigger feedback request WhatsApp notification!
+            try {
+                const user = yield prisma_1.default.user.findUnique({ where: { id: order.userId }, select: { name: true, phone: true } });
+                if (user === null || user === void 0 ? void 0 : user.phone) {
+                    const { sendFeedbackRequestViaWhatsapp } = require("../services/mbgcard");
+                    sendFeedbackRequestViaWhatsapp(user.phone, user.name || "Customer", id).catch((err) => {
+                        console.error("[OrderController] WhatsApp feedback dispatch failure:", err);
+                    });
+                }
+            }
+            catch (err) {
+                console.error("[OrderController] Failed to send WhatsApp feedback:", err);
+            }
         }
         // Create Audit Log
         yield prisma_1.default.auditLog.create({
@@ -290,6 +303,19 @@ const updateOrderStatus = (req, res, next) => __awaiter(void 0, void 0, void 0, 
                 newValue: { status, remark }
             }
         });
+        // Trigger status update WhatsApp notification!
+        try {
+            const user = yield prisma_1.default.user.findUnique({ where: { id: order.userId }, select: { name: true, phone: true } });
+            if (user === null || user === void 0 ? void 0 : user.phone) {
+                const { sendOrderStatusUpdateViaWhatsapp } = require("../services/mbgcard");
+                sendOrderStatusUpdateViaWhatsapp(user.phone, user.name || "Customer", id, status).catch((err) => {
+                    console.error("[OrderController] WhatsApp status update dispatch failure:", err);
+                });
+            }
+        }
+        catch (err) {
+            console.error("[OrderController] Failed to send WhatsApp status update:", err);
+        }
         res.json(updated);
     }
     catch (error) {

@@ -957,10 +957,21 @@ export default function POSOperator() {
                     <title>Bill - ${lastReceipt?.order?.id?.slice(0, 8) || ''}</title>
                     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;800;900&display=swap" rel="stylesheet">
                     <style>
+                        html, body {
+                            margin: 0;
+                            padding: 0;
+                            width: 100%;
+                            height: 100%;
+                            background: #fff;
+                        }
                         body { 
+                            display: flex;
+                            justify-content: center;
+                            align-items: flex-start;
+                        }
+                        .bill-wrapper {
                             font-family: 'Poppins', Arial, sans-serif; 
                             width: 58mm; 
-                            margin: 0 auto; 
                             padding: 2mm;
                             font-size: 8.5px;
                             line-height: 1.3;
@@ -991,7 +1002,7 @@ export default function POSOperator() {
                         }
                         .item-table th { 
                             font-weight: 800; 
-                            text-align: left;
+                            text-align: center;
                         }
                         
                         .metadata-block {
@@ -1000,6 +1011,7 @@ export default function POSOperator() {
                             margin-bottom: 6px;
                             color: #000;
                             font-weight: 600;
+                            text-align: center;
                         }
 
                         .qr-section { 
@@ -1034,11 +1046,13 @@ export default function POSOperator() {
 
                         @media print {
                             @page { margin: 0; }
-                            body { width: 58mm; }
+                            body { width: 100%; }
+                            .bill-wrapper { width: 58mm; }
                         }
                     </style>
                 </head>
                 <body>
+                <div class="bill-wrapper">
                     <!-- Store Branding -->
                     <div class="text-center" style="margin-bottom: 8px;">
                         <h1 class="font-bold uppercase" style="font-size: 13px; margin: 0 0 2px 0; line-height: 1.1;">${storeConfig?.name || 'MAIN HUB'}</h1>
@@ -1079,11 +1093,11 @@ export default function POSOperator() {
                             <tr>
                                 <th style="width: 7%;">Sr.No</th>
                                 <th style="width: 25%;">Name</th>
-                                <th style="width: 14%; text-align: left;">Price</th>
-                                <th style="width: 14%; text-align: left;">Discount</th>
-                                <th style="width: 16%; text-align: left;">Disc.Price</th>
+                                <th style="width: 14%; text-align: center;">Price</th>
+                                <th style="width: 14%; text-align: center;">Discount</th>
+                                <th style="width: 16%; text-align: center;">Disc.Price</th>
                                 <th style="width: 10%; text-align: center;">QTY</th>
-                                <th style="width: 14%; text-align: right;">Amt</th>
+                                <th style="width: 14%; text-align: center;">Amt</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -1094,50 +1108,50 @@ export default function POSOperator() {
                                 const rowAmt = act * Number(item.quantity);
                                 return `
                                     <tr>
-                                        <td>${idx + 1}</td>
-                                        <td>${item.name}</td>
-                                        <td>Rs.${orig.toFixed(2)}</td>
-                                        <td>Rs.${discUnit.toFixed(2)}</td>
-                                        <td>Rs.${act.toFixed(2)}</td>
-                                        <td class="text-center">${Number(item.quantity).toFixed(3)}</td>
-                                        <td class="text-right">Rs.${rowAmt.toFixed(2)}</td>
+                                        <td style="text-align: center;">${idx + 1}</td>
+                                        <td style="text-align: center;">${item.name}</td>
+                                        <td style="text-align: center;">Rs.${orig.toFixed(2)}</td>
+                                        <td style="text-align: center;">Rs.${discUnit.toFixed(2)}</td>
+                                        <td style="text-align: center;">Rs.${act.toFixed(2)}</td>
+                                        <td style="text-align: center;">${Number(item.quantity).toFixed(3)}</td>
+                                        <td style="text-align: center;">Rs.${rowAmt.toFixed(2)}</td>
                                     </tr>
                                 `;
                             }).join('')}
                             
                             <!-- Totals Rows -->
                             <tr style="font-weight: bold; border-top: 2px solid #000;">
-                                <td colspan="2">Total</td>
-                                <td>Rs.${unitPriceSum.toFixed(2)}</td>
-                                <td>Rs.${totalDiscountVal.toFixed(2)}</td>
-                                <td>Rs.${unitPriceDiscountedSum.toFixed(2)}</td>
+                                <td colspan="2" style="text-align: center;">Total</td>
+                                <td style="text-align: center;">Rs.${unitPriceSum.toFixed(2)}</td>
+                                <td style="text-align: center;">Rs.${totalDiscountVal.toFixed(2)}</td>
+                                <td style="text-align: center;">Rs.${unitPriceDiscountedSum.toFixed(2)}</td>
                                 <td></td>
-                                <td class="text-right">Rs.${lineTotalSum.toFixed(2)}</td>
+                                <td style="text-align: center;">Rs.${lineTotalSum.toFixed(2)}</td>
                             </tr>
                             
                             <tr>
-                                <td colspan="6">Total Discount</td>
-                                <td class="text-right">Rs.${(totalDiscountVal + discountVal).toFixed(2)}</td>
+                                <td colspan="6" style="text-align: center;">Total Discount</td>
+                                <td style="text-align: center;">Rs.${(totalDiscountVal + discountVal).toFixed(2)}</td>
                             </tr>
 
                             <tr>
-                                <td colspan="6">rounding</td>
-                                <td class="text-right">Rs.${(roundingVal >= 0 ? '+' : '')}${roundingVal.toFixed(2)}</td>
+                                <td colspan="6" style="text-align: center;">Rounding</td>
+                                <td style="text-align: center;">Rs.${(roundingVal >= 0 ? '+' : '')}${roundingVal.toFixed(2)}</td>
                             </tr>
                             
                             <tr style="font-weight: bold; border-top: 1px solid #000; border-bottom: 2px solid #000;">
-                                <td colspan="6">Grand Total ( ${numberToWords(grandTotalVal).replace('RUPEES ONLY', 'ONLY').toUpperCase()} )</td>
-                                <td class="text-right">Rs.${grandTotalVal.toFixed(2)}</td>
+                                <td colspan="6" style="text-align: center;">Grand Total ( ${numberToWords(grandTotalVal).replace('RUPEES ONLY', 'ONLY').toUpperCase()} )</td>
+                                <td style="text-align: center;">Rs.${grandTotalVal.toFixed(2)}</td>
                             </tr>
                             
                             <tr>
-                                <td colspan="6">Paid Amount</td>
-                                <td class="text-right">Rs.${paidAmount.toFixed(2)}</td>
+                                <td colspan="6" style="text-align: center;">Paid Amount</td>
+                                <td style="text-align: center;">Rs.${paidAmount.toFixed(2)}</td>
                             </tr>
                             
                             <tr style="font-weight: bold;">
-                                <td colspan="6">Due Amount</td>
-                                <td class="text-right">Rs.${dueAmount.toFixed(2)}</td>
+                                <td colspan="6" style="text-align: center;">Due Amount</td>
+                                <td style="text-align: center;">Rs.${dueAmount.toFixed(2)}</td>
                             </tr>
                         </tbody>
                     </table>
@@ -1147,6 +1161,7 @@ export default function POSOperator() {
                         Products you purchase can only be replaced within 12 hours of the bill being generated.
                     </div>
 
+                </div>
                     <script>
                         window.onload = () => {
                             window.print();
@@ -1451,14 +1466,21 @@ export default function POSOperator() {
                                                                 <button onClick={() => addToCart(item, -1)} className="text-slate-900 font-bold text-lg hover:text-red-500">−</button>
                                                                 <div className="bg-white border border-slate-300 rounded overflow-hidden">
                                                                     <input
-                                                                        type="number"
-                                                                        step="0.001"
-                                                                        value={item.quantity}
-                                                                        onChange={e => {
-                                                                            const newQty = parseFloat(e.target.value) || 0;
-                                                                            setCart(prev => prev.map(ci => ci.id === item.id ? { ...ci, quantity: Math.max(0.001, newQty) } : ci));
+                                                                        type="text"
+                                                                        inputMode="decimal"
+                                                                        defaultValue={item.quantity}
+                                                                        key={`${item.id}-${item.quantity}`}
+                                                                        onFocus={e => e.target.select()}
+                                                                        onBlur={e => {
+                                                                            const newQty = parseFloat(e.target.value);
+                                                                            if (!isNaN(newQty) && newQty > 0) {
+                                                                                setCart(prev => prev.map(ci => ci.id === item.id ? { ...ci, quantity: newQty } : ci));
+                                                                            } else {
+                                                                                e.target.value = String(item.quantity);
+                                                                            }
                                                                         }}
-                                                                        className="w-10 h-6 text-center text-[11px] font-black text-slate-900 outline-none p-0"
+                                                                        onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+                                                                        className="w-14 h-6 text-center text-[11px] font-black text-slate-900 outline-none p-0"
                                                                     />
                                                                 </div>
                                                                 <button onClick={() => addToCart(item, 1)} className="text-slate-900 font-bold text-lg hover:text-teal-500">+</button>

@@ -12,7 +12,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.sendTemplateViaChatHub = exports.sendOrderConfirmationViaWhatsapp = exports.getConversation = exports.getMyMetaTemplates = exports.sendFlowViaChatHub = exports.sendOtpViaWhatsapp = void 0;
+exports.sendRegistrationThankYouViaWhatsapp = exports.sendOrderStatusUpdateViaWhatsapp = exports.sendPaymentReceivedViaWhatsapp = exports.sendPaymentReminderViaWhatsapp = exports.sendInvoiceDueViaWhatsapp = exports.sendInvoicePaidViaWhatsapp = exports.sendFeedbackRequestViaWhatsapp = exports.sendTemplateViaChatHub = exports.sendOrderConfirmationViaWhatsapp = exports.getConversation = exports.getMyMetaTemplates = exports.sendFlowViaChatHub = exports.sendOtpViaWhatsapp = void 0;
 const axios_1 = __importDefault(require("axios"));
 const dotenv_1 = __importDefault(require("dotenv"));
 dotenv_1.default.config();
@@ -161,34 +161,10 @@ const getConversation = (phone) => __awaiter(void 0, void 0, void 0, function* (
     return null;
 });
 exports.getConversation = getConversation;
-const sendOrderConfirmationViaWhatsapp = (phone, orderId, amount) => __awaiter(void 0, void 0, void 0, function* () {
-    const cleanPhone = phone.replace(/\D/g, "");
-    const formattedPhone = cleanPhone.startsWith("91") ? cleanPhone : `91${cleanPhone}`;
-    const payload = {
-        templateName: "order_confirmation",
-        to: formattedPhone,
-        variables: {
-            body: [orderId, String(amount)]
-        }
-    };
-    try {
-        console.log(`[WhatsApp Notification] Sending order confirmation template to ${formattedPhone} for order ${orderId}...`);
-        const response = yield axios_1.default.post(MBGCARD_API_URL, payload, {
-            timeout: 10000,
-            headers: {
-                'Content-Type': 'application/json',
-                'accept': '*/*',
-                'x-api-key': MBGCARD_API_TOKEN
-            }
-        });
-        console.log("MBG Card WhatsApp Response:", response.data);
-        return response.data;
-    }
-    catch (error) {
-        console.error("Error sending WhatsApp order confirmation:", error.message);
-        console.log(`[WhatsApp Notification Fallback] Order #${orderId} confirmed for ₹${amount}.`);
-        return { status: "success", fallback: true };
-    }
+const sendOrderConfirmationViaWhatsapp = (phone, customerName, orderId, amount) => __awaiter(void 0, void 0, void 0, function* () {
+    return (0, exports.sendTemplateViaChatHub)(phone, "order_confirmation", {
+        body: [customerName, orderId, String(amount)]
+    });
 });
 exports.sendOrderConfirmationViaWhatsapp = sendOrderConfirmationViaWhatsapp;
 /**
@@ -229,3 +205,54 @@ const sendTemplateViaChatHub = (phone, templateName, variables, dynamicMedia) =>
     }
 });
 exports.sendTemplateViaChatHub = sendTemplateViaChatHub;
+const sendFeedbackRequestViaWhatsapp = (phone, customerName, orderId) => __awaiter(void 0, void 0, void 0, function* () {
+    const origin = process.env.CLIENT_URL || "https://bookmyveg.co.in";
+    const feedbackLink = `${origin}/feedback?orderId=${orderId}`;
+    return (0, exports.sendTemplateViaChatHub)(phone, "feedback_request", {
+        body: [customerName, feedbackLink]
+    });
+});
+exports.sendFeedbackRequestViaWhatsapp = sendFeedbackRequestViaWhatsapp;
+const sendInvoicePaidViaWhatsapp = (phone, customerName, invoiceNo, totalAmount, paymentMode, orderId) => __awaiter(void 0, void 0, void 0, function* () {
+    const origin = process.env.CLIENT_URL || "https://bookmyveg.co.in";
+    const invoicePdfLink = `${origin}/invoice/${orderId}`;
+    return (0, exports.sendTemplateViaChatHub)(phone, "bill_created", {
+        body: [customerName, invoiceNo, String(totalAmount), paymentMode, invoicePdfLink]
+    });
+});
+exports.sendInvoicePaidViaWhatsapp = sendInvoicePaidViaWhatsapp;
+const sendInvoiceDueViaWhatsapp = (phone, customerName, invoiceNo, totalAmount, paymentMode, dueAmount, userId, orderId) => __awaiter(void 0, void 0, void 0, function* () {
+    const origin = process.env.CLIENT_URL || "https://bookmyveg.co.in";
+    const invoicePdfLink = `${origin}/invoice/${orderId}`;
+    const publicPayLink = `${origin}/pay?userid=${userId}&number=${phone}&billid=${orderId}`;
+    return (0, exports.sendTemplateViaChatHub)(phone, "bill_created_due", {
+        body: [customerName, invoiceNo, String(totalAmount), String(dueAmount), invoicePdfLink, publicPayLink]
+    });
+});
+exports.sendInvoiceDueViaWhatsapp = sendInvoiceDueViaWhatsapp;
+const sendPaymentReminderViaWhatsapp = (phone, customerName, dueAmount, invoiceNo, userId, orderId) => __awaiter(void 0, void 0, void 0, function* () {
+    const origin = process.env.CLIENT_URL || "https://bookmyveg.co.in";
+    const publicPayLink = `${origin}/pay?userid=${userId}&number=${phone}&billid=${orderId}`;
+    return (0, exports.sendTemplateViaChatHub)(phone, "due_payment_reminder", {
+        body: [customerName, String(dueAmount), invoiceNo, publicPayLink]
+    });
+});
+exports.sendPaymentReminderViaWhatsapp = sendPaymentReminderViaWhatsapp;
+const sendPaymentReceivedViaWhatsapp = (phone, customerName, invoiceNo, paidAmount, paymentMode) => __awaiter(void 0, void 0, void 0, function* () {
+    return (0, exports.sendTemplateViaChatHub)(phone, "payment_received", {
+        body: [customerName, invoiceNo, String(paidAmount), paymentMode]
+    });
+});
+exports.sendPaymentReceivedViaWhatsapp = sendPaymentReceivedViaWhatsapp;
+const sendOrderStatusUpdateViaWhatsapp = (phone, customerName, orderId, statusName) => __awaiter(void 0, void 0, void 0, function* () {
+    return (0, exports.sendTemplateViaChatHub)(phone, "order_status_update", {
+        body: [statusName, orderId, customerName]
+    });
+});
+exports.sendOrderStatusUpdateViaWhatsapp = sendOrderStatusUpdateViaWhatsapp;
+const sendRegistrationThankYouViaWhatsapp = (phone, customerName) => __awaiter(void 0, void 0, void 0, function* () {
+    return (0, exports.sendTemplateViaChatHub)(phone, "registration_thank_you", {
+        body: [customerName]
+    });
+});
+exports.sendRegistrationThankYouViaWhatsapp = sendRegistrationThankYouViaWhatsapp;

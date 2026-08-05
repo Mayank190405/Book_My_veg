@@ -56,6 +56,7 @@ const socketHandler_1 = require("./sockets/socketHandler");
 const logger_1 = __importDefault(require("./utils/logger"));
 const searchService_1 = require("./services/searchService");
 const metricsFlushWorker_1 = require("./services/metricsFlushWorker");
+const paymentReminderWorker_1 = require("./services/paymentReminderWorker");
 // Bootstrap auto-cancel queue worker (registers Bull processor)
 require("./queues/autoCancelQueue");
 const redis_adapter_1 = require("@socket.io/redis-adapter");
@@ -155,6 +156,8 @@ server.listen(PORT, () => __awaiter(void 0, void 0, void 0, function* () {
     logger_1.default.info(`Server started on port ${PORT}`, { env: process.env.NODE_ENV });
     // Start background metrics flush daemon
     (0, metricsFlushWorker_1.startMetricsFlushWorker)();
+    // Start background unpaid invoice reminders and feedback dispatch
+    (0, paymentReminderWorker_1.startPaymentReminderWorker)();
     // Initialize Search Index Settings
     try {
         yield searchService_1.SearchService.getInstance().init();
