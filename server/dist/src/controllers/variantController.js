@@ -156,15 +156,17 @@ const createVariant = (req, res) => __awaiter(void 0, void 0, void 0, function* 
                     }
                 }
             });
-            // Seed POS pricing record for this variant
-            yield tx.pricing.create({
-                data: {
-                    productId,
-                    variantId: variant.id,
-                    channel: "POS",
-                    price: numericPrice
-                }
-            });
+            // Seed pricing records for this variant (both POS and WEB)
+            for (const ch of ['POS', 'WEB']) {
+                yield tx.pricing.create({
+                    data: {
+                        productId,
+                        variantId: variant.id,
+                        channel: ch,
+                        price: numericPrice
+                    }
+                });
+            }
             return variant;
         }));
         logger_1.default.info(`[VariantController] Variant created: ${newVariant.id} (${newVariant.name}) for product ${productId}`);
@@ -223,24 +225,33 @@ const updateVariant = (req, res) => __awaiter(void 0, void 0, void 0, function* 
                     }
                 }
             });
-            // Update POS pricing record if price was updated
+            // Update pricing records for both POS and WEB channels
             if (updateData.price !== undefined) {
-                yield tx.pricing.upsert({
-                    where: {
-                        productId_variantId_channel: {
+                for (const ch of ['POS', 'WEB']) {
+                    const existingPricing = yield tx.pricing.findFirst({
+                        where: {
                             productId: variant.productId,
                             variantId: variant.id,
-                            channel: "POS"
+                            channel: ch
                         }
-                    },
-                    update: { price: updateData.price },
-                    create: {
-                        productId: variant.productId,
-                        variantId: variant.id,
-                        channel: "POS",
-                        price: updateData.price
+                    });
+                    if (existingPricing) {
+                        yield tx.pricing.update({
+                            where: { id: existingPricing.id },
+                            data: { price: updateData.price }
+                        });
                     }
-                });
+                    else {
+                        yield tx.pricing.create({
+                            data: {
+                                productId: variant.productId,
+                                variantId: variant.id,
+                                channel: ch,
+                                price: updateData.price
+                            }
+                        });
+                    }
+                }
             }
             return variant;
         }));

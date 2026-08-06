@@ -12,7 +12,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.settleAccountBalance = exports.collectDuePayment = exports.getStoreConfig = exports.cancelPOSOrder = exports.getCustomerHistory = exports.getStoreProducts = exports.processPOSOrder = exports.createOrUpdateCustomer = exports.searchCustomer = void 0;
+exports.settleAccountBalance = exports.collectDuePayment = exports.getStoreConfig = exports.cancelPOSOrder = exports.getCustomerHistory = exports.getStoreProducts = exports.processPOSOrder = exports.createOrUpdateCustomer = exports.getWebOrders = exports.searchCustomer = void 0;
 const prisma_1 = __importDefault(require("../config/prisma"));
 const errors_1 = require("../utils/errors");
 const client_1 = require("@prisma/client");
@@ -53,16 +53,53 @@ const searchCustomer = (req, res, next) => __awaiter(void 0, void 0, void 0, fun
     }
 });
 exports.searchCustomer = searchCustomer;
+// ─── Web Orders for POS ───────────────────────────────────────────────────────
+const getWebOrders = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const orders = yield prisma_1.default.order.findMany({
+            where: {
+                channel: client_1.Channel.WEB,
+                status: { in: ["PENDING", "CONFIRMED"] },
+            },
+            include: {
+                user: { select: { id: true, name: true, phone: true } },
+                items: { include: { product: { select: { name: true } } } },
+            },
+            orderBy: { createdAt: "desc" },
+            take: 50,
+        });
+        // Map to a shape the POS UI expects
+        const mapped = orders.map(o => {
+            var _a, _b;
+            return ({
+                id: o.id,
+                customerName: ((_a = o.user) === null || _a === void 0 ? void 0 : _a.name) || "Walk-In",
+                customerPhone: ((_b = o.user) === null || _b === void 0 ? void 0 : _b.phone) || "",
+                items: o.items,
+                totalAmount: o.totalAmount,
+                status: o.status,
+                createdAt: o.createdAt,
+                user: o.user,
+            });
+        });
+        res.json(mapped);
+    }
+    catch (error) {
+        next(error);
+    }
+});
+exports.getWebOrders = getWebOrders;
 const createOrUpdateCustomer = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     var _a, _b;
     const { id, name, phone, email, address } = req.body;
+    // Treat empty email as null to avoid unique constraint violations
+    const sanitizedEmail = email && email.trim() !== "" ? email.trim() : null;
     try {
         if (id) {
             const customer = yield prisma_1.default.user.update({
                 where: { id },
                 data: Object.assign({ name,
-                    phone,
-                    email }, (address && {
+                    phone, email: sanitizedEmail }, (address && {
                     addresses: {
                         upsert: {
                             where: { id: ((_a = (yield prisma_1.default.address.findFirst({ where: { userId: id, isDefault: true } }))) === null || _a === void 0 ? void 0 : _a.id) || 'new-address-id' },
@@ -84,8 +121,7 @@ const createOrUpdateCustomer = (req, res, next) => __awaiter(void 0, void 0, voi
                 // Update the existing customer instead
                 const customer = yield prisma_1.default.user.update({
                     where: { id: existingCustomer.id },
-                    data: Object.assign({ name,
-                        email }, (address && {
+                    data: Object.assign({ name, email: sanitizedEmail }, (address && {
                         addresses: {
                             upsert: {
                                 where: { id: ((_b = (yield prisma_1.default.address.findFirst({ where: { userId: existingCustomer.id, isDefault: true } }))) === null || _b === void 0 ? void 0 : _b.id) || 'new-address-id' },
@@ -102,8 +138,7 @@ const createOrUpdateCustomer = (req, res, next) => __awaiter(void 0, void 0, voi
                 // New Customer
                 const customer = yield prisma_1.default.user.create({
                     data: Object.assign({ name,
-                        phone,
-                        email, role: "USER", password: "POS_AUTO_GENERATED_" + Math.random().toString(36).slice(-8) }, (address && {
+                        phone, email: sanitizedEmail, role: "USER", password: "POS_AUTO_GENERATED_" + Math.random().toString(36).slice(-8) }, (address && {
                         addresses: {
                             create: {
                                 fullAddress: address,
@@ -447,15 +482,22 @@ const getStoreProducts = (req, res, next) => __awaiter(void 0, void 0, void 0, f
                 slug: true,
                 description: true,
                 images: true,
+                basePrice: true,
                 weightUnit: true,
                 categoryId: true,
                 inventory: { where: { locationId } },
                 variants: {
-                    include: {
-                        pricing: { where: { channel: client_1.Channel.POS, isActive: true } }
+                    select: {
+                        id: true,
+                        name: true,
+                        price: true,
+                        weight: true,
+                        weightUnit: true,
+                        isActive: true,
+                        pricing: { where: { channel: 'POS', isActive: true } }
                     }
                 },
-                pricing: { where: { channel: client_1.Channel.POS, isActive: true } }
+                pricing: { where: { channel: 'POS', isActive: true } }
             }
         });
         res.json(products);

@@ -536,10 +536,10 @@ export const getStoreProducts = async (req: AuthenticatedRequest, res: Response,
                         weight: true,
                         weightUnit: true,
                         isActive: true,
-                        pricing: { where: { isActive: true } }
+                        pricing: { where: { channel: 'POS', isActive: true } }
                     }
                 },
-                pricing: { where: { isActive: true } }
+                pricing: { where: { channel: 'POS', isActive: true } }
             }
         });
         res.json(products);

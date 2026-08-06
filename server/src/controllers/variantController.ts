@@ -170,15 +170,17 @@ export const createVariant = async (req: AuthenticatedRequest, res: Response) =>
                 }
             });
 
-            // Seed POS pricing record for this variant
-            await tx.pricing.create({
-                data: {
-                    productId,
-                    variantId: variant.id,
-                    channel: "POS",
-                    price: numericPrice
-                }
-            });
+            // Seed pricing records for this variant (both POS and WEB)
+            for (const ch of ['POS', 'WEB'] as const) {
+                await tx.pricing.create({
+                    data: {
+                        productId,
+                        variantId: variant.id,
+                        channel: ch,
+                        price: numericPrice
+                    }
+                });
+            }
 
             return variant;
         });
@@ -248,24 +250,32 @@ export const updateVariant = async (req: AuthenticatedRequest, res: Response) =>
                 }
             });
 
-            // Update POS pricing record if price was updated
+            // Update pricing records for both POS and WEB channels
             if (updateData.price !== undefined) {
-                await tx.pricing.upsert({
-                    where: {
-                        productId_variantId_channel: {
+                for (const ch of ['POS', 'WEB'] as const) {
+                    const existingPricing = await tx.pricing.findFirst({
+                        where: {
                             productId: variant.productId,
                             variantId: variant.id,
-                            channel: "POS"
+                            channel: ch
                         }
-                    },
-                    update: { price: updateData.price },
-                    create: {
-                        productId: variant.productId,
-                        variantId: variant.id,
-                        channel: "POS",
-                        price: updateData.price
+                    });
+                    if (existingPricing) {
+                        await tx.pricing.update({
+                            where: { id: existingPricing.id },
+                            data: { price: updateData.price }
+                        });
+                    } else {
+                        await tx.pricing.create({
+                            data: {
+                                productId: variant.productId,
+                                variantId: variant.id,
+                                channel: ch,
+                                price: updateData.price
+                            }
+                        });
                     }
-                });
+                }
             }
 
             return variant;

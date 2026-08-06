@@ -30,7 +30,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.uploadProductImage = exports.bulkImportProducts = exports.getProductsAdmin = exports.trackTrendingOnOrder = exports.toggleProductStatus = exports.getBuyAgain = exports.checkServiceability = exports.getSimilarProducts = exports.getFlashDeals = exports.getTrendingProducts = exports.deleteProduct = exports.updateProduct = exports.createProduct = exports.getProductById = exports.getProducts = void 0;
+exports.syncAllProductPricing = exports.uploadProductImage = exports.bulkImportProducts = exports.getProductsAdmin = exports.trackTrendingOnOrder = exports.toggleProductStatus = exports.getBuyAgain = exports.checkServiceability = exports.getSimilarProducts = exports.getFlashDeals = exports.getTrendingProducts = exports.deleteProduct = exports.updateProduct = exports.createProduct = exports.getProductById = exports.getProducts = void 0;
 const prisma_1 = __importDefault(require("../config/prisma"));
 const client_1 = require("@prisma/client");
 const redis_1 = __importDefault(require("../config/redis"));
@@ -200,16 +200,18 @@ const createProduct = (req, res) => __awaiter(void 0, void 0, void 0, function* 
                 var _a;
                 const originalVariant = variants[idx];
                 const qty = parseInt(originalVariant.quantity) || 0;
-                // 1. Create default POS pricing for this variant
-                yield prisma_1.default.pricing.create({
-                    data: {
-                        productId: product.id,
-                        variantId: v.id,
-                        channel: 'POS',
-                        price: new client_1.Prisma.Decimal((_a = originalVariant === null || originalVariant === void 0 ? void 0 : originalVariant.price) !== null && _a !== void 0 ? _a : 0),
-                        isActive: true
-                    }
-                });
+                // 1. Create default pricing for this variant (both POS and WEB)
+                for (const ch of ['POS', 'WEB']) {
+                    yield prisma_1.default.pricing.create({
+                        data: {
+                            productId: product.id,
+                            variantId: v.id,
+                            channel: ch,
+                            price: new client_1.Prisma.Decimal((_a = originalVariant === null || originalVariant === void 0 ? void 0 : originalVariant.price) !== null && _a !== void 0 ? _a : 0),
+                            isActive: true
+                        }
+                    });
+                }
                 // 2. Handle inventory if primaryLocation is set
                 if (primaryLocation && qty > 0) {
                     yield prisma_1.default.inventory.create({
@@ -259,15 +261,17 @@ const createProduct = (req, res) => __awaiter(void 0, void 0, void 0, function* 
                         receivedDate: new Date()
                     }
                 });
-                // Create Base Pricing for Channel.POS if no variants
-                yield prisma_1.default.pricing.create({
-                    data: {
-                        productId: product.id,
-                        channel: 'POS',
-                        price: new client_1.Prisma.Decimal(basePrice || 0),
-                        isActive: true
-                    }
-                });
+                // Create Base Pricing for both POS and WEB if no variants
+                for (const ch of ['POS', 'WEB']) {
+                    yield prisma_1.default.pricing.create({
+                        data: {
+                            productId: product.id,
+                            channel: ch,
+                            price: new client_1.Prisma.Decimal(basePrice || 0),
+                            isActive: true
+                        }
+                    });
+                }
             }
         }
         yield (0, cacheUtils_1.invalidateProductCache)();
@@ -301,54 +305,56 @@ const updateProduct = (req, res) => __awaiter(void 0, void 0, void 0, function* 
                     } : undefined }),
                 include: { variants: true }
             });
-            // Sync POS Pricing for all variants
+            // Sync Pricing across all channels for all variants
             if (p.variants && p.variants.length > 0) {
                 for (const [idx, v] of p.variants.entries()) {
                     const originalVariant = variants ? variants[idx] : null;
                     const priceVal = originalVariant ? originalVariant.price : v.price;
-                    const existingPricing = yield tx.pricing.findFirst({
-                        where: { variantId: v.id, channel: 'POS' }
+                    // Update existing pricing records for this variant
+                    yield tx.pricing.updateMany({
+                        where: { variantId: v.id },
+                        data: { price: new client_1.Prisma.Decimal(priceVal || 0) }
                     });
-                    if (existingPricing) {
-                        yield tx.pricing.update({
-                            where: { id: existingPricing.id },
-                            data: { price: new client_1.Prisma.Decimal(priceVal || 0) }
+                    // Ensure both POS and WEB channels exist
+                    for (const ch of ['POS', 'WEB']) {
+                        const exists = yield tx.pricing.findFirst({
+                            where: { variantId: v.id, channel: ch }
                         });
-                    }
-                    else {
-                        yield tx.pricing.create({
-                            data: {
-                                productId: p.id,
-                                variantId: v.id,
-                                channel: 'POS',
-                                price: new client_1.Prisma.Decimal(priceVal || 0),
-                                isActive: true
-                            }
-                        });
+                        if (!exists) {
+                            yield tx.pricing.create({
+                                data: {
+                                    productId: p.id,
+                                    variantId: v.id,
+                                    channel: ch,
+                                    price: new client_1.Prisma.Decimal(priceVal || 0),
+                                    isActive: true
+                                }
+                            });
+                        }
                     }
                 }
             }
             else {
                 // Base product pricing sync if no variants
-                const existingPricing = yield tx.pricing.findFirst({
-                    where: { productId: p.id, variantId: null, channel: 'POS' }
-                });
                 const priceVal = productInfo.basePrice || p.basePrice;
-                if (existingPricing) {
-                    yield tx.pricing.update({
-                        where: { id: existingPricing.id },
-                        data: { price: new client_1.Prisma.Decimal(priceVal || 0) }
+                yield tx.pricing.updateMany({
+                    where: { productId: p.id, variantId: null },
+                    data: { price: new client_1.Prisma.Decimal(priceVal || 0) }
+                });
+                for (const ch of ['POS', 'WEB']) {
+                    const exists = yield tx.pricing.findFirst({
+                        where: { productId: p.id, variantId: null, channel: ch }
                     });
-                }
-                else {
-                    yield tx.pricing.create({
-                        data: {
-                            productId: p.id,
-                            channel: 'POS',
-                            price: new client_1.Prisma.Decimal(priceVal || 0),
-                            isActive: true
-                        }
-                    });
+                    if (!exists) {
+                        yield tx.pricing.create({
+                            data: {
+                                productId: p.id,
+                                channel: ch,
+                                price: new client_1.Prisma.Decimal(priceVal || 0),
+                                isActive: true
+                            }
+                        });
+                    }
                 }
             }
             return p;
@@ -752,30 +758,32 @@ const bulkImportProducts = (req, res) => __awaiter(void 0, void 0, void 0, funct
                             },
                             include: { variants: true }
                         });
-                        // Sync POS Pricing for all variants
+                        // Sync Pricing for all variants across both POS and WEB channels
                         if (updatedProduct.variants && updatedProduct.variants.length > 0) {
                             for (const [idx, v] of updatedProduct.variants.entries()) {
                                 const originalVariant = productData.variants[idx];
                                 const priceVal = originalVariant ? originalVariant.price : v.price;
-                                const existingPricing = yield tx.pricing.findFirst({
-                                    where: { variantId: v.id, channel: 'POS' }
-                                });
-                                if (existingPricing) {
-                                    yield tx.pricing.update({
-                                        where: { id: existingPricing.id },
-                                        data: { price: new client_1.Prisma.Decimal(priceVal) }
+                                for (const ch of ['POS', 'WEB']) {
+                                    const existingPricing = yield tx.pricing.findFirst({
+                                        where: { variantId: v.id, channel: ch }
                                     });
-                                }
-                                else {
-                                    yield tx.pricing.create({
-                                        data: {
-                                            productId: updatedProduct.id,
-                                            variantId: v.id,
-                                            channel: 'POS',
-                                            price: new client_1.Prisma.Decimal(priceVal),
-                                            isActive: true
-                                        }
-                                    });
+                                    if (existingPricing) {
+                                        yield tx.pricing.update({
+                                            where: { id: existingPricing.id },
+                                            data: { price: new client_1.Prisma.Decimal(priceVal) }
+                                        });
+                                    }
+                                    else {
+                                        yield tx.pricing.create({
+                                            data: {
+                                                productId: updatedProduct.id,
+                                                variantId: v.id,
+                                                channel: ch,
+                                                price: new client_1.Prisma.Decimal(priceVal),
+                                                isActive: true
+                                            }
+                                        });
+                                    }
                                 }
                             }
                         }
@@ -803,20 +811,22 @@ const bulkImportProducts = (req, res) => __awaiter(void 0, void 0, void 0, funct
                             },
                             include: { variants: true }
                         });
-                        // Handle Pricing and Inventory for new variants
+                        // Handle Pricing and Inventory for new variants (both POS and WEB)
                         if (newProduct.variants && newProduct.variants.length > 0) {
                             for (const [idx, v] of newProduct.variants.entries()) {
                                 const originalVariant = productData.variants[idx];
                                 const qty = originalVariant.quantity || 0;
-                                yield tx.pricing.create({
-                                    data: {
-                                        productId: newProduct.id,
-                                        variantId: v.id,
-                                        channel: 'POS',
-                                        price: new client_1.Prisma.Decimal(originalVariant.price),
-                                        isActive: true
-                                    }
-                                });
+                                for (const ch of ['POS', 'WEB']) {
+                                    yield tx.pricing.create({
+                                        data: {
+                                            productId: newProduct.id,
+                                            variantId: v.id,
+                                            channel: ch,
+                                            price: new client_1.Prisma.Decimal(originalVariant.price),
+                                            isActive: true
+                                        }
+                                    });
+                                }
                                 if (primaryLocation && qty > 0) {
                                     yield tx.inventory.create({
                                         data: {
@@ -971,7 +981,68 @@ const uploadProductImage = (req, res) => __awaiter(void 0, void 0, void 0, funct
     }
     catch (error) {
         console.error("Error saving uploaded image:", error);
-        res.status(500).json({ message: "Error saving uploaded image to file storage" });
+        res.status(500).json({ message: "Failed to upload image" });
     }
 });
 exports.uploadProductImage = uploadProductImage;
+const syncAllProductPricing = () => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const products = yield prisma_1.default.product.findMany({
+            include: { variants: true }
+        });
+        for (const p of products) {
+            if (p.variants && p.variants.length > 0) {
+                for (const v of p.variants) {
+                    const priceVal = v.price;
+                    yield prisma_1.default.pricing.updateMany({
+                        where: { variantId: v.id },
+                        data: { price: priceVal }
+                    });
+                    for (const ch of ['POS', 'WEB']) {
+                        const exists = yield prisma_1.default.pricing.findFirst({
+                            where: { variantId: v.id, channel: ch }
+                        });
+                        if (!exists) {
+                            yield prisma_1.default.pricing.create({
+                                data: {
+                                    productId: p.id,
+                                    variantId: v.id,
+                                    channel: ch,
+                                    price: priceVal,
+                                    isActive: true
+                                }
+                            });
+                        }
+                    }
+                }
+            }
+            else if (p.basePrice) {
+                const priceVal = p.basePrice;
+                yield prisma_1.default.pricing.updateMany({
+                    where: { productId: p.id, variantId: null },
+                    data: { price: priceVal }
+                });
+                for (const ch of ['POS', 'WEB']) {
+                    const exists = yield prisma_1.default.pricing.findFirst({
+                        where: { productId: p.id, variantId: null, channel: ch }
+                    });
+                    if (!exists) {
+                        yield prisma_1.default.pricing.create({
+                            data: {
+                                productId: p.id,
+                                channel: ch,
+                                price: priceVal,
+                                isActive: true
+                            }
+                        });
+                    }
+                }
+            }
+        }
+        console.log("[PricingSync] Product pricing sync complete across all channels");
+    }
+    catch (err) {
+        console.error("[PricingSync] Failed to sync product pricing across channels:", err);
+    }
+});
+exports.syncAllProductPricing = syncAllProductPricing;

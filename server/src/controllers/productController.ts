@@ -187,16 +187,18 @@ export const createProduct = async (req: Request, res: Response) => {
                 const originalVariant = variants[idx];
                 const qty = parseInt(originalVariant.quantity) || 0;
                 
-                // 1. Create default POS pricing for this variant
-                await prisma.pricing.create({
-                    data: {
-                        productId: product.id,
-                        variantId: v.id,
-                        channel: 'POS',
-                        price: new Prisma.Decimal(originalVariant?.price ?? 0),
-                        isActive: true
-                    }
-                });
+                // 1. Create default pricing for this variant (both POS and WEB)
+                for (const ch of ['POS', 'WEB'] as const) {
+                    await prisma.pricing.create({
+                        data: {
+                            productId: product.id,
+                            variantId: v.id,
+                            channel: ch,
+                            price: new Prisma.Decimal(originalVariant?.price ?? 0),
+                            isActive: true
+                        }
+                    });
+                }
 
                 // 2. Handle inventory if primaryLocation is set
                 if (primaryLocation && qty > 0) {
@@ -252,15 +254,17 @@ export const createProduct = async (req: Request, res: Response) => {
                     }
                 });
                 
-                // Create Base Pricing for Channel.POS if no variants
-                await prisma.pricing.create({
-                    data: {
-                        productId: product.id,
-                        channel: 'POS',
-                        price: new Prisma.Decimal(basePrice || 0),
-                        isActive: true
-                    }
-                });
+                // Create Base Pricing for both POS and WEB if no variants
+                for (const ch of ['POS', 'WEB'] as const) {
+                    await prisma.pricing.create({
+                        data: {
+                            productId: product.id,
+                            channel: ch,
+                            price: new Prisma.Decimal(basePrice || 0),
+                            isActive: true
+                        }
+                    });
+                }
             }
         }
 
@@ -770,30 +774,32 @@ export const bulkImportProducts = async (req: Request, res: Response) => {
                             include: { variants: true }
                         });
 
-                        // Sync POS Pricing for all variants
+                        // Sync Pricing for all variants across both POS and WEB channels
                         if (updatedProduct.variants && updatedProduct.variants.length > 0) {
                             for (const [idx, v] of updatedProduct.variants.entries()) {
                                 const originalVariant = productData.variants[idx];
                                 const priceVal = originalVariant ? originalVariant.price : v.price;
 
-                                const existingPricing = await tx.pricing.findFirst({
-                                    where: { variantId: v.id, channel: 'POS' }
-                                });
-                                if (existingPricing) {
-                                    await tx.pricing.update({
-                                        where: { id: existingPricing.id },
-                                        data: { price: new Prisma.Decimal(priceVal) }
+                                for (const ch of ['POS', 'WEB'] as const) {
+                                    const existingPricing = await tx.pricing.findFirst({
+                                        where: { variantId: v.id, channel: ch }
                                     });
-                                } else {
-                                    await tx.pricing.create({
-                                        data: {
-                                            productId: updatedProduct.id,
-                                            variantId: v.id,
-                                            channel: 'POS',
-                                            price: new Prisma.Decimal(priceVal),
-                                            isActive: true
-                                        }
-                                    });
+                                    if (existingPricing) {
+                                        await tx.pricing.update({
+                                            where: { id: existingPricing.id },
+                                            data: { price: new Prisma.Decimal(priceVal) }
+                                        });
+                                    } else {
+                                        await tx.pricing.create({
+                                            data: {
+                                                productId: updatedProduct.id,
+                                                variantId: v.id,
+                                                channel: ch,
+                                                price: new Prisma.Decimal(priceVal),
+                                                isActive: true
+                                            }
+                                        });
+                                    }
                                 }
                             }
                         }
@@ -821,21 +827,23 @@ export const bulkImportProducts = async (req: Request, res: Response) => {
                             include: { variants: true }
                         });
 
-                        // Handle Pricing and Inventory for new variants
+                        // Handle Pricing and Inventory for new variants (both POS and WEB)
                         if (newProduct.variants && newProduct.variants.length > 0) {
                             for (const [idx, v] of newProduct.variants.entries()) {
                                 const originalVariant = productData.variants[idx];
                                 const qty = originalVariant.quantity || 0;
 
-                                await tx.pricing.create({
-                                    data: {
-                                        productId: newProduct.id,
-                                        variantId: v.id,
-                                        channel: 'POS',
-                                        price: new Prisma.Decimal(originalVariant.price),
-                                        isActive: true
-                                    }
-                                });
+                                for (const ch of ['POS', 'WEB'] as const) {
+                                    await tx.pricing.create({
+                                        data: {
+                                            productId: newProduct.id,
+                                            variantId: v.id,
+                                            channel: ch,
+                                            price: new Prisma.Decimal(originalVariant.price),
+                                            isActive: true
+                                        }
+                                    });
+                                }
 
                                 if (primaryLocation && qty > 0) {
                                     await tx.inventory.create({

@@ -455,14 +455,7 @@ const completeOrderPayment = (orderId, paymentDetails) => __awaiter(void 0, void
     }
     if (paymentDetails.status === "CHARGED" || paymentDetails.status === "SUCCESS") {
         yield prisma_1.default.$transaction((tx) => __awaiter(void 0, void 0, void 0, function* () {
-            const pendingCodPayment = yield tx.payment.findFirst({
-                where: { orderId: orderId, method: "COD", status: "PENDING" }
-            });
-            const newPaymentStatus = pendingCodPayment ? "PARTIAL" : "PAID";
-            yield tx.order.update({
-                where: { id: orderId },
-                data: { paymentStatus: newPaymentStatus, status: "CONFIRMED" },
-            });
+            // Record the payment first
             const pendingPayment = (yield tx.payment.findFirst({
                 where: { orderId: orderId, status: "PENDING", method: "ONLINE" }
             })) || (yield tx.payment.findFirst({
@@ -492,12 +485,33 @@ const completeOrderPayment = (orderId, paymentDetails) => __awaiter(void 0, void
                     },
                 });
             }
+            // Now recalculate total paid from ALL successful payments
+            const allPayments = yield tx.payment.findMany({
+                where: { orderId: orderId, status: "SUCCESS" }
+            });
+            const totalPaid = allPayments.reduce((sum, p) => sum + Number(p.amount), 0);
+            const orderTotal = Number(existing.totalAmount);
+            const isFull = totalPaid >= orderTotal;
+            // Determine payment status
+            const newPaymentStatus = isFull ? "COMPLETED" : "PARTIAL";
+            // Only update status to CONFIRMED if order is still in a pre-confirmed state
+            // Do NOT revert DELIVERED/SHIPPED/etc. orders back to CONFIRMED
+            const nonRevertableStatuses = ["DELIVERED", "SHIPPED", "OUT_FOR_DELIVERY", "COMPLETED"];
+            const shouldUpdateStatus = !nonRevertableStatuses.includes(existing.status);
+            yield tx.order.update({
+                where: { id: orderId },
+                data: Object.assign({ isPaid: isFull, paymentStatus: newPaymentStatus }, (shouldUpdateStatus && { status: "CONFIRMED" })),
+            });
             // Create in-app system notification for the user
+            const notifTitle = isFull ? "Payment Complete" : "Payment Received";
+            const notifBody = isFull
+                ? `Your bill #${orderId} of ₹${orderTotal} has been fully paid. Thank you!`
+                : `Payment of ₹${Number(paymentDetails.amount).toFixed(2)} received for bill #${orderId}. Remaining: ₹${(orderTotal - totalPaid).toFixed(2)}`;
             yield tx.notification.create({
                 data: {
                     userId: existing.userId,
-                    title: "Order Confirmed",
-                    body: `Your order #${orderId} of ₹${existing.totalAmount} has been successfully placed! We are preparing it for delivery.`,
+                    title: notifTitle,
+                    body: notifBody,
                     type: "ORDER",
                     isRead: false
                 }
@@ -505,8 +519,8 @@ const completeOrderPayment = (orderId, paymentDetails) => __awaiter(void 0, void
             yield tx.orderStatusHistory.create({
                 data: {
                     orderId: orderId,
-                    status: "CONFIRMED",
-                    remark: "Payment confirmed via Juspay",
+                    status: (shouldUpdateStatus ? "CONFIRMED" : existing.status),
+                    remark: `Payment of ₹${Number(paymentDetails.amount).toFixed(2)} received via ${paymentDetails.payment_method_type || "ONLINE"}${isFull ? " (Fully Paid)" : " (Partial)"}`,
                     changedBy: "SYSTEM",
                 },
             });
@@ -975,14 +989,24 @@ const getPayInfo = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
                     paymentStatus: order.paymentStatus,
                     status: order.status,
                     createdAt: order.createdAt,
+                    user: order.user ? {
+                        id: order.user.id,
+                        name: order.user.name,
+                        phone: order.user.phone,
+                        email: order.user.email
+                    } : null,
                     items: order.items.map((i) => {
-                        var _a;
-                        return ({
+                        var _a, _b;
+                        const basePrice = ((_a = i.product) === null || _a === void 0 ? void 0 : _a.basePrice) ? Number(i.product.basePrice) : Number(i.sellingPrice);
+                        const discount = Math.max(0, basePrice - Number(i.sellingPrice));
+                        return {
                             id: i.id,
-                            name: ((_a = i.product) === null || _a === void 0 ? void 0 : _a.name) || "Item",
-                            quantity: i.quantity,
-                            sellingPrice: Number(i.sellingPrice)
-                        });
+                            name: ((_b = i.product) === null || _b === void 0 ? void 0 : _b.name) || "Item",
+                            quantity: Number(i.quantity),
+                            sellingPrice: Number(i.sellingPrice),
+                            basePrice: basePrice,
+                            discount: discount
+                        };
                     })
                 };
             }
@@ -1043,7 +1067,9 @@ const initiatePayDue = (req, res) => __awaiter(void 0, void 0, void 0, function*
         const effectiveUserId = (customer === null || customer === void 0 ? void 0 : customer.id) || userId || "ANONYMOUS";
         const customerName = (customer === null || customer === void 0 ? void 0 : customer.name) || "Customer";
         const customerPhone = (customer === null || customer === void 0 ? void 0 : customer.phone) || phone || "9999999999";
-        const customerEmail = (customer === null || customer === void 0 ? void 0 : customer.email) || "customer@example.com";
+        const rawEmail = ((customer === null || customer === void 0 ? void 0 : customer.email) || "").trim();
+        const isValidEmail = rawEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail);
+        const customerEmail = isValidEmail ? rawEmail : `pay.${(customerPhone || "0000000000").replace(/\D/g, "").slice(-10)}@bookmyveg.co.in`;
         // Easebuzz requires a unique txnid for every initiation attempt.
         // Always generate a unique one — never reuse order.id directly since it may
         // have been consumed by a previous (possibly failed) Easebuzz transaction.

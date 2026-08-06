@@ -165,4 +165,12 @@ server.listen(PORT, () => __awaiter(void 0, void 0, void 0, function* () {
     catch (e) {
         logger_1.default.error("Search Service Init Failed", e);
     }
+    // Sync product pricing across all channels
+    try {
+        const { syncAllProductPricing } = require("./controllers/productController");
+        yield syncAllProductPricing();
+    }
+    catch (e) {
+        logger_1.default.error("Product pricing sync failed", e);
+    }
 }));
