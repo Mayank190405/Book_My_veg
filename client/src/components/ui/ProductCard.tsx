@@ -53,7 +53,14 @@ export default function ProductCard({ id, name, images, basePrice, weight, weigh
     const hasMultipleVariants = variants && variants.length > 1;
     const currentVariant = hasVariants ? variants[activeVariantIndex] : null;
 
-    const currentPrice = currentVariant ? Number(currentVariant.price) : Number(basePrice);
+    const activePricing = pricing?.find((pr: any) => pr.isActive)?.price;
+    const variantPricing = (currentVariant as any)?.pricing?.find((pr: any) => pr.isActive)?.price;
+
+    const currentPrice = Number(
+        variantPricing ??
+        activePricing ??
+        (currentVariant ? Number(currentVariant.price) : Number(basePrice))
+    );
     const currentWeight = currentVariant 
         ? `${currentVariant.weight} ${currentVariant.weightUnit}` 
         : (weight ? `${weight} ${weightUnit || ''}` : weightUnit);

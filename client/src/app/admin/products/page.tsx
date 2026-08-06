@@ -660,7 +660,7 @@ export default function AdminProducts() {
                                         <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5 leading-none">Catalog Rate</p>
                                         <div className="flex items-baseline gap-1">
                                             <span className="text-2xl font-black text-slate-900 leading-none tracking-tighter">
-                                                ₹{product.variants?.[0]?.price || product.price || "N/A"}
+                                                ₹{product.variants?.[0]?.pricing?.[0]?.price || product.variants?.[0]?.price || product.pricing?.[0]?.price || product.basePrice || product.price || "N/A"}
                                             </span>
                                             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
                                                 / {product.variants?.[0]?.weightUnit || product.weightUnit || "UNIT"}

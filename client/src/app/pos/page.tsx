@@ -312,12 +312,14 @@ export default function POSOperator() {
     };
 
     const getPrice = (p: any) => {
+        const vpPrice = p?.variants?.[0]?.pricing?.[0]?.price;
+        if (vpPrice !== undefined && vpPrice !== null && Number(vpPrice) > 0) return Number(vpPrice);
+        const prPrice = p?.pricing?.[0]?.price;
+        if (prPrice !== undefined && prPrice !== null && Number(prPrice) > 0) return Number(prPrice);
         const vPrice = p?.variants?.[0]?.price;
         if (vPrice !== undefined && vPrice !== null && Number(vPrice) > 0) return Number(vPrice);
         const bPrice = p?.basePrice;
         if (bPrice !== undefined && bPrice !== null && Number(bPrice) > 0) return Number(bPrice);
-        const prPrice = p?.pricing?.[0]?.price;
-        if (prPrice !== undefined && prPrice !== null && Number(prPrice) > 0) return Number(prPrice);
         return Number(p?.price || 0);
     };
 
