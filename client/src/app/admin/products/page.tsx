@@ -330,25 +330,35 @@ export default function AdminProducts() {
                 </div>
 
                 {/* Permitting STORE_ADMIN to initialize products if the catalog is empty, or if they have clearance */}
-                <button
-                    onClick={() => {
-                        setEditingProduct({
-                            name: "",
-                            sku: "",
-                            categoryId: "",
-                            description: "",
-                            images: [""],
-                            variants: [{ name: "Standard", weight: "1", weightUnit: "KG", price: "0", quantity: "0", threshold: "5" }],
-                            tags: []
-                        });
-                        setTagsString("");
-                        setIsProductModalOpen(true);
-                    }}
-                    className="h-12 bg-emerald-600 text-white px-8 rounded-xl flex items-center justify-center gap-3 shadow-md shadow-emerald-100 hover:bg-emerald-700 active:scale-95 transition-all font-semibold w-full md:w-auto"
-                >
-                    <Plus className="h-5 w-5" />
-                    <span>Add New Product</span>
-                </button>
+                <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+                    <button
+                        onClick={handleSyncAllPrices}
+                        disabled={submitting}
+                        className="h-12 bg-emerald-600 text-white px-6 rounded-xl flex items-center justify-center gap-2 shadow-md shadow-emerald-600/20 hover:bg-emerald-700 active:scale-95 transition-all font-bold text-xs uppercase tracking-widest disabled:opacity-50"
+                    >
+                        {submitting ? <Activity className="h-4 w-4 animate-spin" /> : <TrendingUp className="h-4 w-4" />}
+                        <span>Sync Prices</span>
+                    </button>
+                    <button
+                        onClick={() => {
+                            setEditingProduct({
+                                name: "",
+                                sku: "",
+                                categoryId: "",
+                                description: "",
+                                images: [""],
+                                variants: [{ name: "Standard", weight: "1", weightUnit: "KG", price: "0", quantity: "0", threshold: "5" }],
+                                tags: []
+                            });
+                            setTagsString("");
+                            setIsProductModalOpen(true);
+                        }}
+                        className="h-12 bg-emerald-600 text-white px-8 rounded-xl flex items-center justify-center gap-3 shadow-md shadow-emerald-100 hover:bg-emerald-700 active:scale-95 transition-all font-semibold"
+                    >
+                        <Plus className="h-5 w-5" />
+                        <span>Add New Product</span>
+                    </button>
+                </div>
             </div>
 
             {/* Search and Advanced Operations */}
@@ -397,14 +407,6 @@ export default function AdminProducts() {
                         </button>
                     </div>
                     <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
-                        <button
-                            onClick={handleSyncAllPrices}
-                            disabled={submitting}
-                            className="h-12 bg-emerald-600 text-white px-6 rounded-xl flex items-center justify-center gap-2 hover:bg-emerald-700 active:scale-95 transition-all font-bold text-xs uppercase tracking-widest disabled:opacity-50 flex-1 md:flex-none shadow-md shadow-emerald-600/20"
-                        >
-                            <TrendingUp className="h-4 w-4" />
-                            <span className="whitespace-nowrap">Sync Prices</span>
-                        </button>
                         <button
                             onClick={handleExport}
                             className="h-12 bg-white border border-slate-200 text-slate-600 px-6 rounded-xl flex items-center justify-center gap-3 hover:bg-slate-50 active:scale-95 transition-all font-bold text-xs uppercase tracking-widest flex-1 md:flex-none"
