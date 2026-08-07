@@ -30,7 +30,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.syncAllProductPricing = exports.uploadProductImage = exports.bulkImportProducts = exports.getProductsAdmin = exports.trackTrendingOnOrder = exports.toggleProductStatus = exports.getBuyAgain = exports.checkServiceability = exports.getSimilarProducts = exports.getFlashDeals = exports.getTrendingProducts = exports.deleteProduct = exports.updateProduct = exports.createProduct = exports.getProductById = exports.getProducts = void 0;
+exports.syncProductPricingHandler = exports.syncAllProductPricing = exports.uploadProductImage = exports.bulkImportProducts = exports.getProductsAdmin = exports.trackTrendingOnOrder = exports.toggleProductStatus = exports.getBuyAgain = exports.checkServiceability = exports.getSimilarProducts = exports.getFlashDeals = exports.getTrendingProducts = exports.deleteProduct = exports.updateProduct = exports.createProduct = exports.getProductById = exports.getProducts = void 0;
 const prisma_1 = __importDefault(require("../config/prisma"));
 const client_1 = require("@prisma/client");
 const redis_1 = __importDefault(require("../config/redis"));
@@ -183,11 +183,11 @@ const createProduct = (req, res) => __awaiter(void 0, void 0, void 0, function* 
                     ? new client_1.Prisma.Decimal(basePrice)
                     : undefined, category: { connect: { id: finalCategoryId } }, variants: variants ? {
                     create: variants.map((v) => ({
-                        name: v.name,
-                        price: parseFloat(v.price),
-                        weight: parseFloat(v.weight),
+                        name: v.name || "Standard",
+                        price: !isNaN(parseFloat(v.price)) ? parseFloat(v.price) : 0,
+                        weight: (v.weight !== null && v.weight !== undefined && v.weight !== "" && !isNaN(parseFloat(v.weight))) ? parseFloat(v.weight) : null,
                         weightUnit: normalizeWeightUnit(v.weightUnit),
-                        isActive: true
+                        isActive: v.isActive !== undefined ? Boolean(v.isActive) : true
                     }))
                 } : undefined }),
             include: { variants: true, category: { select: { name: true } } }
@@ -326,7 +326,7 @@ const updateProduct = (req, res) => __awaiter(void 0, void 0, void 0, function* 
                                     productId: p.id,
                                     variantId: v.id,
                                     channel: ch,
-                                    price: new client_1.Prisma.Decimal(priceVal || 0),
+                                    price: new client_1.Prisma.Decimal(priceVal),
                                     isActive: true
                                 }
                             });
@@ -336,21 +336,23 @@ const updateProduct = (req, res) => __awaiter(void 0, void 0, void 0, function* 
             }
             else {
                 // Base product pricing sync if no variants
-                const priceVal = productInfo.basePrice || p.basePrice;
-                yield tx.pricing.updateMany({
-                    where: { productId: p.id, variantId: null },
-                    data: { price: new client_1.Prisma.Decimal(priceVal || 0) }
-                });
+                const priceVal = productInfo.basePrice !== undefined ? parseFloat(productInfo.basePrice) : Number(p.basePrice || 0);
                 for (const ch of ['POS', 'WEB']) {
-                    const exists = yield tx.pricing.findFirst({
+                    const existing = yield tx.pricing.findFirst({
                         where: { productId: p.id, variantId: null, channel: ch }
                     });
-                    if (!exists) {
+                    if (existing) {
+                        yield tx.pricing.update({
+                            where: { id: existing.id },
+                            data: { price: new client_1.Prisma.Decimal(priceVal), isActive: true }
+                        });
+                    }
+                    else {
                         yield tx.pricing.create({
                             data: {
                                 productId: p.id,
                                 channel: ch,
-                                price: new client_1.Prisma.Decimal(priceVal || 0),
+                                price: new client_1.Prisma.Decimal(priceVal),
                                 isActive: true
                             }
                         });
@@ -994,15 +996,17 @@ const syncAllProductPricing = () => __awaiter(void 0, void 0, void 0, function* 
             if (p.variants && p.variants.length > 0) {
                 for (const v of p.variants) {
                     const priceVal = v.price;
-                    yield prisma_1.default.pricing.updateMany({
-                        where: { variantId: v.id },
-                        data: { price: priceVal }
-                    });
                     for (const ch of ['POS', 'WEB']) {
-                        const exists = yield prisma_1.default.pricing.findFirst({
+                        const existing = yield prisma_1.default.pricing.findFirst({
                             where: { variantId: v.id, channel: ch }
                         });
-                        if (!exists) {
+                        if (existing) {
+                            yield prisma_1.default.pricing.update({
+                                where: { id: existing.id },
+                                data: { price: priceVal, isActive: true }
+                            });
+                        }
+                        else {
                             yield prisma_1.default.pricing.create({
                                 data: {
                                     productId: p.id,
@@ -1018,15 +1022,17 @@ const syncAllProductPricing = () => __awaiter(void 0, void 0, void 0, function* 
             }
             else if (p.basePrice) {
                 const priceVal = p.basePrice;
-                yield prisma_1.default.pricing.updateMany({
-                    where: { productId: p.id, variantId: null },
-                    data: { price: priceVal }
-                });
                 for (const ch of ['POS', 'WEB']) {
-                    const exists = yield prisma_1.default.pricing.findFirst({
+                    const existing = yield prisma_1.default.pricing.findFirst({
                         where: { productId: p.id, variantId: null, channel: ch }
                     });
-                    if (!exists) {
+                    if (existing) {
+                        yield prisma_1.default.pricing.update({
+                            where: { id: existing.id },
+                            data: { price: priceVal, isActive: true }
+                        });
+                    }
+                    else {
                         yield prisma_1.default.pricing.create({
                             data: {
                                 productId: p.id,
@@ -1039,6 +1045,7 @@ const syncAllProductPricing = () => __awaiter(void 0, void 0, void 0, function* 
                 }
             }
         }
+        yield (0, cacheUtils_1.invalidateProductCache)();
         console.log("[PricingSync] Product pricing sync complete across all channels");
     }
     catch (err) {
@@ -1046,3 +1053,13 @@ const syncAllProductPricing = () => __awaiter(void 0, void 0, void 0, function* 
     }
 });
 exports.syncAllProductPricing = syncAllProductPricing;
+const syncProductPricingHandler = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        yield (0, exports.syncAllProductPricing)();
+        res.json({ message: "Product pricing synchronized across all channels successfully." });
+    }
+    catch (err) {
+        res.status(500).json({ message: "Failed to synchronize product pricing.", error: err.message });
+    }
+});
+exports.syncProductPricingHandler = syncProductPricingHandler;

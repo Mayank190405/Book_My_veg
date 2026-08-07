@@ -167,11 +167,11 @@ export const createProduct = async (req: Request, res: Response) => {
                 category: { connect: { id: finalCategoryId } },
                 variants: variants ? {
                     create: variants.map((v: any) => ({
-                        name: v.name,
-                        price: parseFloat(v.price),
-                        weight: parseFloat(v.weight),
+                        name: v.name || "Standard",
+                        price: !isNaN(parseFloat(v.price)) ? parseFloat(v.price) : 0,
+                        weight: (v.weight !== null && v.weight !== undefined && v.weight !== "" && !isNaN(parseFloat(v.weight))) ? parseFloat(v.weight) : null,
                         weightUnit: normalizeWeightUnit(v.weightUnit),
-                        isActive: true
+                        isActive: v.isActive !== undefined ? Boolean(v.isActive) : true
                     }))
                 } : undefined
             },
@@ -327,7 +327,7 @@ export const updateProduct = async (req: Request, res: Response) => {
                                     productId: p.id,
                                     variantId: v.id,
                                     channel: ch,
-                                    price: new Prisma.Decimal(priceVal || 0),
+                                    price: new Prisma.Decimal(priceVal),
                                     isActive: true
                                 }
                             });
@@ -336,22 +336,22 @@ export const updateProduct = async (req: Request, res: Response) => {
                 }
             } else {
                 // Base product pricing sync if no variants
-                const priceVal = productInfo.basePrice || p.basePrice;
-                await tx.pricing.updateMany({
-                    where: { productId: p.id, variantId: null },
-                    data: { price: new Prisma.Decimal(priceVal || 0) }
-                });
-
+                const priceVal = productInfo.basePrice !== undefined ? parseFloat(productInfo.basePrice) : Number(p.basePrice || 0);
                 for (const ch of ['POS', 'WEB'] as const) {
-                    const exists = await tx.pricing.findFirst({
+                    const existing = await tx.pricing.findFirst({
                         where: { productId: p.id, variantId: null, channel: ch }
                     });
-                    if (!exists) {
+                    if (existing) {
+                        await tx.pricing.update({
+                            where: { id: existing.id },
+                            data: { price: new Prisma.Decimal(priceVal), isActive: true }
+                        });
+                    } else {
                         await tx.pricing.create({
                             data: {
                                 productId: p.id,
                                 channel: ch,
-                                price: new Prisma.Decimal(priceVal || 0),
+                                price: new Prisma.Decimal(priceVal),
                                 isActive: true
                             }
                         });
@@ -1018,15 +1018,16 @@ export const syncAllProductPricing = async () => {
             if (p.variants && p.variants.length > 0) {
                 for (const v of p.variants) {
                     const priceVal = v.price;
-                    await prisma.pricing.updateMany({
-                        where: { variantId: v.id },
-                        data: { price: priceVal }
-                    });
                     for (const ch of ['POS', 'WEB'] as const) {
-                        const exists = await prisma.pricing.findFirst({
+                        const existing = await prisma.pricing.findFirst({
                             where: { variantId: v.id, channel: ch }
                         });
-                        if (!exists) {
+                        if (existing) {
+                            await prisma.pricing.update({
+                                where: { id: existing.id },
+                                data: { price: priceVal, isActive: true }
+                            });
+                        } else {
                             await prisma.pricing.create({
                                 data: {
                                     productId: p.id,
@@ -1041,15 +1042,16 @@ export const syncAllProductPricing = async () => {
                 }
             } else if (p.basePrice) {
                 const priceVal = p.basePrice;
-                await prisma.pricing.updateMany({
-                    where: { productId: p.id, variantId: null },
-                    data: { price: priceVal }
-                });
                 for (const ch of ['POS', 'WEB'] as const) {
-                    const exists = await prisma.pricing.findFirst({
+                    const existing = await prisma.pricing.findFirst({
                         where: { productId: p.id, variantId: null, channel: ch }
                     });
-                    if (!exists) {
+                    if (existing) {
+                        await prisma.pricing.update({
+                            where: { id: existing.id },
+                            data: { price: priceVal, isActive: true }
+                        });
+                    } else {
                         await prisma.pricing.create({
                             data: {
                                 productId: p.id,
@@ -1062,8 +1064,18 @@ export const syncAllProductPricing = async () => {
                 }
             }
         }
+        await invalidateProductCache();
         console.log("[PricingSync] Product pricing sync complete across all channels");
     } catch (err) {
         console.error("[PricingSync] Failed to sync product pricing across channels:", err);
+    }
+};
+
+export const syncProductPricingHandler = async (req: Request, res: Response) => {
+    try {
+        await syncAllProductPricing();
+        res.json({ message: "Product pricing synchronized across all channels successfully." });
+    } catch (err: any) {
+        res.status(500).json({ message: "Failed to synchronize product pricing.", error: err.message });
     }
 };

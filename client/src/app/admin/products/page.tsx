@@ -105,6 +105,19 @@ export default function AdminProducts() {
         await Promise.all(dirtyProducts.map((p: any) => handleInlineSave(p)));
     };
 
+    const handleSyncAllPrices = async () => {
+        setSubmitting(true);
+        try {
+            await api.post("/products/sync-pricing");
+            toast.success("All product prices synchronized across POS and Catalogue!");
+            fetchProducts();
+        } catch (e: any) {
+            toast.error(e.response?.data?.message || "Price sync failed");
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
     const handleExport = () => {
         try {
             const exportData: any[] = [];
@@ -384,6 +397,14 @@ export default function AdminProducts() {
                         </button>
                     </div>
                     <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
+                        <button
+                            onClick={handleSyncAllPrices}
+                            disabled={submitting}
+                            className="h-12 bg-emerald-600 text-white px-6 rounded-xl flex items-center justify-center gap-2 hover:bg-emerald-700 active:scale-95 transition-all font-bold text-xs uppercase tracking-widest disabled:opacity-50 flex-1 md:flex-none shadow-md shadow-emerald-600/20"
+                        >
+                            <TrendingUp className="h-4 w-4" />
+                            <span className="whitespace-nowrap">Sync Prices</span>
+                        </button>
                         <button
                             onClick={handleExport}
                             className="h-12 bg-white border border-slate-200 text-slate-600 px-6 rounded-xl flex items-center justify-center gap-3 hover:bg-slate-50 active:scale-95 transition-all font-bold text-xs uppercase tracking-widest flex-1 md:flex-none"

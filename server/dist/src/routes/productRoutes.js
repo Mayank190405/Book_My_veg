@@ -58,6 +58,7 @@ router.get("/:id/similar", (0, validate_1.validate)(productSchemas_1.uuidParamsS
 router.get("/admin", auth_1.authenticate, (0, auth_1.authorize)(["ADMIN", "STORE_ADMIN"]), productController_1.getProductsAdmin);
 router.get("/:id", (0, validate_1.validate)(productSchemas_1.uuidParamsSchema), productController_1.getProductById);
 // ── Admin ───────────────────────────────────────────────────────────────────
+router.post("/sync-pricing", auth_1.authenticate, (0, auth_1.authorize)(["ADMIN", "STORE_ADMIN"]), productController_1.syncProductPricingHandler);
 router.post("/import", auth_1.authenticate, (0, auth_1.authorize)(["ADMIN", "STORE_ADMIN"]), handleUpload, productController_1.bulkImportProducts);
 router.post("/upload-image", auth_1.authenticate, (0, auth_1.authorize)(["ADMIN", "STORE_ADMIN"]), imageScan_1.scanImageUpload, productController_1.uploadProductImage);
 router.post("/", auth_1.authenticate, (0, auth_1.authorize)(["ADMIN", "STORE_ADMIN"]), productController_1.createProduct);

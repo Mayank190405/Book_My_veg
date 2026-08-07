@@ -20,6 +20,7 @@ import {
     toggleProductStatus,
     bulkImportProducts,
     uploadProductImage,
+    syncProductPricingHandler,
 } from "../controllers/productController";
 import { scanImageUpload } from "../middleware/imageScan";
 
@@ -74,6 +75,7 @@ router.get("/admin", authenticate, authorize(["ADMIN", "STORE_ADMIN"]), getProdu
 router.get("/:id", validate(uuidParamsSchema), getProductById);
 
 // ── Admin ───────────────────────────────────────────────────────────────────
+router.post("/sync-pricing", authenticate, authorize(["ADMIN", "STORE_ADMIN"]), syncProductPricingHandler);
 router.post("/import", authenticate, authorize(["ADMIN", "STORE_ADMIN"]), handleUpload, bulkImportProducts);
 router.post("/upload-image", authenticate, authorize(["ADMIN", "STORE_ADMIN"]), scanImageUpload, uploadProductImage);
 router.post("/", authenticate, authorize(["ADMIN", "STORE_ADMIN"]), createProduct);
