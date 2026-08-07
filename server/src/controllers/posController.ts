@@ -14,18 +14,28 @@ interface AuthenticatedRequest extends Request {
 // ─── Customer Management ──────────────────────────────────────────────────────
 
 export const searchCustomer = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
-    const { query } = req.query;
+    const rawQuery = String(req.query.query || "").trim().replace(/\\+/g, "");
+    if (!rawQuery) return res.json([]);
+
+    const cleanDigits = rawQuery.replace(/[^\d]/g, "");
+
     try {
+        const orConditions: any[] = [
+            { name: { contains: rawQuery, mode: 'insensitive' } },
+            { phone: { contains: rawQuery } },
+            { email: { contains: rawQuery, mode: 'insensitive' } }
+        ];
+
+        if (cleanDigits.length >= 3) {
+            orConditions.push({ phone: { contains: cleanDigits } });
+            orConditions.push({ phone: { contains: `+91${cleanDigits}` } });
+        }
+
         const customers = await prisma.user.findMany({
             where: {
-                role: "USER",
-                OR: [
-                    { name: { contains: query as string, mode: 'insensitive' } },
-                    { phone: { contains: query as string } },
-                    { email: { contains: query as string, mode: 'insensitive' } }
-                ]
+                OR: orConditions
             },
-            take: 10,
+            take: 20,
             select: { 
                 id: true, 
                 name: true, 
@@ -38,7 +48,18 @@ export const searchCustomer = async (req: AuthenticatedRequest, res: Response, n
                 }
             }
         });
-        res.json(customers);
+
+        const mapped = customers.map(c => ({
+            id: c.id,
+            name: c.name,
+            phone: c.phone,
+            email: c.email || "",
+            profileAddress: c.profileAddress || "",
+            address: c.addresses?.[0]?.fullAddress || c.profileAddress || "",
+            addresses: c.addresses
+        }));
+
+        res.json(mapped);
     } catch (error) {
         next(error);
     }
@@ -241,89 +262,100 @@ export const updateWebOrderStatus = async (req: AuthenticatedRequest, res: Respo
 
 export const createOrUpdateCustomer = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     const { id, name, phone, email, address } = req.body;
-    // Treat empty email as null to avoid unique constraint violations
-    const sanitizedEmail = email && email.trim() !== "" ? email.trim() : null;
+    const sanitizedEmail = email && String(email).trim() !== "" ? String(email).trim() : null;
+    const rawPhone = String(phone || "").trim();
+    const cleanDigits = rawPhone.replace(/[^\d]/g, "");
+
     try {
-        if (id) {
-            const customer = await prisma.user.update({
-                where: { id },
-                data: { 
-                    name, 
-                    phone, 
-                    email: sanitizedEmail,
-                    ...(address && {
-                        addresses: {
-                            upsert: {
-                                where: { id: (await prisma.address.findFirst({ where: { userId: id, isDefault: true } }))?.id || 'new-address-id' },
-                                update: { fullAddress: address },
-                                create: { fullAddress: address, isDefault: true }
-                            }
-                        }
-                    })
+        const existingCustomer = id 
+            ? await prisma.user.findUnique({ where: { id } })
+            : await prisma.user.findFirst({
+                where: {
+                    OR: [
+                        { phone: rawPhone },
+                        ...(cleanDigits.length >= 5 ? [
+                            { phone: cleanDigits },
+                            { phone: `+91${cleanDigits}` }
+                        ] : [])
+                    ]
+                }
+            });
+
+        let customer;
+
+        if (existingCustomer) {
+            customer = await prisma.user.update({
+                where: { id: existingCustomer.id },
+                data: {
+                    name: name || existingCustomer.name,
+                    phone: rawPhone || existingCustomer.phone,
+                    email: sanitizedEmail !== null ? sanitizedEmail : existingCustomer.email,
+                    profileAddress: address ? address : existingCustomer.profileAddress
                 },
                 include: { addresses: { where: { isDefault: true } } }
             });
-            return res.json({ message: "Customer updated", customer });
         } else {
-            // Check if customer with the same phone already exists
-            const existingCustomer = await prisma.user.findFirst({
-                where: { phone }
+            customer = await prisma.user.create({
+                data: {
+                    name: name || "Customer",
+                    phone: rawPhone,
+                    email: sanitizedEmail,
+                    role: "USER",
+                    password: "POS_AUTO_GENERATED_" + Math.random().toString(36).slice(-8),
+                    profileAddress: address || null
+                },
+                include: { addresses: { where: { isDefault: true } } }
             });
 
-            if (existingCustomer) {
-                // Update the existing customer instead
-                const customer = await prisma.user.update({
-                    where: { id: existingCustomer.id },
-                    data: {
-                        name,
-                        email: sanitizedEmail,
-                        ...(address && {
-                            addresses: {
-                                upsert: {
-                                    where: { id: (await prisma.address.findFirst({ where: { userId: existingCustomer.id, isDefault: true } }))?.id || 'new-address-id' },
-                                    update: { fullAddress: address },
-                                    create: { fullAddress: address, isDefault: true }
-                                }
-                            }
-                        })
-                    },
-                    include: { addresses: { where: { isDefault: true } } }
+            // Trigger welcome registration WhatsApp notification
+            try {
+                const { sendRegistrationThankYouViaWhatsapp } = require("../services/mbgcard");
+                sendRegistrationThankYouViaWhatsapp(customer.phone, customer.name || "Customer").catch((err: any) => {
+                    console.error("[POS] Welcome WhatsApp dispatch failure:", err);
                 });
-                return res.json({ message: "Customer updated", customer });
-            } else {
-                // New Customer
-                const customer = await prisma.user.create({
-                    data: {
-                        name,
-                        phone,
-                        email: sanitizedEmail,
-                        role: "USER",
-                        password: "POS_AUTO_GENERATED_" + Math.random().toString(36).slice(-8),
-                        ...(address && {
-                            addresses: {
-                                create: {
-                                    fullAddress: address,
-                                    isDefault: true
-                                }
-                            }
-                        })
-                    },
-                    include: { addresses: { where: { isDefault: true } } }
-                });
-
-                // Trigger welcome registration WhatsApp notification!
-                try {
-                    const { sendRegistrationThankYouViaWhatsapp } = require("../services/mbgcard");
-                    sendRegistrationThankYouViaWhatsapp(customer.phone, customer.name || "Customer").catch((err: any) => {
-                        console.error("[POS] Welcome WhatsApp dispatch failure:", err);
-                    });
-                } catch (err) {
-                    console.error("[POS] Failed to send welcome WhatsApp:", err);
-                }
-
-                return res.json({ message: "Customer created", customer });
+            } catch (err) {
+                console.error("[POS] WhatsApp service module import failed:", err);
             }
         }
+
+        // Save or update default address safely without Prisma upsert id crashes
+        if (address && String(address).trim() !== "") {
+            const existingAddress = await prisma.address.findFirst({
+                where: { userId: customer.id, isDefault: true }
+            });
+
+            if (existingAddress) {
+                await prisma.address.update({
+                    where: { id: existingAddress.id },
+                    data: { fullAddress: address }
+                });
+            } else {
+                await prisma.address.create({
+                    data: {
+                        userId: customer.id,
+                        fullAddress: address,
+                        isDefault: true,
+                        type: "HOME"
+                    }
+                });
+            }
+        }
+
+        const freshCustomer = await prisma.user.findUnique({
+            where: { id: customer.id },
+            include: { addresses: { where: { isDefault: true } } }
+        });
+
+        const mappedCustomer = {
+            id: freshCustomer?.id,
+            name: freshCustomer?.name,
+            phone: freshCustomer?.phone,
+            email: freshCustomer?.email || "",
+            address: freshCustomer?.addresses?.[0]?.fullAddress || freshCustomer?.profileAddress || address || "",
+            profileAddress: freshCustomer?.profileAddress || ""
+        };
+
+        return res.json({ message: existingCustomer ? "Customer updated" : "Customer created", customer: mappedCustomer });
     } catch (error) {
         next(error);
     }

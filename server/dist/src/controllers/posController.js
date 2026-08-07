@@ -22,18 +22,25 @@ const inventoryService_1 = require("../services/inventoryService");
 const searchService_1 = require("../services/searchService");
 // ─── Customer Management ──────────────────────────────────────────────────────
 const searchCustomer = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
-    const { query } = req.query;
+    const rawQuery = String(req.query.query || "").trim().replace(/\\+/g, "");
+    if (!rawQuery)
+        return res.json([]);
+    const cleanDigits = rawQuery.replace(/[^\d]/g, "");
     try {
+        const orConditions = [
+            { name: { contains: rawQuery, mode: 'insensitive' } },
+            { phone: { contains: rawQuery } },
+            { email: { contains: rawQuery, mode: 'insensitive' } }
+        ];
+        if (cleanDigits.length >= 3) {
+            orConditions.push({ phone: { contains: cleanDigits } });
+            orConditions.push({ phone: { contains: `+91${cleanDigits}` } });
+        }
         const customers = yield prisma_1.default.user.findMany({
             where: {
-                role: "USER",
-                OR: [
-                    { name: { contains: query, mode: 'insensitive' } },
-                    { phone: { contains: query } },
-                    { email: { contains: query, mode: 'insensitive' } }
-                ]
+                OR: orConditions
             },
-            take: 10,
+            take: 20,
             select: {
                 id: true,
                 name: true,
@@ -46,7 +53,19 @@ const searchCustomer = (req, res, next) => __awaiter(void 0, void 0, void 0, fun
                 }
             }
         });
-        res.json(customers);
+        const mapped = customers.map(c => {
+            var _a, _b;
+            return ({
+                id: c.id,
+                name: c.name,
+                phone: c.phone,
+                email: c.email || "",
+                profileAddress: c.profileAddress || "",
+                address: ((_b = (_a = c.addresses) === null || _a === void 0 ? void 0 : _a[0]) === null || _b === void 0 ? void 0 : _b.fullAddress) || c.profileAddress || "",
+                addresses: c.addresses
+            });
+        });
+        res.json(mapped);
     }
     catch (error) {
         next(error);
@@ -237,75 +256,94 @@ exports.updateWebOrderStatus = updateWebOrderStatus;
 const createOrUpdateCustomer = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     var _a, _b;
     const { id, name, phone, email, address } = req.body;
-    // Treat empty email as null to avoid unique constraint violations
-    const sanitizedEmail = email && email.trim() !== "" ? email.trim() : null;
+    const sanitizedEmail = email && String(email).trim() !== "" ? String(email).trim() : null;
+    const rawPhone = String(phone || "").trim();
+    const cleanDigits = rawPhone.replace(/[^\d]/g, "");
     try {
-        if (id) {
-            const customer = yield prisma_1.default.user.update({
-                where: { id },
-                data: Object.assign({ name,
-                    phone, email: sanitizedEmail }, (address && {
-                    addresses: {
-                        upsert: {
-                            where: { id: ((_a = (yield prisma_1.default.address.findFirst({ where: { userId: id, isDefault: true } }))) === null || _a === void 0 ? void 0 : _a.id) || 'new-address-id' },
-                            update: { fullAddress: address },
-                            create: { fullAddress: address, isDefault: true }
-                        }
-                    }
-                })),
+        const existingCustomer = id
+            ? yield prisma_1.default.user.findUnique({ where: { id } })
+            : yield prisma_1.default.user.findFirst({
+                where: {
+                    OR: [
+                        { phone: rawPhone },
+                        ...(cleanDigits.length >= 5 ? [
+                            { phone: cleanDigits },
+                            { phone: `+91${cleanDigits}` }
+                        ] : [])
+                    ]
+                }
+            });
+        let customer;
+        if (existingCustomer) {
+            customer = yield prisma_1.default.user.update({
+                where: { id: existingCustomer.id },
+                data: {
+                    name: name || existingCustomer.name,
+                    phone: rawPhone || existingCustomer.phone,
+                    email: sanitizedEmail !== null ? sanitizedEmail : existingCustomer.email,
+                    profileAddress: address ? address : existingCustomer.profileAddress
+                },
                 include: { addresses: { where: { isDefault: true } } }
             });
-            return res.json({ message: "Customer updated", customer });
         }
         else {
-            // Check if customer with the same phone already exists
-            const existingCustomer = yield prisma_1.default.user.findFirst({
-                where: { phone }
+            customer = yield prisma_1.default.user.create({
+                data: {
+                    name: name || "Customer",
+                    phone: rawPhone,
+                    email: sanitizedEmail,
+                    role: "USER",
+                    password: "POS_AUTO_GENERATED_" + Math.random().toString(36).slice(-8),
+                    profileAddress: address || null
+                },
+                include: { addresses: { where: { isDefault: true } } }
             });
-            if (existingCustomer) {
-                // Update the existing customer instead
-                const customer = yield prisma_1.default.user.update({
-                    where: { id: existingCustomer.id },
-                    data: Object.assign({ name, email: sanitizedEmail }, (address && {
-                        addresses: {
-                            upsert: {
-                                where: { id: ((_b = (yield prisma_1.default.address.findFirst({ where: { userId: existingCustomer.id, isDefault: true } }))) === null || _b === void 0 ? void 0 : _b.id) || 'new-address-id' },
-                                update: { fullAddress: address },
-                                create: { fullAddress: address, isDefault: true }
-                            }
-                        }
-                    })),
-                    include: { addresses: { where: { isDefault: true } } }
+            // Trigger welcome registration WhatsApp notification
+            try {
+                const { sendRegistrationThankYouViaWhatsapp } = require("../services/mbgcard");
+                sendRegistrationThankYouViaWhatsapp(customer.phone, customer.name || "Customer").catch((err) => {
+                    console.error("[POS] Welcome WhatsApp dispatch failure:", err);
                 });
-                return res.json({ message: "Customer updated", customer });
             }
-            else {
-                // New Customer
-                const customer = yield prisma_1.default.user.create({
-                    data: Object.assign({ name,
-                        phone, email: sanitizedEmail, role: "USER", password: "POS_AUTO_GENERATED_" + Math.random().toString(36).slice(-8) }, (address && {
-                        addresses: {
-                            create: {
-                                fullAddress: address,
-                                isDefault: true
-                            }
-                        }
-                    })),
-                    include: { addresses: { where: { isDefault: true } } }
-                });
-                // Trigger welcome registration WhatsApp notification!
-                try {
-                    const { sendRegistrationThankYouViaWhatsapp } = require("../services/mbgcard");
-                    sendRegistrationThankYouViaWhatsapp(customer.phone, customer.name || "Customer").catch((err) => {
-                        console.error("[POS] Welcome WhatsApp dispatch failure:", err);
-                    });
-                }
-                catch (err) {
-                    console.error("[POS] Failed to send welcome WhatsApp:", err);
-                }
-                return res.json({ message: "Customer created", customer });
+            catch (err) {
+                console.error("[POS] WhatsApp service module import failed:", err);
             }
         }
+        // Save or update default address safely without Prisma upsert id crashes
+        if (address && String(address).trim() !== "") {
+            const existingAddress = yield prisma_1.default.address.findFirst({
+                where: { userId: customer.id, isDefault: true }
+            });
+            if (existingAddress) {
+                yield prisma_1.default.address.update({
+                    where: { id: existingAddress.id },
+                    data: { fullAddress: address }
+                });
+            }
+            else {
+                yield prisma_1.default.address.create({
+                    data: {
+                        userId: customer.id,
+                        fullAddress: address,
+                        isDefault: true,
+                        type: "HOME"
+                    }
+                });
+            }
+        }
+        const freshCustomer = yield prisma_1.default.user.findUnique({
+            where: { id: customer.id },
+            include: { addresses: { where: { isDefault: true } } }
+        });
+        const mappedCustomer = {
+            id: freshCustomer === null || freshCustomer === void 0 ? void 0 : freshCustomer.id,
+            name: freshCustomer === null || freshCustomer === void 0 ? void 0 : freshCustomer.name,
+            phone: freshCustomer === null || freshCustomer === void 0 ? void 0 : freshCustomer.phone,
+            email: (freshCustomer === null || freshCustomer === void 0 ? void 0 : freshCustomer.email) || "",
+            address: ((_b = (_a = freshCustomer === null || freshCustomer === void 0 ? void 0 : freshCustomer.addresses) === null || _a === void 0 ? void 0 : _a[0]) === null || _b === void 0 ? void 0 : _b.fullAddress) || (freshCustomer === null || freshCustomer === void 0 ? void 0 : freshCustomer.profileAddress) || address || "",
+            profileAddress: (freshCustomer === null || freshCustomer === void 0 ? void 0 : freshCustomer.profileAddress) || ""
+        };
+        return res.json({ message: existingCustomer ? "Customer updated" : "Customer created", customer: mappedCustomer });
     }
     catch (error) {
         next(error);
