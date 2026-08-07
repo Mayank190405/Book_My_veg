@@ -94,6 +94,9 @@ export default function POSOperator() {
     const [showExpenseDialog, setShowExpenseDialog] = useState(false);
     const [showWebOrders, setShowWebOrders] = useState(false);
     const [webOrders, setWebOrders] = useState<any[]>([]);
+    const [webOrderStageFilter, setWebOrderStageFilter] = useState<string>("ALL");
+    const [selectedWebOrder, setSelectedWebOrder] = useState<any>(null);
+    const [isUpdatingWebOrderStatus, setIsUpdatingWebOrderStatus] = useState(false);
 
     // Customer form
     const [customerFormData, setCustomerFormData] = useState({ id: "", name: "", phone: "", address: "" });
@@ -1200,15 +1203,24 @@ export default function POSOperator() {
         return () => clearInterval(interval);
     }, [fetchWebOrders]);
 
-    const assignWebOrder = async (orderId: string) => {
+    const updateWebOrderStatusHandler = async (orderId: string, status: string, remark?: string) => {
+        setIsUpdatingWebOrderStatus(true);
         try {
-            await api.patch(`/orders/${orderId}`, { status: "PROCESSING", processedBy: user?.id });
-            toast.success("Order assigned to this terminal");
+            const res = await api.post(`/pos/orders/${orderId}/status`, { status, remark });
+            toast.success(res.data?.message || `Order status updated to ${status}`);
             fetchWebOrders();
-            setShowWebOrders(false);
-        } catch (error) {
-            toast.error("Failed to assign order");
+            if (selectedWebOrder?.id === orderId) {
+                setSelectedWebOrder((prev: any) => prev ? { ...prev, status } : null);
+            }
+        } catch (error: any) {
+            toast.error(error.response?.data?.message || "Failed to update order status");
+        } finally {
+            setIsUpdatingWebOrderStatus(false);
         }
+    };
+
+    const assignWebOrder = async (orderId: string) => {
+        await updateWebOrderStatusHandler(orderId, "CONFIRMED", "Accepted at POS terminal");
     };
 
     const handleLogout = async () => {
@@ -2327,56 +2339,163 @@ export default function POSOperator() {
             </Dialog>
 
             {/* ── CANCEL ORDER DIALOG ── */}
-            {/* Web Orders Dialog */}
+            {/* ── WEB ORDERS & STAGE MANAGEMENT DIALOG ── */}
             <Dialog open={showWebOrders} onOpenChange={setShowWebOrders}>
-                <DialogContent className="max-w-2xl bg-white rounded-3xl p-0 overflow-hidden border-none shadow-2xl">
-                    <div className="bg-orange-500 p-6 text-white">
+                <DialogContent className="max-w-4xl bg-white rounded-3xl p-0 overflow-hidden border-none shadow-2xl">
+                    <div className="bg-gradient-to-r from-orange-500 to-amber-600 p-6 text-white flex items-center justify-between">
                         <DialogHeader>
-                            <DialogTitle className="text-2xl font-black uppercase flex items-center gap-3">
+                            <DialogTitle className="text-2xl font-black uppercase flex items-center gap-3 text-white">
                                 <Globe className="h-7 w-7" />
-                                Pending Website Orders
+                                Website & App Orders
                             </DialogTitle>
-                            <DialogDescription className="text-orange-100 text-xs opacity-90">
-                                View and assign orders received via the mobile app and website.
+                            <DialogDescription className="text-orange-100 text-xs opacity-90 mt-1">
+                                Monitor live web orders, inspect items, and update order stages in real time.
                             </DialogDescription>
-                            <p className="text-orange-100 text-xs font-bold uppercase tracking-widest opacity-80 mt-1">
-                                {webOrders.length} orders awaiting processing
-                            </p>
                         </DialogHeader>
+                        <div className="bg-white/20 backdrop-blur-md px-4 py-2 rounded-2xl text-right">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-orange-100 block">Total Active</span>
+                            <span className="text-2xl font-black text-white leading-none">{webOrders.length}</span>
+                        </div>
+                    </div>
+
+                    {/* Filter Tabs */}
+                    <div className="flex items-center gap-2 p-4 bg-slate-100/70 border-b border-slate-200 overflow-x-auto">
+                        {["ALL", "PENDING", "CONFIRMED", "PROCESSING", "OUT_FOR_DELIVERY", "COMPLETED"].map((stage) => {
+                            const count = stage === "ALL" 
+                                ? webOrders.length 
+                                : webOrders.filter((o: any) => o.status === stage || (stage === "PROCESSING" && o.status === "PACKING")).length;
+
+                            return (
+                                <button
+                                    key={stage}
+                                    onClick={() => setWebOrderStageFilter(stage)}
+                                    className={cn(
+                                        "px-4 h-9 rounded-xl text-[10px] font-black uppercase tracking-widest whitespace-nowrap transition-all flex items-center gap-1.5",
+                                        webOrderStageFilter === stage
+                                            ? "bg-slate-900 text-white shadow-md"
+                                            : "bg-white text-slate-600 hover:bg-slate-200 border border-slate-200"
+                                    )}
+                                >
+                                    <span>{stage.replace(/_/g, " ")}</span>
+                                    <span className={cn(
+                                        "px-1.5 py-0.5 rounded-full text-[9px] font-black",
+                                        webOrderStageFilter === stage ? "bg-orange-500 text-white" : "bg-slate-200 text-slate-700"
+                                    )}>
+                                        {count}
+                                    </span>
+                                </button>
+                            );
+                        })}
                     </div>
 
                     <div className="p-6 max-h-[60vh] overflow-y-auto bg-slate-50/50">
                         {(!Array.isArray(webOrders) || webOrders.length === 0) ? (
                             <div className="py-20 text-center">
-                                <Package className="h-16 w-16 text-slate-200 mx-auto mb-4" />
-                                <p className="text-slate-400 font-black uppercase tracking-widest text-sm">All caught up!</p>
+                                <Package className="h-16 w-16 text-slate-200 mx-auto mb-4 animate-bounce" />
+                                <p className="text-slate-400 font-black uppercase tracking-widest text-sm">No website orders found</p>
                             </div>
                         ) : (
                             <div className="grid gap-4">
-                                {webOrders.map((order: any) => (
-                                    <div key={order.id} className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm hover:shadow-md transition-all flex items-center justify-between group">
-                                        <div className="flex gap-4 items-center">
-                                            <div className="h-12 w-12 bg-orange-50 rounded-xl flex items-center justify-center">
-                                                <Bell className="h-6 w-6 text-orange-500" />
-                                            </div>
-                                            <div>
-                                                <div className="flex items-center gap-2">
-                                                    <span className="text-sm font-black text-slate-900 uppercase">Order #{order.id.slice(-6)}</span>
-                                                    <span className="bg-orange-100 text-orange-600 px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-tighter">New Website</span>
+                                {webOrders
+                                    .filter((order: any) => {
+                                        if (webOrderStageFilter === "ALL") return true;
+                                        if (webOrderStageFilter === "PROCESSING") return order.status === "PROCESSING" || order.status === "PACKING";
+                                        return order.status === webOrderStageFilter;
+                                    })
+                                    .map((order: any) => {
+                                        const getStatusColor = (st: string) => {
+                                            switch (st) {
+                                                case "PENDING": return "bg-amber-100 text-amber-700 border-amber-200";
+                                                case "CONFIRMED": return "bg-blue-100 text-blue-700 border-blue-200";
+                                                case "PROCESSING":
+                                                case "PACKING": return "bg-purple-100 text-purple-700 border-purple-200";
+                                                case "OUT_FOR_DELIVERY": return "bg-orange-100 text-orange-700 border-orange-200";
+                                                case "DELIVERED":
+                                                case "COMPLETED": return "bg-emerald-100 text-emerald-700 border-emerald-200";
+                                                case "CANCELLED": return "bg-rose-100 text-rose-700 border-rose-200";
+                                                default: return "bg-slate-100 text-slate-700 border-slate-200";
+                                            }
+                                        };
+
+                                        return (
+                                            <div key={order.id} className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm hover:shadow-md transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 group">
+                                                <div className="flex gap-4 items-start md:items-center">
+                                                    <div className="h-12 w-12 bg-orange-50 rounded-2xl flex items-center justify-center border border-orange-100 shrink-0">
+                                                        <Globe className="h-6 w-6 text-orange-500" />
+                                                    </div>
+                                                    <div>
+                                                        <div className="flex items-center gap-2 flex-wrap">
+                                                            <span className="text-sm font-black text-slate-900 uppercase">Order #{order.id.slice(-6)}</span>
+                                                            <span className={cn("px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest border", getStatusColor(order.status))}>
+                                                                {order.status}
+                                                            </span>
+                                                            <span className={cn(
+                                                                "px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-widest",
+                                                                order.isPaid || order.paymentStatus === "PAID" ? "bg-emerald-50 text-emerald-600 border border-emerald-200" : "bg-amber-50 text-amber-600 border border-amber-200"
+                                                            )}>
+                                                                {order.isPaid || order.paymentStatus === "PAID" ? "PAID" : "COD / PENDING"}
+                                                            </span>
+                                                        </div>
+                                                        <p className="text-xs text-slate-700 font-bold uppercase mt-1">
+                                                            {order.customerName} ({order.customerPhone || "No Phone"}) • {order.items?.length || 0} Items
+                                                        </p>
+                                                        <p className="text-[10px] text-slate-400 font-medium truncate max-w-md mt-0.5">
+                                                            📍 {order.shippingAddress}
+                                                        </p>
+                                                    </div>
                                                 </div>
-                                                <p className="text-[11px] text-slate-500 font-bold uppercase mt-0.5">
-                                                    {order.customerName} • {order.items?.length || 0} Items • ₹{Number(order.totalAmount).toFixed(0)}
-                                                </p>
+
+                                                <div className="flex items-center gap-2 self-end md:self-center flex-wrap">
+                                                    <Button
+                                                        onClick={() => setSelectedWebOrder(order)}
+                                                        className="bg-slate-100 hover:bg-slate-200 text-slate-800 font-black text-[10px] uppercase rounded-xl h-10 px-4 transition-all"
+                                                    >
+                                                        Inspect Details
+                                                    </Button>
+
+                                                    {order.status === "PENDING" && (
+                                                        <Button
+                                                            disabled={isUpdatingWebOrderStatus}
+                                                            onClick={() => updateWebOrderStatusHandler(order.id, "CONFIRMED")}
+                                                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[10px] uppercase rounded-xl h-10 px-4 transition-all"
+                                                        >
+                                                            Accept Order
+                                                        </Button>
+                                                    )}
+
+                                                    {order.status === "CONFIRMED" && (
+                                                        <Button
+                                                            disabled={isUpdatingWebOrderStatus}
+                                                            onClick={() => updateWebOrderStatusHandler(order.id, "PROCESSING")}
+                                                            className="bg-purple-600 hover:bg-purple-700 text-white font-black text-[10px] uppercase rounded-xl h-10 px-4 transition-all"
+                                                        >
+                                                            Start Packing
+                                                        </Button>
+                                                    )}
+
+                                                    {(order.status === "PROCESSING" || order.status === "PACKING") && (
+                                                        <Button
+                                                            disabled={isUpdatingWebOrderStatus}
+                                                            onClick={() => updateWebOrderStatusHandler(order.id, "OUT_FOR_DELIVERY")}
+                                                            className="bg-orange-600 hover:bg-orange-700 text-white font-black text-[10px] uppercase rounded-xl h-10 px-4 transition-all"
+                                                        >
+                                                            Dispatched
+                                                        </Button>
+                                                    )}
+
+                                                    {order.status === "OUT_FOR_DELIVERY" && (
+                                                        <Button
+                                                            disabled={isUpdatingWebOrderStatus}
+                                                            onClick={() => updateWebOrderStatusHandler(order.id, "COMPLETED")}
+                                                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[10px] uppercase rounded-xl h-10 px-4 transition-all"
+                                                        >
+                                                            Fulfill Order
+                                                        </Button>
+                                                    )}
+                                                </div>
                                             </div>
-                                        </div>
-                                        <Button
-                                            onClick={() => assignWebOrder(order.id)}
-                                            className="bg-slate-900 text-white font-black text-[10px] uppercase rounded-xl h-10 px-6 hover:bg-orange-500 transition-all"
-                                        >
-                                            Assign to Me
-                                        </Button>
-                                    </div>
-                                ))}
+                                        );
+                                    })}
                             </div>
                         )}
                     </div>
@@ -2384,6 +2503,118 @@ export default function POSOperator() {
                     <div className="p-4 bg-white border-t border-slate-100 flex justify-end">
                         <Button variant="ghost" onClick={() => setShowWebOrders(false)} className="font-black uppercase text-xs text-slate-400">Close</Button>
                     </div>
+                </DialogContent>
+            </Dialog>
+
+            {/* ── WEB ORDER DETAILS & STAGE INSPECTOR DIALOG ── */}
+            <Dialog open={!!selectedWebOrder} onOpenChange={(open) => !open && setSelectedWebOrder(null)}>
+                <DialogContent className="max-w-3xl bg-white rounded-3xl p-0 overflow-hidden border-none shadow-2xl">
+                    {selectedWebOrder && (
+                        <>
+                            <div className="bg-slate-900 p-6 text-white flex items-center justify-between">
+                                <div>
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-orange-400">Web Order Inspector</span>
+                                    <h3 className="text-2xl font-black uppercase text-white">Order #{selectedWebOrder.id.slice(-6)}</h3>
+                                    <p className="text-xs text-slate-400 mt-1">{new Date(selectedWebOrder.createdAt).toLocaleString()}</p>
+                                </div>
+                                <div className="text-right">
+                                    <span className="text-2xl font-black text-emerald-400">₹{Number(selectedWebOrder.totalAmount).toFixed(0)}</span>
+                                    <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-widest">{selectedWebOrder.items?.length || 0} ITEMS</span>
+                                </div>
+                            </div>
+
+                            <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto bg-slate-50">
+                                {/* Order Stage Advancement Tracker */}
+                                <div className="bg-white p-5 rounded-2xl border border-slate-200 space-y-3">
+                                    <h4 className="text-xs font-black uppercase tracking-widest text-slate-400">Order Stage Pipeline</h4>
+                                    <div className="flex items-center justify-between gap-1 overflow-x-auto py-2">
+                                        {[
+                                            { stage: "PENDING", label: "1. Pending" },
+                                            { stage: "CONFIRMED", label: "2. Confirmed" },
+                                            { stage: "PROCESSING", label: "3. Packing" },
+                                            { stage: "OUT_FOR_DELIVERY", label: "4. Out for Delivery" },
+                                            { stage: "COMPLETED", label: "5. Delivered" }
+                                        ].map((step, idx) => {
+                                            const stagesOrder = ["PENDING", "CONFIRMED", "PROCESSING", "PACKING", "OUT_FOR_DELIVERY", "DELIVERED", "COMPLETED"];
+                                            const currentIdx = stagesOrder.indexOf(selectedWebOrder.status);
+                                            const stepIdx = stagesOrder.indexOf(step.stage);
+                                            const isPassed = currentIdx >= stepIdx && selectedWebOrder.status !== "CANCELLED";
+
+                                            return (
+                                                <button
+                                                    key={step.stage}
+                                                    disabled={isUpdatingWebOrderStatus}
+                                                    onClick={() => updateWebOrderStatusHandler(selectedWebOrder.id, step.stage)}
+                                                    className={cn(
+                                                        "flex-1 py-2.5 px-2 rounded-xl text-[10px] font-black uppercase tracking-tight text-center transition-all border",
+                                                        isPassed
+                                                            ? "bg-emerald-600 text-white border-emerald-600 shadow-md"
+                                                            : "bg-slate-100 text-slate-400 border-slate-200 hover:bg-slate-200 hover:text-slate-900"
+                                                    )}
+                                                >
+                                                    {step.label}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                    <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs font-bold text-slate-600">
+                                        <span>Current Stage: <strong className="text-slate-900 uppercase">{selectedWebOrder.status}</strong></span>
+                                        <button
+                                            disabled={isUpdatingWebOrderStatus}
+                                            onClick={() => {
+                                                const reason = prompt("Reason for cancelling order:");
+                                                if (reason) updateWebOrderStatusHandler(selectedWebOrder.id, "CANCELLED", reason);
+                                            }}
+                                            className="text-rose-600 hover:text-rose-700 uppercase tracking-widest text-[10px] font-black"
+                                        >
+                                            Cancel Order
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Customer Info */}
+                                <div className="bg-white p-5 rounded-2xl border border-slate-200 grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block">Customer Name & Contact</span>
+                                        <p className="text-sm font-black text-slate-900 mt-1">{selectedWebOrder.customerName}</p>
+                                        <p className="text-xs text-slate-600 font-medium">{selectedWebOrder.customerPhone || "No Phone Provided"}</p>
+                                        <p className="text-xs text-slate-500">{selectedWebOrder.customerEmail}</p>
+                                    </div>
+                                    <div>
+                                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block">Delivery Destination</span>
+                                        <p className="text-xs font-bold text-slate-800 mt-1 leading-relaxed">{selectedWebOrder.shippingAddress}</p>
+                                    </div>
+                                </div>
+
+                                {/* Order Items Table */}
+                                <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+                                    <div className="p-4 border-b border-slate-100 bg-slate-50">
+                                        <h4 className="text-xs font-black uppercase tracking-widest text-slate-600">Order Merchandise Items</h4>
+                                    </div>
+                                    <div className="divide-y divide-slate-100">
+                                        {selectedWebOrder.items?.map((item: any) => (
+                                            <div key={item.id} className="p-4 flex items-center justify-between gap-4">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="h-10 w-10 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center overflow-hidden shrink-0">
+                                                        {item.image ? <img src={item.image} className="w-full h-full object-cover" /> : <Package className="h-5 w-5 text-slate-400" />}
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-xs font-black text-slate-900">{item.name || item.productName}</p>
+                                                        <p className="text-[10px] text-slate-400 font-bold">Qty: {item.quantity} × ₹{item.sellingPrice}</p>
+                                                    </div>
+                                                </div>
+                                                <span className="text-sm font-black text-slate-900">₹{(item.quantity * item.sellingPrice).toFixed(0)}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="p-4 bg-white border-t border-slate-100 flex justify-end gap-2">
+                                <Button variant="ghost" onClick={() => setSelectedWebOrder(null)} className="font-black uppercase text-xs text-slate-400">Close Inspector</Button>
+                            </div>
+                        </>
+                    )}
                 </DialogContent>
             </Dialog>
 

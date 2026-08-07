@@ -47,33 +47,193 @@ export const searchCustomer = async (req: AuthenticatedRequest, res: Response, n
 // ─── Web Orders for POS ───────────────────────────────────────────────────────
 
 export const getWebOrders = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    const locId = req.user?.locationId ? String(req.user.locationId) : undefined;
+    const { status, limit = "50" } = req.query;
+
     try {
+        const validStatuses: OrderStatus[] = [
+            "PENDING",
+            "CONFIRMED",
+            "PROCESSING",
+            "PACKED",
+            "SHIPPED",
+            "OUT_FOR_DELIVERY",
+            "DELIVERED"
+        ];
+
+        const statusFilter: OrderStatus[] = status
+            ? String(status).split(",").map(s => s.trim() as OrderStatus).filter(s => validStatuses.includes(s))
+            : validStatuses;
+
         const orders = await prisma.order.findMany({
             where: {
                 channel: Channel.WEB,
-                status: { in: ["PENDING", "CONFIRMED"] },
+                status: { in: statusFilter },
+                ...(locId ? { locationId: locId } : {})
             },
             include: {
-                user: { select: { id: true, name: true, phone: true } },
-                items: { include: { product: { select: { name: true } } } },
+                user: {
+                    select: {
+                        id: true,
+                        name: true,
+                        phone: true,
+                        email: true,
+                        addresses: { where: { isDefault: true }, take: 1 }
+                    }
+                },
+                items: {
+                    include: {
+                        product: { select: { id: true, name: true, sku: true, images: true } },
+                        variant: { select: { id: true, name: true, price: true, weight: true, weightUnit: true } }
+                    }
+                },
+                payments: true,
+                staff: { select: { name: true } },
+                location: { select: { name: true } },
+                statusHistory: { orderBy: { createdAt: "desc" }, take: 5 }
             },
             orderBy: { createdAt: "desc" },
-            take: 50,
+            take: Math.min(Number(limit) || 50, 100)
         });
 
-        // Map to a shape the POS UI expects
-        const mapped = orders.map(o => ({
-            id: o.id,
-            customerName: o.user?.name || "Walk-In",
-            customerPhone: o.user?.phone || "",
-            items: o.items,
-            totalAmount: o.totalAmount,
-            status: o.status,
-            createdAt: o.createdAt,
-            user: o.user,
-        }));
+        const mapped = orders.map(o => {
+            const rawAddress = (o.shippingAddress as any);
+            const addressString = typeof rawAddress === "string" 
+                ? rawAddress 
+                : (rawAddress?.fullAddress || rawAddress?.address || o.user?.addresses?.[0]?.fullAddress || "Handover at Counter / Website Pickup");
+
+            return {
+                id: o.id,
+                customerName: o.user?.name || "Website Customer",
+                customerPhone: o.user?.phone || "",
+                customerEmail: o.user?.email || "",
+                shippingAddress: addressString,
+                items: o.items.map(item => ({
+                    id: item.id,
+                    productId: item.productId,
+                    variantId: item.variantId,
+                    name: item.variant?.name ? `${item.product.name} (${item.variant.name})` : item.product.name,
+                    productName: item.product.name,
+                    image: item.product.images?.[0] || "",
+                    quantity: Number(item.quantity),
+                    sellingPrice: Number(item.sellingPrice)
+                })),
+                totalAmount: Number(o.totalAmount),
+                discountAmount: Number(o.discountAmount),
+                status: o.status,
+                paymentStatus: o.paymentStatus,
+                isPaid: o.isPaid,
+                createdAt: o.createdAt,
+                user: o.user,
+                payments: o.payments,
+                statusHistory: o.statusHistory
+            };
+        });
 
         res.json(mapped);
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const updateWebOrderStatus = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    const { orderId } = req.params;
+    const { status, remark, packerId } = req.body;
+    const staffId = req.user?.userId;
+
+    if (!staffId) return next(new AppError("Unauthorized", 401));
+
+    try {
+        const order = await prisma.order.findUnique({
+            where: { id: String(orderId) },
+            include: { items: true }
+        });
+
+        if (!order) return next(new AppError("Order not found", 404));
+
+        const targetStatus = status as OrderStatus;
+        const validStatuses: OrderStatus[] = [
+            "PENDING",
+            "CONFIRMED",
+            "PROCESSING",
+            "PACKED",
+            "SHIPPED",
+            "OUT_FOR_DELIVERY",
+            "DELIVERED",
+            "CANCELLED"
+        ];
+
+        if (!validStatuses.includes(targetStatus)) {
+            return next(new AppError("Invalid order status transition", 400));
+        }
+
+        let updatedOrder;
+
+        if (targetStatus === "CANCELLED" && order.status !== "CANCELLED") {
+            // Restore stock if cancelled
+            await prisma.$transaction(async (tx) => {
+                await InventoryService.restoreStock({
+                    items: (order.items || []).map((i: any) => ({
+                        productId: i.productId,
+                        variantId: i.variantId || undefined,
+                        quantity: Number(i.quantity)
+                    })),
+                    locationId: order.locationId || "MAIN_WAREHOUSE",
+                    staffId,
+                    referenceId: `POS_WEB_CANCEL_${order.id}`
+                }, tx);
+
+                updatedOrder = await tx.order.update({
+                    where: { id: String(orderId) },
+                    data: {
+                        status: "CANCELLED",
+                        statusHistory: {
+                            create: {
+                                status: "CANCELLED",
+                                remark: remark || "Cancelled by POS Operator",
+                                changedBy: staffId
+                            }
+                        }
+                    }
+                });
+            });
+        } else {
+            updatedOrder = await prisma.order.update({
+                where: { id: String(orderId) },
+                data: {
+                    status: targetStatus,
+                    ...(packerId ? { packerId } : {}),
+                    statusHistory: {
+                        create: {
+                            status: targetStatus,
+                            remark: remark || `Stage updated to ${targetStatus} by POS Operator`,
+                            changedBy: staffId
+                        }
+                    }
+                }
+            });
+        }
+
+        // Notify socket subscribers in real time
+        try {
+            getIo().emit("ORDER_STATUS_CHANGED", {
+                orderId: orderId,
+                status: targetStatus,
+                updatedBy: staffId
+            });
+
+            if (packerId) {
+                getIo().to(packerId).emit("OP_NEW_ORDER", {
+                    id: orderId,
+                    status: targetStatus,
+                    type: "PACKING"
+                });
+            }
+        } catch (e) {
+            console.error("[POSController] Socket emit failure:", e);
+        }
+
+        res.json({ message: `Order stage updated to ${targetStatus}`, order: updatedOrder });
     } catch (error) {
         next(error);
     }

@@ -12,7 +12,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.settleAccountBalance = exports.collectDuePayment = exports.getStoreConfig = exports.cancelPOSOrder = exports.getCustomerHistory = exports.getStoreProducts = exports.processPOSOrder = exports.createOrUpdateCustomer = exports.getWebOrders = exports.searchCustomer = void 0;
+exports.settleAccountBalance = exports.collectDuePayment = exports.getStoreConfig = exports.cancelPOSOrder = exports.getCustomerHistory = exports.getStoreProducts = exports.processPOSOrder = exports.createOrUpdateCustomer = exports.updateWebOrderStatus = exports.getWebOrders = exports.searchCustomer = void 0;
 const prisma_1 = __importDefault(require("../config/prisma"));
 const errors_1 = require("../utils/errors");
 const client_1 = require("@prisma/client");
@@ -55,32 +55,83 @@ const searchCustomer = (req, res, next) => __awaiter(void 0, void 0, void 0, fun
 exports.searchCustomer = searchCustomer;
 // ─── Web Orders for POS ───────────────────────────────────────────────────────
 const getWebOrders = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
+    const locId = ((_a = req.user) === null || _a === void 0 ? void 0 : _a.locationId) ? String(req.user.locationId) : undefined;
+    const { status, limit = "50" } = req.query;
     try {
+        const validStatuses = [
+            "PENDING",
+            "CONFIRMED",
+            "PROCESSING",
+            "PACKED",
+            "SHIPPED",
+            "OUT_FOR_DELIVERY",
+            "DELIVERED"
+        ];
+        const statusFilter = status
+            ? String(status).split(",").map(s => s.trim()).filter(s => validStatuses.includes(s))
+            : validStatuses;
         const orders = yield prisma_1.default.order.findMany({
-            where: {
-                channel: client_1.Channel.WEB,
-                status: { in: ["PENDING", "CONFIRMED"] },
-            },
+            where: Object.assign({ channel: client_1.Channel.WEB, status: { in: statusFilter } }, (locId ? { locationId: locId } : {})),
             include: {
-                user: { select: { id: true, name: true, phone: true } },
-                items: { include: { product: { select: { name: true } } } },
+                user: {
+                    select: {
+                        id: true,
+                        name: true,
+                        phone: true,
+                        email: true,
+                        addresses: { where: { isDefault: true }, take: 1 }
+                    }
+                },
+                items: {
+                    include: {
+                        product: { select: { id: true, name: true, sku: true, images: true } },
+                        variant: { select: { id: true, name: true, price: true, weight: true, weightUnit: true } }
+                    }
+                },
+                payments: true,
+                staff: { select: { name: true } },
+                location: { select: { name: true } },
+                statusHistory: { orderBy: { createdAt: "desc" }, take: 5 }
             },
             orderBy: { createdAt: "desc" },
-            take: 50,
+            take: Math.min(Number(limit) || 50, 100)
         });
-        // Map to a shape the POS UI expects
         const mapped = orders.map(o => {
-            var _a, _b;
-            return ({
+            var _a, _b, _c, _d, _e, _f;
+            const rawAddress = o.shippingAddress;
+            const addressString = typeof rawAddress === "string"
+                ? rawAddress
+                : ((rawAddress === null || rawAddress === void 0 ? void 0 : rawAddress.fullAddress) || (rawAddress === null || rawAddress === void 0 ? void 0 : rawAddress.address) || ((_c = (_b = (_a = o.user) === null || _a === void 0 ? void 0 : _a.addresses) === null || _b === void 0 ? void 0 : _b[0]) === null || _c === void 0 ? void 0 : _c.fullAddress) || "Handover at Counter / Website Pickup");
+            return {
                 id: o.id,
-                customerName: ((_a = o.user) === null || _a === void 0 ? void 0 : _a.name) || "Walk-In",
-                customerPhone: ((_b = o.user) === null || _b === void 0 ? void 0 : _b.phone) || "",
-                items: o.items,
-                totalAmount: o.totalAmount,
+                customerName: ((_d = o.user) === null || _d === void 0 ? void 0 : _d.name) || "Website Customer",
+                customerPhone: ((_e = o.user) === null || _e === void 0 ? void 0 : _e.phone) || "",
+                customerEmail: ((_f = o.user) === null || _f === void 0 ? void 0 : _f.email) || "",
+                shippingAddress: addressString,
+                items: o.items.map(item => {
+                    var _a, _b;
+                    return ({
+                        id: item.id,
+                        productId: item.productId,
+                        variantId: item.variantId,
+                        name: ((_a = item.variant) === null || _a === void 0 ? void 0 : _a.name) ? `${item.product.name} (${item.variant.name})` : item.product.name,
+                        productName: item.product.name,
+                        image: ((_b = item.product.images) === null || _b === void 0 ? void 0 : _b[0]) || "",
+                        quantity: Number(item.quantity),
+                        sellingPrice: Number(item.sellingPrice)
+                    });
+                }),
+                totalAmount: Number(o.totalAmount),
+                discountAmount: Number(o.discountAmount),
                 status: o.status,
+                paymentStatus: o.paymentStatus,
+                isPaid: o.isPaid,
                 createdAt: o.createdAt,
                 user: o.user,
-            });
+                payments: o.payments,
+                statusHistory: o.statusHistory
+            };
         });
         res.json(mapped);
     }
@@ -89,6 +140,100 @@ const getWebOrders = (req, res, next) => __awaiter(void 0, void 0, void 0, funct
     }
 });
 exports.getWebOrders = getWebOrders;
+const updateWebOrderStatus = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
+    const { orderId } = req.params;
+    const { status, remark, packerId } = req.body;
+    const staffId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.userId;
+    if (!staffId)
+        return next(new errors_1.AppError("Unauthorized", 401));
+    try {
+        const order = yield prisma_1.default.order.findUnique({
+            where: { id: String(orderId) },
+            include: { items: true }
+        });
+        if (!order)
+            return next(new errors_1.AppError("Order not found", 404));
+        const targetStatus = status;
+        const validStatuses = [
+            "PENDING",
+            "CONFIRMED",
+            "PROCESSING",
+            "PACKED",
+            "SHIPPED",
+            "OUT_FOR_DELIVERY",
+            "DELIVERED",
+            "CANCELLED"
+        ];
+        if (!validStatuses.includes(targetStatus)) {
+            return next(new errors_1.AppError("Invalid order status transition", 400));
+        }
+        let updatedOrder;
+        if (targetStatus === "CANCELLED" && order.status !== "CANCELLED") {
+            // Restore stock if cancelled
+            yield prisma_1.default.$transaction((tx) => __awaiter(void 0, void 0, void 0, function* () {
+                yield inventoryService_1.InventoryService.restoreStock({
+                    items: (order.items || []).map((i) => ({
+                        productId: i.productId,
+                        variantId: i.variantId || undefined,
+                        quantity: Number(i.quantity)
+                    })),
+                    locationId: order.locationId || "MAIN_WAREHOUSE",
+                    staffId,
+                    referenceId: `POS_WEB_CANCEL_${order.id}`
+                }, tx);
+                updatedOrder = yield tx.order.update({
+                    where: { id: String(orderId) },
+                    data: {
+                        status: "CANCELLED",
+                        statusHistory: {
+                            create: {
+                                status: "CANCELLED",
+                                remark: remark || "Cancelled by POS Operator",
+                                changedBy: staffId
+                            }
+                        }
+                    }
+                });
+            }));
+        }
+        else {
+            updatedOrder = yield prisma_1.default.order.update({
+                where: { id: String(orderId) },
+                data: Object.assign(Object.assign({ status: targetStatus }, (packerId ? { packerId } : {})), { statusHistory: {
+                        create: {
+                            status: targetStatus,
+                            remark: remark || `Stage updated to ${targetStatus} by POS Operator`,
+                            changedBy: staffId
+                        }
+                    } })
+            });
+        }
+        // Notify socket subscribers in real time
+        try {
+            (0, io_1.getIo)().emit("ORDER_STATUS_CHANGED", {
+                orderId: orderId,
+                status: targetStatus,
+                updatedBy: staffId
+            });
+            if (packerId) {
+                (0, io_1.getIo)().to(packerId).emit("OP_NEW_ORDER", {
+                    id: orderId,
+                    status: targetStatus,
+                    type: "PACKING"
+                });
+            }
+        }
+        catch (e) {
+            console.error("[POSController] Socket emit failure:", e);
+        }
+        res.json({ message: `Order stage updated to ${targetStatus}`, order: updatedOrder });
+    }
+    catch (error) {
+        next(error);
+    }
+});
+exports.updateWebOrderStatus = updateWebOrderStatus;
 const createOrUpdateCustomer = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     var _a, _b;
     const { id, name, phone, email, address } = req.body;

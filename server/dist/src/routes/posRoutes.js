@@ -14,6 +14,8 @@ router.post("/customers/:customerId/settle", posController_1.settleAccountBalanc
 // ─── Transaction Node ─────────────────────────────────────────────────────────
 router.post("/orders/process", posController_1.processPOSOrder);
 router.get("/orders/web", posController_1.getWebOrders);
+router.post("/orders/:orderId/status", posController_1.updateWebOrderStatus);
+router.patch("/orders/:orderId/status", posController_1.updateWebOrderStatus);
 router.get("/products/store", posController_1.getStoreProducts);
 // ─── Store Config ─────────────────────────────────────────────────────────────
 router.get("/store/config", posController_1.getStoreConfig);
