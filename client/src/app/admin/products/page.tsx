@@ -710,7 +710,7 @@ export default function AdminProducts() {
                                 </div>
                             </div>
                         );
-                    }))
+                    })
                 )}
 
                 {!loading && filteredProducts.length === 0 && (
