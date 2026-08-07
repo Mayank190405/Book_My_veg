@@ -72,16 +72,22 @@ export default function AdminProducts() {
             const tagsArr = typeof edits.tags === "string"
                 ? edits.tags.split(",").map((t: string) => t.trim()).filter(Boolean)
                 : (product.tags || []);
+            const priceNum = edits.price !== undefined && edits.price !== "" ? parseFloat(edits.price) : undefined;
+
             await api.put(`/products/${product.id}`, {
                 ...product,
                 name: edits.name ?? product.name,
                 sku: edits.sku ?? product.sku,
                 categoryId: edits.categoryId ?? product.categoryId,
                 tags: tagsArr,
-                ...(edits.price !== undefined ? {
-                    variants: product.variants?.map((v: any, i: number) =>
-                        i === 0 ? { ...v, price: edits.price } : v
-                    )
+                ...(priceNum !== undefined && !isNaN(priceNum) ? {
+                    basePrice: priceNum,
+                    ...(product.variants && product.variants.length > 0 ? {
+                        variants: product.variants.map((v: any, i: number) => ({
+                            ...v,
+                            price: i === 0 ? priceNum : parseFloat(v.price || "0")
+                        }))
+                    } : {})
                 } : {})
             });
             toast.success(`${edits.name ?? product.name} saved`);
@@ -603,83 +609,108 @@ export default function AdminProducts() {
                         <div key={i} className="h-48 bg-white rounded-xl border border-slate-200 animate-pulse" />
                     ))
                 ) : (
-                    filteredProducts.map((product) => (
-                        <div key={product.id} className="group relative bg-white rounded-3xl border border-slate-200 p-6 hover:shadow-2xl hover:border-emerald-200 transition-all duration-500 flex flex-col gap-6">
-                            <div className="relative aspect-square w-full rounded-2xl bg-slate-50 overflow-hidden border border-slate-100 group-hover:border-emerald-100 transition-colors">
-                                {(product.images?.[0] || product.imageUrl) ? (
-                                    <img src={product.images?.[0] || product.imageUrl} alt={product.name} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" />
-                                ) : (
-                                    <ImageIcon className="absolute inset-0 m-auto h-12 w-12 text-slate-200" />
-                                )}
-                                <div className="absolute top-4 right-4 flex gap-2 translate-y-2 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-300">
-                                    <button
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            setEditingProduct(product);
-                                            setTagsString(Array.isArray(product.tags) ? product.tags.join(", ") : (typeof product.tags === "string" ? product.tags : ""));
-                                            setIsProductModalOpen(true);
-                                        }}
-                                        className="w-10 h-10 rounded-xl bg-white/90 backdrop-blur-md shadow-lg flex items-center justify-center text-slate-600 hover:text-emerald-600 transition-colors"
-                                    >
-                                        <Edit2 className="h-5 w-5" />
-                                    </button>
-                                    <button
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            handleDelete(product.id);
-                                        }}
-                                        className="w-10 h-10 rounded-xl bg-white/90 backdrop-blur-md shadow-lg flex items-center justify-center text-slate-600 hover:text-red-500 transition-colors"
-                                    >
-                                        <Trash2 className="h-5 w-5" />
-                                    </button>
-                                </div>
-                            </div>
+                    filteredProducts.map((product) => {
+                        const isDirty = Boolean(editedRows[product.id]);
+                        const row = editedRows[product.id];
+                        const isSaving = savingIds.has(product.id);
 
-                            <div className="flex-1 flex flex-col justify-between">
-                                <div>
-                                    <div className="flex items-center justify-between mb-2">
-                                        <span className="px-2.5 py-1 bg-emerald-50 text-[10px] font-black text-emerald-600 rounded-lg uppercase tracking-widest leading-none border border-emerald-100">
-                                            {product.category?.name || "Inventory"}
-                                        </span>
-                                        {(product.sku || product.barcode) && (
-                                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest italic leading-none">
-                                                ID: {product.sku || product.barcode}
-                                            </span>
-                                        )}
+                        return (
+                            <div key={product.id} className="group relative bg-white rounded-3xl border border-slate-200 p-6 hover:shadow-2xl hover:border-emerald-200 transition-all duration-500 flex flex-col gap-6">
+                                <div className="relative aspect-square w-full rounded-2xl bg-slate-50 overflow-hidden border border-slate-100 group-hover:border-emerald-100 transition-colors">
+                                    {(product.images?.[0] || product.imageUrl) ? (
+                                        <img src={product.images?.[0] || product.imageUrl} alt={product.name} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" />
+                                    ) : (
+                                        <ImageIcon className="absolute inset-0 m-auto h-12 w-12 text-slate-200" />
+                                    )}
+                                    <div className="absolute top-4 right-4 flex gap-2 translate-y-2 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-300">
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setEditingProduct(product);
+                                                setTagsString(Array.isArray(product.tags) ? product.tags.join(", ") : (typeof product.tags === "string" ? product.tags : ""));
+                                                setIsProductModalOpen(true);
+                                            }}
+                                            className="w-10 h-10 rounded-xl bg-white/90 backdrop-blur-md shadow-lg flex items-center justify-center text-slate-600 hover:text-emerald-600 transition-colors"
+                                        >
+                                            <Edit2 className="h-5 w-5" />
+                                        </button>
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleDelete(product.id);
+                                            }}
+                                            className="w-10 h-10 rounded-xl bg-white/90 backdrop-blur-md shadow-lg flex items-center justify-center text-slate-600 hover:text-red-500 transition-colors"
+                                        >
+                                            <Trash2 className="h-5 w-5" />
+                                        </button>
                                     </div>
-                                    <h3 className="text-xl font-bold text-slate-900 group-hover:text-emerald-700 transition-colors leading-tight mb-2">
-                                        {product.name}
-                                    </h3>
-                                    <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed">
-                                        {product.description || "Primary merchandising asset description not specified."}
-                                    </p>
                                 </div>
 
-                                <div className="mt-6 pt-6 border-t border-slate-50 flex items-end justify-between">
+                                <div className="flex-1 flex flex-col justify-between">
                                     <div>
-                                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5 leading-none">Catalog Rate</p>
-                                        <div className="flex items-baseline gap-1">
-                                            <span className="text-2xl font-black text-slate-900 leading-none tracking-tighter">
-                                                ₹{product.variants?.[0]?.pricing?.[0]?.price || product.variants?.[0]?.price || product.pricing?.[0]?.price || product.basePrice || product.price || "N/A"}
+                                        <div className="flex items-center justify-between mb-2">
+                                            <span className="px-2.5 py-1 bg-emerald-50 text-[10px] font-black text-emerald-600 rounded-lg uppercase tracking-widest leading-none border border-emerald-100">
+                                                {product.category?.name || "Inventory"}
                                             </span>
-                                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                                                / {product.variants?.[0]?.weightUnit || product.weightUnit || "UNIT"}
-                                            </span>
+                                            {(product.sku || product.barcode) && (
+                                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest italic leading-none">
+                                                    ID: {product.sku || product.barcode}
+                                                </span>
+                                            )}
                                         </div>
+                                        <h3 className="text-xl font-bold text-slate-900 group-hover:text-emerald-700 transition-colors leading-tight mb-2">
+                                            {product.name}
+                                        </h3>
+                                        <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed">
+                                            {product.description || "Primary merchandising asset description not specified."}
+                                        </p>
                                     </div>
-                                    <div className="flex flex-col items-end gap-1.5">
-                                        <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 rounded-xl border border-slate-100 group-hover:bg-emerald-50/50 group-hover:border-emerald-100 transition-colors">
-                                            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] animate-pulse" />
-                                            <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest group-hover:text-emerald-600 transition-colors leading-none">Active in Catalog</span>
+
+                                    <div className="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between gap-3">
+                                        <div className="flex-1">
+                                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1 leading-none">Catalog Rate</p>
+                                            <div className="flex items-center gap-1.5">
+                                                <span className="text-sm font-black text-slate-400">₹</span>
+                                                <input
+                                                    type="number"
+                                                    defaultValue={product.variants?.[0]?.pricing?.[0]?.price || product.variants?.[0]?.price || product.pricing?.[0]?.price || product.basePrice || product.price || ""}
+                                                    onChange={e => handleInlineChange(product.id, "price", e.target.value)}
+                                                    placeholder="0"
+                                                    className={`w-28 h-9 rounded-xl px-2.5 text-base font-black text-slate-900 outline-none transition-all border ${
+                                                        isDirty && row?.price !== undefined
+                                                            ? "border-amber-400 bg-amber-50 focus:border-emerald-500"
+                                                            : "border-slate-200 bg-slate-50/80 hover:border-slate-300 focus:border-emerald-500 focus:bg-white"
+                                                    }`}
+                                                />
+                                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap">
+                                                    / {product.variants?.[0]?.weightUnit || product.weightUnit || "UNIT"}
+                                                </span>
+                                            </div>
                                         </div>
-                                        <span className="text-[8px] font-bold text-slate-300 uppercase tracking-[0.2em] leading-none">
-                                            {product.variants?.length || 0} Professional Variants
-                                        </span>
+                                        <div className="flex items-center gap-2">
+                                            {isDirty ? (
+                                                <button
+                                                    onClick={() => handleInlineSave(product)}
+                                                    disabled={isSaving}
+                                                    className="h-9 px-3.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white rounded-xl flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 shadow-md shadow-emerald-600/20"
+                                                >
+                                                    {isSaving ? <Activity className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                                                    <span>{isSaving ? "Saving..." : "Save"}</span>
+                                                </button>
+                                            ) : (
+                                                <div className="flex flex-col items-end gap-1">
+                                                    <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 rounded-xl border border-slate-100 group-hover:bg-emerald-50/50 group-hover:border-emerald-100 transition-colors">
+                                                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] animate-pulse" />
+                                                        <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest group-hover:text-emerald-600 transition-colors leading-none">Active</span>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
-                        </div>
-                    ))
+                        );
+                    }))
                 )}
 
                 {!loading && filteredProducts.length === 0 && (
