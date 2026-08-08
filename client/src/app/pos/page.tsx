@@ -478,6 +478,16 @@ export default function POSOperator() {
 
         setIsProcessing(true);
         try {
+            // First attempt to verify payment status with backend so DB payment record is created
+            try {
+                await api.post("/payments/verify", {
+                    order_id: targetBillId,
+                    status: "SUCCESS"
+                });
+            } catch (e) {
+                // If verify endpoint call fails or is already verified, proceed to check DB status
+            }
+
             const res = await api.get(`/pay/pay-info?billid=${targetBillId}`);
             const isPaid = res.data.bill?.isPaid || res.data.bill?.paymentStatus === "COMPLETED" || res.data.bill?.paymentStatus === "PAID";
 
@@ -604,10 +614,21 @@ export default function POSOperator() {
                             const checkoutObj = new EasebuzzCheckout(data.key || "EASEBUZZ", data.env || "test");
                             checkoutObj.initiatePayment({
                                 access_key: data.accessKey,
-                                onResponse: (response: any) => {
+                                onResponse: async (response: any) => {
                                     setIsProcessing(false);
                                     if (response.status === "success") {
-                                        toast.success("Payment completed via Easebuzz");
+                                        try {
+                                            await api.post("/payments/verify", {
+                                                order_id: data.txnid || targetBillId,
+                                                status: "SUCCESS",
+                                                amount: grandTotal,
+                                                txn_id: response.easepayid || response.txnid || response.easebuzz_id
+                                            });
+                                            toast.success("Payment completed & verified via Easebuzz");
+                                        } catch (verifyErr) {
+                                            console.error("Payment verify call failed:", verifyErr);
+                                            toast.success("Payment completed via Easebuzz");
+                                        }
                                         setShowPaymentDialog(false);
                                         setShowPosIframeModal(false);
                                         setLastReceipt((prev: any) => {

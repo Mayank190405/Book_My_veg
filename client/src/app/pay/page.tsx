@@ -4,7 +4,8 @@ import { useEffect, useState, useMemo, Suspense } from "react";
 import { useSearchParams, useRouter, useParams } from "next/navigation";
 import { 
     CreditCard, ShieldCheck, CheckCircle2, AlertCircle, ShoppingBag, 
-    User, Phone, FileText, ArrowRight, Loader2, RefreshCw, Check, Sparkles, Building
+    User, Phone, FileText, ArrowRight, Loader2, RefreshCw, Check, Sparkles, Building,
+    ChevronDown, ChevronUp, Receipt, ListFilter, CheckCircle, Tag
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getBaseURL } from "@/services/api";
@@ -22,6 +23,8 @@ function PayContent({ slugParams }: PayPageProps) {
     const [error, setError] = useState<string | null>(null);
     const [payData, setPayData] = useState<any>(null);
     const [customAmount, setCustomAmount] = useState<string>("");
+    const [selectedBillId, setSelectedBillId] = useState<string | null>(null);
+    const [showPendingList, setShowPendingList] = useState<boolean>(true);
     const [processing, setProcessing] = useState(false);
     const [paymentSuccess, setPaymentSuccess] = useState(false);
 
@@ -31,11 +34,9 @@ function PayContent({ slugParams }: PayPageProps) {
         let number = searchParams.get("number") || searchParams.get("phone") || "";
         let billid = searchParams.get("billid") || searchParams.get("billId") || "";
 
-        // Check routeParams or slugParams if query params empty
         const slug = slugParams || (routeParams?.slug as string[]);
         if (slug && slug.length > 0) {
             const pathStr = decodeURIComponent(slug.join("/"));
-            // e.g. "userid=123&number=12132&billid=2313" or "userid=123/number=12132"
             const kvPairs = pathStr.split("&");
             for (const pair of kvPairs) {
                 const [k, v] = pair.split("=");
@@ -49,7 +50,6 @@ function PayContent({ slugParams }: PayPageProps) {
             }
         }
 
-        // Also fallback to parsing window location pathname if in browser
         if (typeof window !== "undefined" && (!userid || !number)) {
             const rawPath = window.location.pathname;
             if (rawPath.includes("/pay/")) {
@@ -88,6 +88,7 @@ function PayContent({ slugParams }: PayPageProps) {
             setPayData(data);
 
             if (data.bill && !data.bill.isPaid) {
+                setSelectedBillId(data.bill.id);
                 setCustomAmount(data.bill.dueAmount.toString());
             } else if (data.totalDue > 0) {
                 setCustomAmount(data.totalDue.toString());
@@ -106,19 +107,33 @@ function PayContent({ slugParams }: PayPageProps) {
     const [payIframeUrl, setPayIframeUrl] = useState<string | null>(null);
     const [showPayIframeModal, setShowPayIframeModal] = useState(false);
 
+    const handleSelectBill = (billObj: any) => {
+        if (selectedBillId === billObj.id) {
+            setSelectedBillId(null);
+            setCustomAmount((payData?.totalDue || 0).toString());
+        } else {
+            setSelectedBillId(billObj.id);
+            setCustomAmount(billObj.dueAmount.toString());
+        }
+    };
+
     const handleEasebuzzPayment = async () => {
-        const payAmount = Number(customAmount || (payData?.bill?.dueAmount || payData?.totalDue || 0));
-        if (!payAmount || payAmount <= 0) return;
+        const payAmount = Number(customAmount);
+        if (!payAmount || payAmount <= 0) {
+            alert("Please enter a valid payment amount");
+            return;
+        }
 
         setProcessing(true);
         try {
+            const targetBillId = selectedBillId || extractedParams.billid || payData?.bill?.id;
             const res = await fetch(`${getBaseURL()}/pay/pay-due`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     userId: extractedParams.userid || payData?.customer?.id,
                     phone: extractedParams.number || payData?.customer?.phone,
-                    billId: extractedParams.billid || payData?.bill?.id,
+                    billId: targetBillId || undefined,
                     amount: payAmount
                 })
             });
@@ -141,10 +156,24 @@ function PayContent({ slugParams }: PayPageProps) {
                             const checkoutObj = new EasebuzzCheckout(data.key || "EASEBUZZ", data.env || "test");
                             checkoutObj.initiatePayment({
                                 access_key: data.accessKey,
-                                onResponse: (response: any) => {
+                                onResponse: async (response: any) => {
                                     setProcessing(false);
                                     if (response.status === "success" || response.status === "user_cancelled") {
                                         if (response.status === "success") {
+                                            try {
+                                                await fetch(`${getBaseURL()}/pay/verify`, {
+                                                    method: "POST",
+                                                    headers: { "Content-Type": "application/json" },
+                                                    body: JSON.stringify({
+                                                        order_id: data.txnid || targetBillId || payData?.bill?.id,
+                                                        status: "SUCCESS",
+                                                        amount: payAmount,
+                                                        txn_id: response.easepayid || response.txnid || response.easebuzz_id
+                                                    })
+                                                });
+                                            } catch (e) {
+                                                console.error("Pay verify error:", e);
+                                            }
                                             setPaymentSuccess(true);
                                             fetchPayData();
                                         }
@@ -213,10 +242,11 @@ function PayContent({ slugParams }: PayPageProps) {
     }
 
     const isSingleBill = Boolean(payData?.bill);
-    const bill = payData.bill;
-    const customer = payData.customer;
-    const unpaidOrders = payData.unpaidOrders || [];
-    const isPaid = isSingleBill ? bill?.isPaid : payData.totalDue <= 0;
+    const bill = payData?.bill;
+    const customer = payData?.customer;
+    const unpaidOrders = payData?.unpaidOrders || [];
+    const isPaid = isSingleBill ? bill?.isPaid : payData?.totalDue <= 0;
+    const selectedBill = unpaidOrders.find((b: any) => b.id === selectedBillId);
 
     return (
         <div className="h-screen bg-[#fbfdfc] dark:bg-[#061512] text-slate-900 dark:text-slate-100 flex flex-col justify-between p-4 sm:p-6 lg:p-10 relative overflow-y-auto font-sans">
@@ -237,7 +267,7 @@ function PayContent({ slugParams }: PayPageProps) {
                                 Book My Veg
                                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                             </h2>
-                            <p className="text-[11px] text-slate-500 dark:text-slate-400 font-bold tracking-wide uppercase">Official Digital Payment Desk</p>
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400 font-bold tracking-wide uppercase">Official Digital Payment Portal</p>
                         </div>
                     </div>
                     <div className="px-3.5 py-1.5 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 rounded-full text-emerald-700 dark:text-emerald-400 text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 shadow-xs">
@@ -277,7 +307,7 @@ function PayContent({ slugParams }: PayPageProps) {
                                 {isSingleBill ? "Payment Completed!" : "All Dues Cleared!"}
                             </h2>
                             <p className="text-slate-600 dark:text-slate-400 text-xs max-w-sm mx-auto font-medium">
-                                Transaction processed successfully. Your account ledger has been updated.
+                                Transaction processed successfully. Your account ledger and statement have been updated.
                             </p>
                         </div>
                         {bill && (
@@ -289,108 +319,206 @@ function PayContent({ slugParams }: PayPageProps) {
                     </div>
                 ) : (
                     <>
-                        {/* Single Bill Details */}
-                        {isSingleBill && bill && (
-                            <div className="p-6 bg-white dark:bg-slate-900/60 border border-slate-200/90 dark:border-slate-800/80 rounded-[28px] space-y-5 shadow-sm relative overflow-hidden">
-                                <div className="flex justify-between items-start border-b border-slate-100 dark:border-slate-800/80 pb-4">
-                                    <div>
-                                        <span className="px-2.5 py-1 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 text-[10px] font-black uppercase tracking-wider rounded-lg border border-emerald-200 dark:border-emerald-500/20 inline-block mb-1.5">
-                                            Bill Invoice
-                                        </span>
-                                        <h3 className="text-xl font-black text-slate-900 dark:text-white font-mono tracking-tight">{bill.id}</h3>
-                                        <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium mt-0.5">{new Date(bill.createdAt).toLocaleDateString("en-IN", { dateStyle: "full" })}</p>
-                                    </div>
-                                    <div className="text-right">
-                                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Balance Due</span>
-                                        <p className="text-3xl font-black text-emerald-600 dark:text-emerald-400 tracking-tight">₹{bill.dueAmount.toFixed(2)}</p>
-                                    </div>
+                        {/* Overall Outstanding Summary Card */}
+                        <div className="p-6 bg-white dark:bg-slate-900/60 border border-slate-200/90 dark:border-slate-800/80 rounded-[28px] space-y-4 shadow-sm">
+                            <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-800/80 pb-4">
+                                <div>
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-emerald-700 dark:text-emerald-400">Total Outstanding Balance</span>
+                                    <h3 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">
+                                        ₹{(payData?.totalDue || bill?.dueAmount || 0).toFixed(2)}
+                                    </h3>
                                 </div>
-
-                                {/* Items list */}
-                                {bill.items && bill.items.length > 0 && (
-                                    <div className="space-y-2">
-                                        <p className="text-[11px] font-black text-slate-400 dark:text-slate-400 uppercase tracking-wider">Item Breakdown</p>
-                                        <div className="divide-y divide-slate-100 dark:divide-slate-800/60 bg-slate-50/80 dark:bg-slate-950/70 rounded-2xl border border-slate-200/60 dark:border-slate-800/80 p-3.5">
-                                            {bill.items.map((item: any) => (
-                                                <div key={item.id} className="py-2.5 flex justify-between items-center text-xs">
-                                                    <div>
-                                                        <p className="font-bold text-slate-800 dark:text-slate-100">{item.name}</p>
-                                                        <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">Qty: {item.quantity} × ₹{item.sellingPrice}</p>
-                                                    </div>
-                                                    <span className="font-mono font-bold text-slate-700 dark:text-slate-200 text-sm">₹{(item.quantity * item.sellingPrice).toFixed(2)}</span>
-                                                </div>
-                                            ))}
-                                        </div>
+                                {unpaidOrders.length > 0 && (
+                                    <div className="px-3.5 py-1.5 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 text-amber-700 dark:text-amber-400 rounded-full text-xs font-bold uppercase tracking-wider flex items-center gap-1.5">
+                                        <Tag className="w-3.5 h-3.5" />
+                                        {unpaidOrders.length} Pending {unpaidOrders.length === 1 ? "Bill" : "Bills"}
                                     </div>
                                 )}
                             </div>
-                        )}
 
-                        {/* Customer All Dues Summary */}
-                        {!isSingleBill && (
-                            <div className="p-6 bg-white dark:bg-slate-900/60 border border-slate-200/90 dark:border-slate-800/80 rounded-[28px] space-y-5 shadow-sm">
-                                <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-800/80 pb-4">
-                                    <div>
-                                        <span className="text-[10px] font-black uppercase tracking-widest text-emerald-700 dark:text-emerald-400">Outstanding Balance</span>
-                                        <h3 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">₹{payData.totalDue.toFixed(2)}</h3>
-                                    </div>
-                                    <div className="px-3.5 py-1.5 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 text-amber-700 dark:text-amber-400 rounded-full text-xs font-bold uppercase tracking-wider">
-                                        {unpaidOrders.length} Pending {unpaidOrders.length === 1 ? "Bill" : "Bills"}
-                                    </div>
-                                </div>
-
-                                {/* Unpaid Orders List */}
-                                <div className="space-y-2.5">
-                                    <p className="text-[11px] font-black text-slate-400 uppercase tracking-wider">Unpaid Invoices</p>
-                                    <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-                                        {unpaidOrders.map((ord: any) => (
-                                            <div key={ord.id} className="p-3 bg-slate-50 dark:bg-slate-950/70 rounded-2xl border border-slate-200/60 dark:border-slate-800/80 flex justify-between items-center text-xs">
-                                                <div>
-                                                    <p className="font-mono font-bold text-slate-800 dark:text-slate-200">{ord.id}</p>
-                                                    <p className="text-[10px] text-slate-500 dark:text-slate-400">{new Date(ord.createdAt).toLocaleDateString()}</p>
-                                                </div>
-                                                <div className="text-right">
-                                                    <p className="font-bold text-emerald-700 dark:text-emerald-400">Due: ₹{ord.dueAmount.toFixed(2)}</p>
-                                                    <p className="text-[10px] text-slate-400 dark:text-slate-500">Total: ₹{ord.totalAmount.toFixed(2)}</p>
-                                                </div>
+                            {/* CHANGE 1 UI: Click to see pending bills Accordion Button */}
+                            {unpaidOrders.length > 0 && (
+                                <div className="space-y-3 pt-1">
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowPendingList(!showPendingList)}
+                                        className="w-full p-4 bg-emerald-50/70 hover:bg-emerald-100/60 dark:bg-emerald-950/30 dark:hover:bg-emerald-900/40 border border-emerald-200/80 dark:border-emerald-500/30 rounded-2xl flex items-center justify-between transition-all cursor-pointer group shadow-xs"
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-9 h-9 rounded-xl bg-emerald-600 dark:bg-emerald-500 text-white dark:text-slate-950 flex items-center justify-center font-bold shadow-sm">
+                                                <Receipt className="w-5 h-5 stroke-[2.5]" />
                                             </div>
-                                        ))}
-                                    </div>
+                                            <div className="text-left">
+                                                <p className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white flex items-center gap-2">
+                                                    Click to see pending bills
+                                                    <Sparkles className="w-3.5 h-3.5 text-emerald-500 animate-pulse" />
+                                                </p>
+                                                <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
+                                                    {selectedBillId ? `Selected Bill #${selectedBillId}` : "View invoice details & settle specific bills"}
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="px-2.5 py-1 bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-400 text-[10px] font-black rounded-lg uppercase tracking-wider">
+                                                {unpaidOrders.length} Invoices
+                                            </span>
+                                            {showPendingList ? (
+                                                <ChevronUp className="w-5 h-5 text-emerald-600 dark:text-emerald-400 group-hover:-translate-y-0.5 transition-transform" />
+                                            ) : (
+                                                <ChevronDown className="w-5 h-5 text-emerald-600 dark:text-emerald-400 group-hover:translate-y-0.5 transition-transform" />
+                                            )}
+                                        </div>
+                                    </button>
+
+                                    {/* Expandable Unpaid Invoices List */}
+                                    {showPendingList && (
+                                        <div className="space-y-2.5 pt-2 animate-in fade-in slide-in-from-top-2 duration-300">
+                                            <div className="flex items-center justify-between px-1">
+                                                <p className="text-[11px] font-black text-slate-400 dark:text-slate-400 uppercase tracking-wider">Pending Invoice Breakdown</p>
+                                                {selectedBillId && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setSelectedBillId(null);
+                                                            setCustomAmount((payData?.totalDue || 0).toString());
+                                                        }}
+                                                        className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 hover:underline uppercase tracking-wider"
+                                                    >
+                                                        Reset to All Dues
+                                                    </button>
+                                                )}
+                                            </div>
+
+                                            <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
+                                                {unpaidOrders.map((ord: any) => {
+                                                    const isSelected = selectedBillId === ord.id;
+                                                    return (
+                                                        <div 
+                                                            key={ord.id} 
+                                                            className={cn(
+                                                                "p-4 rounded-2xl border transition-all flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 text-xs shadow-xs relative overflow-hidden",
+                                                                isSelected 
+                                                                    ? "bg-emerald-50/90 dark:bg-emerald-950/40 border-emerald-500 dark:border-emerald-400 ring-2 ring-emerald-500/20" 
+                                                                    : "bg-slate-50 dark:bg-slate-950/70 border-slate-200/80 dark:border-slate-800/80 hover:border-slate-300 dark:hover:border-slate-700"
+                                                            )}
+                                                        >
+                                                            {isSelected && (
+                                                                <div className="absolute top-0 right-0 bg-emerald-600 dark:bg-emerald-500 text-white dark:text-slate-950 text-[9px] font-black uppercase px-3 py-0.5 rounded-bl-xl tracking-wider flex items-center gap-1">
+                                                                    <Check className="w-3 h-3 stroke-[3]" /> Selected
+                                                                </div>
+                                                            )}
+                                                            <div className="space-y-1">
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className="font-mono font-black text-slate-900 dark:text-white text-sm">#{ord.id}</span>
+                                                                    <span className="px-2 py-0.5 bg-slate-200/70 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[9px] font-bold rounded-md uppercase">
+                                                                        {ord.paymentStatus}
+                                                                    </span>
+                                                                </div>
+                                                                <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">
+                                                                    Created: {new Date(ord.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                                                                </p>
+                                                                <div className="flex items-center gap-3 text-[11px] font-bold pt-0.5">
+                                                                    <span className="text-slate-500 dark:text-slate-400">Total: ₹{ord.totalAmount.toFixed(2)}</span>
+                                                                    <span className="text-slate-500 dark:text-slate-400">Paid: ₹{(ord.paidAmount || 0).toFixed(2)}</span>
+                                                                </div>
+                                                            </div>
+                                                            
+                                                            <div className="sm:text-right space-y-2 w-full sm:w-auto">
+                                                                <div>
+                                                                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Remaining Due</span>
+                                                                    <p className="text-base font-black text-emerald-600 dark:text-emerald-400">₹{ord.dueAmount.toFixed(2)}</p>
+                                                                </div>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleSelectBill(ord)}
+                                                                    className={cn(
+                                                                        "w-full sm:w-auto px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-xs",
+                                                                        isSelected
+                                                                            ? "bg-slate-900 text-white dark:bg-white dark:text-slate-950 hover:opacity-90"
+                                                                            : "bg-emerald-600 hover:bg-emerald-700 text-white dark:bg-emerald-500 dark:hover:bg-emerald-400 dark:text-slate-950"
+                                                                    )}
+                                                                >
+                                                                    <CreditCard className="w-3.5 h-3.5" />
+                                                                    {isSelected ? "Paying This Bill" : `Settle Bill (₹${ord.dueAmount.toFixed(2)})`}
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Single Bill Items Breakdown (If single bill URL requested) */}
+                        {isSingleBill && bill && bill.items && bill.items.length > 0 && (
+                            <div className="p-6 bg-white dark:bg-slate-900/60 border border-slate-200/90 dark:border-slate-800/80 rounded-[28px] space-y-3 shadow-xs">
+                                <p className="text-[11px] font-black text-slate-400 dark:text-slate-400 uppercase tracking-wider">Item Breakdown (#{bill.id})</p>
+                                <div className="divide-y divide-slate-100 dark:divide-slate-800/60 bg-slate-50/80 dark:bg-slate-950/70 rounded-2xl border border-slate-200/60 dark:border-slate-800/80 p-3.5">
+                                    {bill.items.map((item: any) => (
+                                        <div key={item.id} className="py-2.5 flex justify-between items-center text-xs">
+                                            <div>
+                                                <p className="font-bold text-slate-800 dark:text-slate-100">{item.name}</p>
+                                                <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">Qty: {item.quantity} × ₹{item.sellingPrice}</p>
+                                            </div>
+                                            <span className="font-mono font-bold text-slate-700 dark:text-slate-200 text-sm">₹{(item.quantity * item.sellingPrice).toFixed(2)}</span>
+                                        </div>
+                                    ))}
                                 </div>
                             </div>
                         )}
 
-                        {/* Payment Input & Action */}
+                        {/* CHANGE 2: Payment Input & Presets Section */}
                         <div className="p-6 bg-white dark:bg-slate-900/80 border border-slate-200/90 dark:border-slate-800/80 rounded-[28px] space-y-5 shadow-md">
-                            <div className="space-y-2">
+                            <div className="space-y-3">
                                 <div className="flex justify-between items-center">
-                                    <label className="block text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                                        {isSingleBill ? "Invoice Settlement Amount (₹)" : "Enter Payment Amount (₹)"}
+                                    <label className="block text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                                        <Tag className="w-3.5 h-3.5 text-emerald-500" />
+                                        {selectedBillId ? `Settlement Amount for Bill #${selectedBillId} (₹)` : "Enter Custom Payment Amount (₹)"}
                                     </label>
-                                    {isSingleBill && (
-                                        <span className="text-[10px] font-bold bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 px-2.5 py-0.5 rounded-full border border-amber-200 dark:border-amber-500/20">
-                                            Full Bill Settlement
-                                        </span>
-                                    )}
+                                    <span className="text-[10px] font-bold bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 px-2.5 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-500/20">
+                                        Custom Input Allowed
+                                    </span>
                                 </div>
+
                                 <div className="relative">
                                     <input 
                                         type="number"
-                                        value={isSingleBill ? (bill?.dueAmount || customAmount) : customAmount}
-                                        onChange={(e) => !isSingleBill && setCustomAmount(e.target.value)}
-                                        readOnly={isSingleBill}
+                                        value={customAmount}
+                                        onChange={(e) => setCustomAmount(e.target.value)}
                                         placeholder="0.00"
-                                        className={cn(
-                                            "w-full h-15 bg-slate-50 dark:bg-slate-950 border-2 border-slate-200 dark:border-slate-700/80 focus:border-emerald-500 rounded-2xl px-12 text-2xl font-black text-slate-900 dark:text-white outline-none transition-all tabular-nums [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none",
-                                            isSingleBill && "cursor-not-allowed bg-slate-100/80 dark:bg-slate-900 border-emerald-500/40"
-                                        )}
+                                        step="0.01"
+                                        min="1"
+                                        className="w-full h-16 bg-slate-50 dark:bg-slate-950 border-2 border-slate-200 dark:border-slate-700/80 focus:border-emerald-500 rounded-2xl px-12 text-2xl font-black text-slate-900 dark:text-white outline-none transition-all tabular-nums [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none shadow-inner"
                                     />
                                     <span className="absolute left-4 top-1/2 -translate-y-1/2 text-2xl font-black text-emerald-600 dark:text-emerald-500">₹</span>
                                 </div>
-                                <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
-                                    {isSingleBill 
-                                        ? `Single bills are cleared bill-by-bill for full amount (₹${Number(bill?.dueAmount || 0).toFixed(2)}).` 
-                                        : "Payments will automatically settle your oldest outstanding dues first."}
+
+                                {/* Preset Amount Buttons */}
+                                <div className="flex flex-wrap gap-2 pt-1">
+                                    <button
+                                        type="button"
+                                        onClick={() => setCustomAmount((selectedBill ? selectedBill.dueAmount : (payData?.totalDue || 0)).toString())}
+                                        className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold rounded-xl transition-all cursor-pointer border border-slate-200/80 dark:border-slate-700"
+                                    >
+                                        Full Due (₹{(selectedBill ? selectedBill.dueAmount : (payData?.totalDue || 0)).toFixed(2)})
+                                    </button>
+                                    {[500, 200, 100, 50, 1].map((amt) => (
+                                        <button
+                                            key={amt}
+                                            type="button"
+                                            onClick={() => setCustomAmount(amt.toString())}
+                                            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800/80 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold rounded-xl transition-all cursor-pointer border border-slate-200/60 dark:border-slate-700/60"
+                                        >
+                                            ₹{amt}
+                                        </button>
+                                    ))}
+                                </div>
+
+                                <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium leading-relaxed pt-1">
+                                    💡 <span className="font-bold text-slate-700 dark:text-slate-300">Automatic Ledger Sync:</span> Any input amount paid creates a verified transaction ID, records a credit entry in your account ledger, and updates unpaid invoice statuses.
                                 </p>
                             </div>
 
@@ -415,7 +543,7 @@ function PayContent({ slugParams }: PayPageProps) {
 
                 {/* Footer Security Note */}
                 <div className="text-center pt-2 text-[11px] text-slate-400 dark:text-slate-400 font-semibold tracking-wide">
-                    Protected by Easebuzz Gateway • Book My Veg Official Checkout
+                    Protected by Easebuzz Gateway • Book My Veg Official Payment Desk
                 </div>
 
                 {/* In-App Payment Gateway Popup Modal Overlay */}

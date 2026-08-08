@@ -6,6 +6,7 @@ const router = (0, express_1.Router)();
 // Public routes for customer bill payment and dues settlement
 router.get("/pay-info", paymentController_1.getPayInfo);
 router.post("/pay-due", paymentController_1.initiatePayDue);
+router.post("/verify", paymentController_1.verifyPayment);
 router.post("/onboard", paymentController_1.publicCustomerOnboard);
 router.post("/order-feedback", paymentController_1.saveOrderFeedback);
 router.post("/send-reminder", paymentController_1.sendPaymentReminderController);
