@@ -483,6 +483,10 @@ export default function POSOperator() {
 
             if (isPaid) {
                 toast.success("Easebuzz Payment verified successfully!");
+                setCart([]);
+                setDiscount(0);
+                setCouponCode("");
+                setEditingOrderId(null);
                 setLastReceipt((prev: any) => {
                     if (!prev) return prev;
                     return {
@@ -501,16 +505,26 @@ export default function POSOperator() {
                     handlePrintReceipt();
                 }, 500);
             } else {
-                toast.warning("Payment not completed or verified yet. Bill saved to dues.");
+                toast.warning("Payment not completed. Cart preserved — choose payment method again.");
+                if (lastReceipt?.items && lastReceipt.items.length > 0) {
+                    setCart(lastReceipt.items);
+                }
+                if (targetBillId) {
+                    setEditingOrderId(targetBillId);
+                }
                 setShowPosIframeModal(false);
-                setShowPaymentDialog(false);
-                setShowReceiptDialog(true);
+                setShowPaymentDialog(true);
             }
         } catch (err) {
             toast.error("Could not verify payment status automatically.");
+            if (lastReceipt?.items && lastReceipt.items.length > 0) {
+                setCart(lastReceipt.items);
+            }
+            if (targetBillId) {
+                setEditingOrderId(targetBillId);
+            }
             setShowPosIframeModal(false);
-            setShowPaymentDialog(false);
-            setShowReceiptDialog(true);
+            setShowPaymentDialog(true);
         } finally {
             setIsProcessing(false);
         }
@@ -522,6 +536,8 @@ export default function POSOperator() {
             return;
         }
         setIsProcessing(true);
+        const activeCartBackup = [...cart];
+
         try {
             let targetBillId = lastReceipt?.order?.id || inspectingOrder?.id || editingOrderId || "";
 
@@ -567,10 +583,6 @@ export default function POSOperator() {
                     dueSummary: res.data.dueSummary
                 });
 
-                setCart([]);
-                setDiscount(0);
-                setCouponCode("");
-                setEditingOrderId(null);
                 toast.success(`Bill #${targetBillId} generated. Initiating digital payment...`);
             }
 
@@ -587,6 +599,22 @@ export default function POSOperator() {
                 amount: grandTotal
             });
             const data = res.data;
+
+            const handleCancellationOrFailure = (msg: string, isError: boolean = false) => {
+                if (isError) toast.error(msg);
+                else toast.warning(msg);
+
+                if (activeCartBackup.length > 0) {
+                    setCart(activeCartBackup);
+                } else if (lastReceipt?.items && lastReceipt.items.length > 0) {
+                    setCart(lastReceipt.items);
+                }
+                if (targetBillId) {
+                    setEditingOrderId(targetBillId);
+                }
+                setShowPosIframeModal(false);
+                setShowPaymentDialog(true);
+            };
 
             if (data.accessKey || data.paymentLink) {
                 let checkoutUrl = data.paymentLink || `https://${data.env === "prod" ? "pay" : "testpay"}.easebuzz.in/pay/${data.accessKey}`;
@@ -609,16 +637,12 @@ export default function POSOperator() {
                                     const respStatus = (response?.status || "").toLowerCase();
 
                                     if (respStatus === "user_cancelled" || respStatus === "usercancelled" || respStatus === "cancelled") {
-                                        toast.warning("Easebuzz Payment cancelled by user. Saved to dues.");
-                                        setShowPaymentDialog(false);
-                                        setShowPosIframeModal(false);
+                                        handleCancellationOrFailure("Payment cancelled. Cart preserved — choose payment method again.");
                                         return;
                                     }
 
                                     if (respStatus === "failed" || respStatus === "failure" || respStatus === "declined" || respStatus === "bounced") {
-                                        toast.error("Easebuzz Payment failed or declined. Saved to dues.");
-                                        setShowPaymentDialog(false);
-                                        setShowPosIframeModal(false);
+                                        handleCancellationOrFailure("Payment failed or declined. Cart preserved — choose payment method again.", true);
                                         return;
                                     }
 
@@ -634,6 +658,10 @@ export default function POSOperator() {
                                         } catch (verifyErr) {
                                             console.error("Payment verify call failed:", verifyErr);
                                         }
+                                        setCart([]);
+                                        setDiscount(0);
+                                        setCouponCode("");
+                                        setEditingOrderId(null);
                                         setShowPaymentDialog(false);
                                         setShowPosIframeModal(false);
                                         setLastReceipt((prev: any) => {
