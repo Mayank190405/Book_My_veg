@@ -478,16 +478,6 @@ export default function POSOperator() {
 
         setIsProcessing(true);
         try {
-            // First attempt to verify payment status with backend so DB payment record is created
-            try {
-                await api.post("/payments/verify", {
-                    order_id: targetBillId,
-                    status: "SUCCESS"
-                });
-            } catch (e) {
-                // If verify endpoint call fails or is already verified, proceed to check DB status
-            }
-
             const res = await api.get(`/pay/pay-info?billid=${targetBillId}`);
             const isPaid = res.data.bill?.isPaid || res.data.bill?.paymentStatus === "COMPLETED" || res.data.bill?.paymentStatus === "PAID";
 
@@ -511,7 +501,7 @@ export default function POSOperator() {
                     handlePrintReceipt();
                 }, 500);
             } else {
-                toast.warning("Payment not verified yet. Order saved to dues.");
+                toast.warning("Payment not completed or verified yet. Bill saved to dues.");
                 setShowPosIframeModal(false);
                 setShowPaymentDialog(false);
                 setShowReceiptDialog(true);
@@ -616,7 +606,23 @@ export default function POSOperator() {
                                 access_key: data.accessKey,
                                 onResponse: async (response: any) => {
                                     setIsProcessing(false);
-                                    if (response.status === "success") {
+                                    const respStatus = (response?.status || "").toLowerCase();
+
+                                    if (respStatus === "user_cancelled" || respStatus === "usercancelled" || respStatus === "cancelled") {
+                                        toast.warning("Easebuzz Payment cancelled by user. Saved to dues.");
+                                        setShowPaymentDialog(false);
+                                        setShowPosIframeModal(false);
+                                        return;
+                                    }
+
+                                    if (respStatus === "failed" || respStatus === "failure" || respStatus === "declined" || respStatus === "bounced") {
+                                        toast.error("Easebuzz Payment failed or declined. Saved to dues.");
+                                        setShowPaymentDialog(false);
+                                        setShowPosIframeModal(false);
+                                        return;
+                                    }
+
+                                    if (respStatus === "success" || respStatus === "charged") {
                                         try {
                                             await api.post("/payments/verify", {
                                                 order_id: data.txnid || targetBillId,
@@ -627,7 +633,6 @@ export default function POSOperator() {
                                             toast.success("Payment completed & verified via Easebuzz");
                                         } catch (verifyErr) {
                                             console.error("Payment verify call failed:", verifyErr);
-                                            toast.success("Payment completed via Easebuzz");
                                         }
                                         setShowPaymentDialog(false);
                                         setShowPosIframeModal(false);

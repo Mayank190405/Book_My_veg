@@ -652,16 +652,22 @@ const verifyPayment = (req, res) => __awaiter(void 0, void 0, void 0, function* 
         }
         if (resolvedOrderId && (resolvedOrderId.startsWith("SETTLE_") || resolvedOrderId.startsWith("DUE_"))) {
             const SUCCESS_STATUSES = ["CHARGED", "SUCCESS", "PAYMENT_SUCCESS", "AUTHORIZED"];
-            const isSuccess = rawStatus ? SUCCESS_STATUSES.includes(rawStatus.toUpperCase()) : true;
+            const isSuccess = rawStatus ? SUCCESS_STATUSES.includes(rawStatus.toUpperCase()) : false;
+            if (!isSuccess) {
+                return res.status(400).json({
+                    status: "FAILED",
+                    message: "Settlement payment was cancelled or failed"
+                });
+            }
             yield completeOrderPayment(resolvedOrderId, {
-                status: isSuccess ? "CHARGED" : "FAILED",
+                status: "CHARGED",
                 txn_id: txn_id || `TXN_${Date.now()}`,
                 amount: Number(bodyAmount || 0),
                 payment_method_type: "ONLINE"
             });
             return res.json({
-                status: isSuccess ? "SUCCESS" : "FAILED",
-                message: isSuccess ? "Account settlement payment completed successfully" : "Settlement failed"
+                status: "SUCCESS",
+                message: "Account settlement payment completed successfully"
             });
         }
         // 1. Check DB first (Idempotency)
@@ -680,16 +686,23 @@ const verifyPayment = (req, res) => __awaiter(void 0, void 0, void 0, function* 
             const rawStatus = req.body.status;
             const SUCCESS_STATUSES = ["CHARGED", "SUCCESS", "PAYMENT_SUCCESS", "AUTHORIZED"];
             const isSuccess = SUCCESS_STATUSES.includes(rawStatus.toUpperCase());
+            if (!isSuccess) {
+                logger_1.default.info(`[Payment] Payment verification received non-success status '${rawStatus}' for order ${resolvedOrderId}`);
+                return res.status(400).json({
+                    status: "FAILED",
+                    message: `Payment was not completed (status: ${rawStatus})`
+                });
+            }
             logger_1.default.info(`[Payment] Running payment verification for order ${resolvedOrderId} (status: ${rawStatus})`);
             yield completeOrderPayment(resolvedOrderId, {
-                status: isSuccess ? "CHARGED" : "FAILED",
+                status: "CHARGED",
                 txn_id: txn_id || `TXN_${Date.now()}`,
                 amount: Number(bodyAmount || existing.totalAmount),
                 payment_method_type: "ONLINE"
             });
             return res.json({
-                status: isSuccess ? "SUCCESS" : "FAILED",
-                message: isSuccess ? "Payment verified successfully" : "Payment failed"
+                status: "SUCCESS",
+                message: "Payment verified successfully"
             });
         }
         // Easebuzz Verification Pathway

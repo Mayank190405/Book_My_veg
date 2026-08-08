@@ -158,25 +158,35 @@ function PayContent({ slugParams }: PayPageProps) {
                                 access_key: data.accessKey,
                                 onResponse: async (response: any) => {
                                     setProcessing(false);
-                                    if (response.status === "success" || response.status === "user_cancelled") {
-                                        if (response.status === "success") {
-                                            try {
-                                                await fetch(`${getBaseURL()}/pay/verify`, {
-                                                    method: "POST",
-                                                    headers: { "Content-Type": "application/json" },
-                                                    body: JSON.stringify({
-                                                        order_id: data.txnid || targetBillId || payData?.bill?.id,
-                                                        status: "SUCCESS",
-                                                        amount: payAmount,
-                                                        txn_id: response.easepayid || response.txnid || response.easebuzz_id
-                                                    })
-                                                });
-                                            } catch (e) {
-                                                console.error("Pay verify error:", e);
-                                            }
-                                            setPaymentSuccess(true);
-                                            fetchPayData();
+                                    const respStatus = (response?.status || "").toLowerCase();
+
+                                    if (respStatus === "user_cancelled" || respStatus === "usercancelled" || respStatus === "cancelled") {
+                                        alert("Easebuzz Payment was cancelled. Your bill remains unpaid.");
+                                        return;
+                                    }
+
+                                    if (respStatus === "failed" || respStatus === "failure" || respStatus === "declined" || respStatus === "bounced") {
+                                        alert("Easebuzz Payment failed or was declined. Please try again.");
+                                        return;
+                                    }
+
+                                    if (respStatus === "success" || respStatus === "charged") {
+                                        try {
+                                            await fetch(`${getBaseURL()}/pay/verify`, {
+                                                method: "POST",
+                                                headers: { "Content-Type": "application/json" },
+                                                body: JSON.stringify({
+                                                    order_id: data.txnid || targetBillId || payData?.bill?.id,
+                                                    status: "SUCCESS",
+                                                    amount: payAmount,
+                                                    txn_id: response.easepayid || response.txnid || response.easebuzz_id
+                                                })
+                                            });
+                                        } catch (e) {
+                                            console.error("Pay verify error:", e);
                                         }
+                                        setPaymentSuccess(true);
+                                        fetchPayData();
                                     }
                                 }
                             });
