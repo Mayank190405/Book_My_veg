@@ -1125,12 +1125,16 @@ export default function POSOperator() {
                     <title>Bill - ${lastReceipt?.order?.id?.slice(0, 8) || ''}</title>
                     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;800;900&display=swap" rel="stylesheet">
                     <style>
+                        * {
+                            box-sizing: border-box;
+                        }
                         html, body {
                             margin: 0;
                             padding: 0;
                             width: 100%;
-                            height: 100%;
                             background: #fff;
+                            color: #000;
+                            font-family: 'Poppins', Arial, sans-serif;
                         }
                         body { 
                             display: flex;
@@ -1139,8 +1143,10 @@ export default function POSOperator() {
                         }
                         .bill-wrapper {
                             font-family: 'Poppins', Arial, sans-serif; 
-                            width: 58mm; 
-                            padding: 2mm;
+                            width: 100%;
+                            max-width: 80mm; 
+                            margin: 0 auto;
+                            padding: 3mm;
                             font-size: 8.5px;
                             line-height: 1.3;
                             color: #000;
@@ -1171,6 +1177,7 @@ export default function POSOperator() {
                         .item-table th { 
                             font-weight: 800; 
                             text-align: center;
+                            background-color: #f5f5f5;
                         }
                         
                         .metadata-block {
@@ -1213,9 +1220,25 @@ export default function POSOperator() {
                         }
 
                         @media print {
-                            @page { margin: 0; }
-                            body { width: 100%; }
-                            .bill-wrapper { width: 58mm; }
+                            @page { 
+                                size: auto;
+                                margin: 0mm; 
+                            }
+                            html, body { 
+                                width: 100% !important; 
+                                margin: 0 !important;
+                                padding: 0 !important;
+                                display: block !important;
+                                background: #fff !important;
+                            }
+                            .bill-wrapper { 
+                                width: 100% !important; 
+                                max-width: 100% !important;
+                                margin: 0 !important;
+                                padding: 2mm 3mm !important;
+                                border: none !important;
+                                box-shadow: none !important;
+                            }
                         }
                     </style>
                 </head>
