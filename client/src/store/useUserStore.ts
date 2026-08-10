@@ -15,8 +15,10 @@ interface User {
 interface UserState {
     user: User | null;
     token: string | null;
+    refreshToken: string | null;
     setUser: (user: User | null) => void;
     setToken: (token: string | null) => void;
+    setRefreshToken: (refreshToken: string | null) => void;
     logout: () => void;
     location: {
         address: string;
@@ -53,9 +55,11 @@ export const useUserStore = create<UserState>()(
         (set) => ({
             user: null,
             token: null,
+            refreshToken: null,
             setUser: (user) => set({ user }),
             setToken: (token) => set({ token }),
-            logout: () => set({ user: null, token: null, activeStore: null }),
+            setRefreshToken: (refreshToken) => set({ refreshToken }),
+            logout: () => set({ user: null, token: null, refreshToken: null, activeStore: null }),
             location: { address: "Govind Nagar", pincode: "422002", coords: { lat: 20.0012, lng: 73.7639 } },
             activeStore: null,
             setLocation: (location) => set({ location }),

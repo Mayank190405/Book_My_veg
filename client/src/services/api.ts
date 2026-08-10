@@ -61,6 +61,12 @@ api.interceptors.response.use(
         const originalRequest = error.config;
 
         if (error.response?.status === 401 && !originalRequest._retry) {
+            // Prevent infinite refresh loop if refresh endpoint itself returned 401
+            if (originalRequest.url?.includes('/auth/refresh')) {
+                useUserStore.getState().logout();
+                return Promise.reject(error);
+            }
+
             if (isRefreshing) {
                 return new Promise((resolve, reject) => {
                     failedQueue.push({ resolve, reject });
@@ -74,30 +80,39 @@ api.interceptors.response.use(
             isRefreshing = true;
 
             try {
-                // Try refreshing the token — use a clean axios instance to avoid interceptor loops
-                let baseURL = api.defaults.baseURL;
-                // If baseURL is relative or missing, fallback to window.location.origin or local dev server
-                if (!baseURL || baseURL.startsWith('/')) {
-                    const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
-                    baseURL = (process.env.NEXT_PUBLIC_API_URL || `${origin.replace(':3000', ':5000')}/api/v1`);
-                }
+                // Try refreshing the token — use getBaseURL() to maintain environment & HTTPS consistency
+                const baseURL = getBaseURL();
+                const storedRefreshToken = useUserStore.getState().refreshToken;
 
                 const response = await axios.post(
                     `${baseURL}/auth/refresh`,
-                    {},
-                    { withCredentials: true }
+                    { refreshToken: storedRefreshToken },
+                    { 
+                        headers: storedRefreshToken ? { 'x-refresh-token': storedRefreshToken } : {},
+                        withCredentials: true 
+                    }
                 );
 
                 const newToken = response.data.accessToken;
-                useUserStore.getState().setToken(newToken);
+                const newRefreshToken = response.data.refreshToken;
+
+                if (newToken) {
+                    useUserStore.getState().setToken(newToken);
+                }
+                if (newRefreshToken) {
+                    useUserStore.getState().setRefreshToken(newRefreshToken);
+                }
 
                 originalRequest.headers.Authorization = `Bearer ${newToken}`;
                 processQueue(null, newToken);
 
                 return api(originalRequest);
-            } catch (refreshError) {
+            } catch (refreshError: any) {
                 processQueue(refreshError, null);
-                useUserStore.getState().logout();
+                // Only log out if refresh explicitly returned 401 or 403 (unauthorized/invalid token), not on network errors
+                if (refreshError?.response?.status === 401 || refreshError?.response?.status === 403) {
+                    useUserStore.getState().logout();
+                }
                 return Promise.reject(refreshError);
             } finally {
                 isRefreshing = false;

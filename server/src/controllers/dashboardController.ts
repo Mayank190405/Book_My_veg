@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import prisma from "../config/prisma";
-import { Prisma, Channel } from "@prisma/client";
+import { Prisma, Channel, Role } from "@prisma/client";
 
 interface AuthenticatedRequest extends Request {
     user?: { userId: string; role: string; locationId?: string };
@@ -287,8 +287,16 @@ export const getSalesReports = async (req: AuthenticatedRequest, res: Response, 
         // 2. Date Filtering
         if (startDate || endDate) {
             where.createdAt = {};
-            if (startDate) where.createdAt.gte = new Date(startDate as string);
-            if (endDate) where.createdAt.lte = new Date(endDate as string);
+            if (startDate) {
+                const s = new Date(startDate as string);
+                s.setHours(0, 0, 0, 0);
+                where.createdAt.gte = s;
+            }
+            if (endDate) {
+                const e = new Date(endDate as string);
+                e.setHours(23, 59, 59, 999);
+                where.createdAt.lte = e;
+            }
         }
 
         // 3. Channel Filter (WEB / POS)
@@ -494,10 +502,9 @@ export const getCustomerSalesAndDueReports = async (req: AuthenticatedRequest, r
             targetLocationId = locId;
         }
 
-        // Fetch users matching search query who are customers (role = USER)
+        // Fetch users matching search query (all non-admin customer accounts)
         const userWhere: Prisma.UserWhereInput = {
-            role: "USER",
-            isActive: true,
+            role: { notIn: ["ADMIN", "STORE_ADMIN", "MANAGER"] as Role[] },
             ...(searchStr ? {
                 OR: [
                     { name: { contains: searchStr, mode: "insensitive" } },
@@ -517,22 +524,17 @@ export const getCustomerSalesAndDueReports = async (req: AuthenticatedRequest, r
                 createdAt: true,
                 orders: {
                     where: {
-                        status: { notIn: ["CANCELLED", "FAILED", "PAYMENT_PENDING"] },
-                        ...(channelStr ? { channel: channelStr as Channel } : {}),
-                        ...(targetLocationId ? { locationId: targetLocationId } : {}),
-                        ...(startStr || endStr ? {
-                            createdAt: {
-                                ...(startStr ? { gte: new Date(startStr) } : {}),
-                                ...(endStr ? { lte: new Date(endStr) } : {})
-                            }
-                        } : {})
+                        status: { notIn: ["CANCELLED", "FAILED", "PAYMENT_PENDING"] }
                     },
                     select: {
                         id: true,
                         totalAmount: true,
                         paymentStatus: true,
+                        isPaid: true,
                         status: true,
                         createdAt: true,
+                        channel: true,
+                        locationId: true,
                         payments: {
                             where: { status: "SUCCESS" },
                             select: {
@@ -551,19 +553,33 @@ export const getCustomerSalesAndDueReports = async (req: AuthenticatedRequest, r
 
         // Compute aggregates in-memory
         const customerReports = users.map(user => {
-            const orders = user.orders;
-            const orderCount = orders.length;
-            const totalSpend = orders.reduce((sum, o) => sum + Number(o.totalAmount), 0);
+            const allOrders = user.orders;
+
+            const startDateObj = startStr ? (() => { const s = new Date(startStr); s.setHours(0, 0, 0, 0); return s; })() : null;
+            const endDateObj = endStr ? (() => { const e = new Date(endStr); e.setHours(23, 59, 59, 999); return e; })() : null;
+
+            // Filter orders for spend/count stats if date range / location / channel specified
+            const dateFilteredOrders = allOrders.filter(o => {
+                if (channelStr && o.channel !== channelStr) return false;
+                if (targetLocationId && o.locationId !== targetLocationId) return false;
+                if (startDateObj && o.createdAt < startDateObj) return false;
+                if (endDateObj && o.createdAt > endDateObj) return false;
+                return true;
+            });
+
+            const orderCount = dateFilteredOrders.length;
+            const totalSpend = dateFilteredOrders.reduce((sum, o) => sum + Number(o.totalAmount), 0);
             
-            // Calculate total paid across all orders
-            const totalPaid = orders.reduce((sum, o) => {
+            // Calculate total paid across date-filtered orders
+            const totalPaid = dateFilteredOrders.reduce((sum, o) => {
                 const orderPaid = o.payments.reduce((pSum, p) => pSum + Number(p.amount), 0);
                 return sum + orderPaid;
             }, 0);
 
-            // Calculate outstanding due (only on non-cancelled orders that aren't fully paid)
-            const totalDue = orders.reduce((sum, o) => {
-                if (o.paymentStatus !== "COMPLETED") {
+            // Calculate current total outstanding due across ALL active orders of the customer
+            const totalDue = allOrders.reduce((sum, o) => {
+                const isSettled = o.isPaid || o.paymentStatus === "COMPLETED" || o.paymentStatus === "PAID" || o.paymentStatus === "SETTLED";
+                if (!isSettled) {
                     const paid = o.payments.reduce((pSum, p) => pSum + Number(p.amount), 0);
                     const due = Number(o.totalAmount) - paid;
                     return sum + (due > 0 ? due : 0);
@@ -571,12 +587,12 @@ export const getCustomerSalesAndDueReports = async (req: AuthenticatedRequest, r
                 return sum;
             }, 0);
 
-            const lastVisit = orders.length > 0 
-                ? orders.reduce((latest, o) => o.createdAt > latest ? o.createdAt : latest, orders[0].createdAt)
+            const lastVisit = allOrders.length > 0 
+                ? allOrders.reduce((latest, o) => o.createdAt > latest ? o.createdAt : latest, allOrders[0].createdAt)
                 : null;
 
             // Get store locations user has shopped at
-            const storesList = Array.from(new Set(orders.map(o => o.location?.name).filter(Boolean)));
+            const storesList = Array.from(new Set(allOrders.map(o => o.location?.name).filter(Boolean)));
 
             return {
                 id: user.id,
@@ -759,8 +775,8 @@ export const getCustomerDetailedReport = async (req: AuthenticatedRequest, res: 
                 }
             });
 
-            // Payment Events for successful payments associated with this order
-            order.payments.forEach((payment: any) => {
+            // Payment Events for successful payments associated with this order (excluding CREDIT records)
+            order.payments.filter((p: any) => p.method !== "CREDIT").forEach((payment: any) => {
                 events.push({
                     type: "PAYMENT",
                     date: payment.createdAt,

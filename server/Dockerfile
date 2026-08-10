@@ -1,5 +1,4 @@
-
-# Build stage
+# syntax=docker/dockerfile:1
 FROM node:20-alpine AS builder
 
 WORKDIR /app
@@ -8,8 +7,9 @@ WORKDIR /app
 COPY package*.json ./
 COPY prisma ./prisma/
 
-# Install dependencies
-RUN npm install
+# Install dependencies with npm cache
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --prefer-offline --no-audit
 
 # Copy source
 COPY . .
@@ -17,20 +17,18 @@ COPY . .
 # Generate Prisma client
 RUN DATABASE_URL="postgresql://placeholder:placeholder@localhost:5432/db" npx prisma generate
 
-# Build TypeScript with detailed error logging
-RUN npm run build || (npm run build > build_error_docker.log 2>&1 || cat build_error_docker.log && exit 1)
+# Build TypeScript
+RUN npm run build
 
 # Production stage
 FROM node:20-alpine
 
 WORKDIR /app
 
-# Copy package files and prisma for migrations
+# Copy package files and compiled output
 COPY --from=builder /app/package*.json ./
-COPY --from=builder /app/prisma.config.ts ./
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/src ./src
 COPY --from=builder /app/node_modules ./node_modules
 
 # Expose port

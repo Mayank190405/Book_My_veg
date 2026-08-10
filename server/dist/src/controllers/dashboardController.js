@@ -642,8 +642,8 @@ const getCustomerDetailedReport = (req, res, next) => __awaiter(void 0, void 0, 
                     staffName: (_b = order.staff) === null || _b === void 0 ? void 0 : _b.name
                 }
             });
-            // Payment Events for successful payments associated with this order
-            order.payments.forEach((payment) => {
+            // Payment Events for successful payments associated with this order (excluding CREDIT records)
+            order.payments.filter((p) => p.method !== "CREDIT").forEach((payment) => {
                 events.push({
                     type: "PAYMENT",
                     date: payment.createdAt,

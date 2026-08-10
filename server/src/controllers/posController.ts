@@ -243,6 +243,11 @@ export const updateWebOrderStatus = async (req: AuthenticatedRequest, res: Respo
                 updatedBy: staffId
             });
 
+            getIo().emit("REALTIME_REPORT_UPDATE", {
+                orderId: orderId,
+                status: targetStatus
+            });
+
             if (packerId) {
                 getIo().to(packerId).emit("OP_NEW_ORDER", {
                     id: orderId,
@@ -521,7 +526,7 @@ export const processPOSOrder = async (req: AuthenticatedRequest, res: Response, 
                 }, tx);
             }
 
-            if (effectivePaid > 0 && !suspend) {
+            if (effectivePaid > 0 && !suspend && paymentMethod !== "CREDIT") {
                 await tx.payment.create({
                     data: {
                         orderId: order.id,
@@ -571,7 +576,7 @@ export const processPOSOrder = async (req: AuthenticatedRequest, res: Response, 
 
         // ─── SETTLE OLD DUES ────────────────────────────────────────────────
         let settledFromOld = 0;
-        if (duePaymentAmount > 0) {
+        if (duePaymentAmount > 0 && paymentMethod !== "CREDIT") {
             let remaining = Number(duePaymentAmount);
             const unpaidOrders = await prisma.order.findMany({
                 where: { 
@@ -753,11 +758,20 @@ export const getCustomerHistory = async (req: AuthenticatedRequest, res: Respons
             take: 50
         });
 
-        // 🛡️ ACCURATE DUE: amount - SUM(payments) where paymentStatus != COMPLETED
-        const dueOrders = orders.filter(o => o.paymentStatus !== "COMPLETED" && o.status !== "CANCELLED" && o.status !== "FAILED" && o.status !== "PAYMENT_PENDING");
+        // 🛡️ ACCURATE DUE: Only calculate due on unpaid orders (!isPaid & paymentStatus not completed/paid/settled)
+        const dueOrders = orders.filter(o => 
+            !o.isPaid && 
+            o.paymentStatus !== "COMPLETED" && 
+            o.paymentStatus !== "PAID" && 
+            o.paymentStatus !== "SETTLED" && 
+            o.status !== "CANCELLED" && 
+            o.status !== "FAILED" && 
+            o.status !== "PAYMENT_PENDING"
+        );
         const totalDue = dueOrders.reduce((acc, o) => {
-            const paid = o.payments.reduce((pAcc, p) => pAcc + Number(p.amount), 0);
-            return acc + (Number(o.totalAmount) - paid);
+            const paid = o.payments ? o.payments.filter((p: any) => p.status === "SUCCESS" || !p.status).reduce((pAcc: number, p: any) => pAcc + Number(p.amount), 0) : 0;
+            const remaining = Number(o.totalAmount) - paid;
+            return acc + (remaining > 0 ? remaining : 0);
         }, 0);
         
         const totalSpend = orders.filter(o => o.status !== "CANCELLED" && o.status !== "FAILED" && o.status !== "PAYMENT_PENDING").reduce((acc, o) => acc + Number(o.totalAmount), 0);

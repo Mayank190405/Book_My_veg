@@ -15,6 +15,9 @@ export const verifyOtp = async (phone: string, otp: string) => {
     if (response.data.accessToken) {
         useUserStore.getState().setToken(response.data.accessToken);
     }
+    if (response.data.refreshToken) {
+        useUserStore.getState().setRefreshToken(response.data.refreshToken);
+    }
     return response.data;
 };
 
@@ -25,6 +28,9 @@ export const loginWithPassword = async (phone: string, password: string) => {
     }
     if (response.data.accessToken) {
         useUserStore.getState().setToken(response.data.accessToken);
+    }
+    if (response.data.refreshToken) {
+        useUserStore.getState().setRefreshToken(response.data.refreshToken);
     }
     return response.data;
 };
@@ -37,6 +43,9 @@ export const checkWhatsappStatus = async (phone: string, token: string) => {
         }
         if (response.data.accessToken) {
             useUserStore.getState().setToken(response.data.accessToken);
+        }
+        if (response.data.refreshToken) {
+            useUserStore.getState().setRefreshToken(response.data.refreshToken);
         }
     }
     return response.data;

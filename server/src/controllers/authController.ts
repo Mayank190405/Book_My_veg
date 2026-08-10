@@ -106,12 +106,11 @@ export const verifyOtpAndLogin = async (req: Request, res: Response) => {
 
         const { accessToken, refreshToken } = generateTokens(user.id, user.role, user.locationId);
 
-        // Set Refresh Token in HTTP-only cookie
         res.cookie("refreshToken", refreshToken, {
             httpOnly: true,
             secure: process.env.NODE_ENV === "production",
             sameSite: "lax",
-            maxAge: 7 * 24 * 60 * 60 * 1000,
+            maxAge: 30 * 24 * 60 * 60 * 1000,
         });
 
         // Create Audit Log
@@ -129,6 +128,7 @@ export const verifyOtpAndLogin = async (req: Request, res: Response) => {
         res.status(200).json({
             message: "Login successful",
             accessToken,
+            refreshToken,
             user: { id: user.id, phone: user.phone, role: user.role, name: user.name },
         });
     } catch (error) {
@@ -289,7 +289,7 @@ export const whatsappWebhook = async (req: Request, res: Response) => {
 };
 
 export const refreshToken = async (req: Request, res: Response) => {
-    const token = req.cookies.refreshToken;
+    const token = req.cookies.refreshToken || (req.headers["x-refresh-token"] as string) || req.body?.refreshToken;
 
     if (!token) {
         return res.status(401).json({ message: "Refresh token required" });
@@ -309,10 +309,10 @@ export const refreshToken = async (req: Request, res: Response) => {
             httpOnly: true,
             secure: process.env.NODE_ENV === "production",
             sameSite: "lax",
-            maxAge: 7 * 24 * 60 * 60 * 1000,
+            maxAge: 30 * 24 * 60 * 60 * 1000, // 30 Days
         });
 
-        res.status(200).json({ accessToken: tokens.accessToken });
+        res.status(200).json({ accessToken: tokens.accessToken, refreshToken: tokens.refreshToken, user });
     } catch (error) {
         return res.status(403).json({ message: "Invalid refresh token" });
     }
@@ -367,7 +367,7 @@ export const loginWithPassword = async (req: Request, res: Response) => {
                 httpOnly: true,
                 secure: process.env.NODE_ENV === "production",
                 sameSite: "lax",
-                maxAge: 7 * 24 * 60 * 60 * 1000,
+                maxAge: 30 * 24 * 60 * 60 * 1000,
             });
 
             // Create Audit Log - Set staffId to null for virtual store logins (avoids FK violation)
@@ -390,6 +390,7 @@ export const loginWithPassword = async (req: Request, res: Response) => {
             return res.status(200).json({
                 message: "Store login successful",
                 accessToken,
+                refreshToken,
                 user: { 
                     id: `STORE_${locationMatch.id}`, 
                     phone: locationMatch.contactNumber, 
@@ -413,7 +414,7 @@ export const loginWithPassword = async (req: Request, res: Response) => {
             httpOnly: true,
             secure: process.env.NODE_ENV === "production",
             sameSite: "lax",
-            maxAge: 7 * 24 * 60 * 60 * 1000,
+            maxAge: 30 * 24 * 60 * 60 * 1000,
         });
 
         // Create Audit Log
@@ -437,6 +438,7 @@ export const loginWithPassword = async (req: Request, res: Response) => {
         res.status(200).json({
             message: "Login successful",
             accessToken,
+            refreshToken,
             user: { id: user.id, phone: user.phone, role: user.role, name: user.name, locationId: user.locationId },
         });
     } catch (error: any) {

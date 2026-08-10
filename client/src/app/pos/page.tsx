@@ -275,10 +275,8 @@ export default function POSOperator() {
             });
             setActiveShift(null);
             await clearShiftDenominations();
-            toast.success(res.data.message || "Shift closed and reconciled");
-            // Auto-logout after shift closure to allow next operator login
-            await logout();
-            router.push("/login");
+            toast.success(res.data.message || "Shift closed and reconciled successfully");
+            setShowShiftModal(false);
         } catch (e: any) {
             toast.error(e?.response?.data?.message || "Failed to close shift");
         }
@@ -385,16 +383,25 @@ export default function POSOperator() {
     };
 
     const forwardWhatsAppLink = async (type: "BILL" | "ALL_DUES", customBillId?: string) => {
-        if (!selectedCustomer?.phone) {
+        const customer = selectedCustomer || lastReceipt?.customer || inspectingOrder?.user || inspectingOrder?.customer;
+        const phone = customer?.phone || lastReceipt?.customerPhone || lastReceipt?.order?.customerPhone || "";
+        const customerId = customer?.id || lastReceipt?.userId || lastReceipt?.order?.userId || "";
+        const customerName = customer?.name || lastReceipt?.order?.customerName || "Valued Customer";
+
+        if (!phone) {
             toast.error("Customer phone number is missing");
             return;
         }
 
         let targetBillId = customBillId || lastReceipt?.order?.id || inspectingOrder?.id || "";
-        let billTotal = grandTotal;
+        let billTotal = grandTotal || lastReceipt?.grandTotal || (inspectingOrder ? Number(inspectingOrder.totalAmount) : 0);
 
         // If cart has active items, automatically push cart as a Due Sale order first!
         if (type === "BILL" && !targetBillId && cart.length > 0) {
+            if (!selectedCustomer?.id) {
+                toast.error("Please tag a customer first");
+                return;
+            }
             if (!activeShift) {
                 toast.error("Operational Block: No active shift found. Open a shift to proceed.");
                 setShowShiftModal(true);
@@ -449,7 +456,7 @@ export default function POSOperator() {
             }
         }
 
-        const cleanPhone = selectedCustomer.phone.replace(/\D/g, "");
+        const cleanPhone = phone.replace(/\D/g, "");
         const targetPhone = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
         const origin = typeof window !== "undefined" ? window.location.origin : "";
 
@@ -457,11 +464,11 @@ export default function POSOperator() {
         let message = "";
 
         if (type === "BILL" && targetBillId) {
-            link = `${origin}/pay?userid=${selectedCustomer.id}&number=${selectedCustomer.phone}&billid=${targetBillId}`;
-            message = `Hello ${selectedCustomer.name}, here is your bill invoice #${targetBillId} for ₹${billTotal.toFixed(2)}. Pay directly online via Easebuzz here: ${link}`;
+            link = `${origin}/pay?userid=${customerId}&number=${phone}&billid=${targetBillId}`;
+            message = `Hello ${customerName}, here is your bill invoice #${targetBillId.slice(-6).toUpperCase()} from ${storeConfig?.name || 'Book My Veg'} for ₹${billTotal.toFixed(2)}.\n\nPay directly online via Easebuzz here: ${link}`;
         } else {
-            link = `${origin}/pay?userid=${selectedCustomer.id}&number=${selectedCustomer.phone}`;
-            message = `Hello ${selectedCustomer.name}, view all your outstanding bills and settle dues for Book My Veg here: ${link}`;
+            link = `${origin}/pay?userid=${customerId}&number=${phone}`;
+            message = `Hello ${customerName}, view all your outstanding bills and settle dues for ${storeConfig?.name || 'Book My Veg'} here: ${link}`;
         }
 
         const waUrl = `https://wa.me/${targetPhone}?text=${encodeURIComponent(message)}`;
@@ -561,7 +568,7 @@ export default function POSOperator() {
                     paymentMethod: "CREDIT", // Create as Credit/Due first
                     discountAmount: discount,
                     packerId: localStorage.getItem("selectedPackerId"),
-                    duePaymentAmount: grandTotal,
+                    duePaymentAmount: 0,
                     paidAmount: 0,
                     denominations: null,
                     orderId: editingOrderId || undefined
@@ -775,6 +782,7 @@ export default function POSOperator() {
             setShowPaymentDialog(false);
             setShowReceiptDialog(true);
             setCart([]);
+            setSelectedCustomer(null); // Reset customer so next bill starts fresh
             setEditingOrderId(null);
             setCashReceived({});
             setDiscount(0);
@@ -787,11 +795,24 @@ export default function POSOperator() {
         } finally { setIsProcessing(false); }
     };
 
+    const handleNewBill = () => {
+        setCart([]);
+        setSelectedCustomer(null);
+        setEditingOrderId(null);
+        setCashReceived({});
+        setDiscount(0);
+        setCouponCode("");
+        setPaidAmount("");
+        setDuePaymentAmount("");
+        toast.info("Started new bill");
+    };
+
     // Suspend bill
     const suspendBill = () => {
         if (cart.length === 0) return;
         setSuspendedBills(prev => [...prev, { id: Date.now(), items: [...cart], customer: selectedCustomer, time: new Date() }]);
         setCart([]);
+        setSelectedCustomer(null);
         toast.success("Bill suspended");
     };
 
@@ -851,26 +872,57 @@ export default function POSOperator() {
 
         const mappedItems = order.items.map((oi: any) => ({
             ...oi.product,
-            name: oi.product?.name || "Unknown Product",
+            name: oi.product?.name || oi.productName || "Unknown Product",
             sku: oi.product?.sku || oi.productId?.slice(0, 8),
             quantity: parseFloat(String(oi.quantity || 0)),
             basePrice: parseFloat(String(oi.sellingPrice || 0)),
+            overridePrice: parseFloat(String(oi.sellingPrice || 0)),
             pricing: [{ price: parseFloat(String(oi.sellingPrice || 0)) }]
         }));
 
         const totalPaid = order.payments?.reduce((acc: number, p: any) => acc + parseFloat(String(p.amount || 0)), 0) || 0;
         const subtotalVal = parseFloat(String(order.totalAmount || 0)) + parseFloat(String(order.discountAmount || 0));
 
+        const orderCust = order.user || order.customer || selectedCustomer;
+        const custPhone = orderCust?.phone || order.customerPhone || "";
+        const custName = orderCust?.name || order.customerName || "Walk-In";
+        const custAddr = 
+            orderCust?.addresses?.[0]?.fullAddress || 
+            orderCust?.profileAddress || 
+            orderCust?.address || 
+            order.address || 
+            order.shippingAddress?.fullAddress || 
+            order.shippingAddress || 
+            order.user?.addresses?.[0]?.fullAddress || 
+            order.user?.address || 
+            order.user?.profileAddress || 
+            "";
+
         setLastReceipt({
+            id: order.id,
             order: order,
             items: mappedItems,
-            customer: selectedCustomer || order.user,
+            customer: {
+                ...orderCust,
+                name: custName,
+                phone: custPhone,
+                address: custAddr,
+                profileAddress: custAddr,
+                addresses: custAddr ? [{ fullAddress: custAddr }] : []
+            },
+            customerPhone: custPhone,
+            userId: orderCust?.id || order.userId,
             paymentMethod: order.isCredit ? "CREDIT" : (order.payments?.[0]?.method || "UPI"),
             subtotal: subtotalVal,
             discount: parseFloat(String(order.discountAmount || 0)),
             grandTotal: parseFloat(String(order.totalAmount || 0)),
             cashTotal: totalPaid,
-            changeDue: 0
+            changeDue: 0,
+            dueSummary: order.dueSummary || {
+                currentBillDue: order.isCredit ? (parseFloat(String(order.totalAmount || 0)) - totalPaid) : 0,
+                settledFromOld: 0,
+                netOutstanding: orderCust?.outstandingBalance || 0
+            }
         });
         setShowReceiptDialog(true);
     };
@@ -1018,6 +1070,21 @@ export default function POSOperator() {
         const paidAmount = Math.max(0, grandTotalVal - currentOrderDue);
         const dueAmount = currentOrderDue;
 
+        const printCust = lastReceipt.customer || lastReceipt.order?.user || lastReceipt.order?.customer;
+        const printCustName = printCust?.name || lastReceipt.order?.customerName || lastReceipt.customerName || "Walk-In";
+        const printCustPhone = printCust?.phone || lastReceipt.customerPhone || lastReceipt.order?.customerPhone || "";
+        const printCustAddress = 
+            printCust?.addresses?.[0]?.fullAddress || 
+            printCust?.profileAddress || 
+            printCust?.address || 
+            lastReceipt.order?.address || 
+            lastReceipt.order?.shippingAddress?.fullAddress || 
+            lastReceipt.order?.shippingAddress || 
+            lastReceipt.order?.user?.addresses?.[0]?.fullAddress || 
+            lastReceipt.order?.user?.address || 
+            lastReceipt.order?.user?.profileAddress || 
+            "";
+
         printWindow.document.write(`
             <html>
                 <head>
@@ -1136,7 +1203,7 @@ export default function POSOperator() {
                     ${dueAmount > 0 ? `
                     <div class="qr-section">
                         <p class="font-bold uppercase" style="font-size: 8px; margin: 0 0 4px 0;">Scan To Pay Bill / View Dues</p>
-                        <img class="qr-code" src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(`${typeof window !== 'undefined' ? window.location.origin : ''}/pay/userid=${lastReceipt.userId || lastReceipt.customer?.id || ''}&number=${lastReceipt.customerPhone || lastReceipt.customer?.phone || ''}&billid=${lastReceipt.id || lastReceipt.order?.id || ''}`)}" />
+                        <img class="qr-code" src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(`${typeof window !== 'undefined' ? window.location.origin : ''}/pay/userid=${lastReceipt.userId || lastReceipt.customer?.id || ''}&number=${printCustPhone}&billid=${lastReceipt.id || lastReceipt.order?.id || ''}`)}" />
                     </div>
                     ` : ''}
 
@@ -1148,9 +1215,9 @@ export default function POSOperator() {
                         <div><strong>Invoice No.:</strong> ${lastReceipt.order?.id?.slice(-5).toUpperCase() || ''}</div>
                         <div><strong>Reference No:</strong> ${lastReceipt.order?.id || ''}</div>
                         <div style="margin-top: 2px;">
-                            <strong>Customer:</strong> ${lastReceipt.customer?.name || "Walk-In"}
-                            ${lastReceipt.customer?.phone ? `, <strong>Ph:</strong> ${lastReceipt.customer.phone}` : ''}
-                            ${(lastReceipt.customer?.addresses?.[0]?.fullAddress || lastReceipt.customer?.profileAddress) ? ` <strong>Address:</strong> ${lastReceipt.customer?.addresses?.[0]?.fullAddress || lastReceipt.customer?.profileAddress}` : ''}
+                            <strong>Customer:</strong> ${printCustName}
+                            ${printCustPhone ? `, <strong>Ph:</strong> ${printCustPhone}` : ''}
+                            ${printCustAddress ? `<br/><strong>Address:</strong> ${printCustAddress}` : ''}
                         </div>
                     </div>
 
@@ -1649,7 +1716,7 @@ export default function POSOperator() {
                             >
                                 <div style={{ display: 'grid', gridTemplateRows: '1fr 1fr', gap: '8px' }}>
                                     <button onClick={suspendBill} className="bg-[#F5CBA7] text-white font-black text-[11px] uppercase rounded shadow-sm hover:brightness-95 flex items-center justify-center">Suspend</button>
-                                    <button onClick={() => setCart([])} className="bg-[#C0392B] text-white font-black text-[11px] uppercase rounded shadow-sm hover:brightness-95 flex items-center justify-center">Cancel</button>
+                                    <button onClick={handleNewBill} className="bg-[#C0392B] text-white font-black text-[11px] uppercase rounded shadow-sm hover:brightness-95 flex items-center justify-center">Cancel</button>
                                 </div>
                                 <div style={{ display: 'grid', gridTemplateRows: '1fr 1fr', gap: '8px' }}>
                                     <button className="bg-[#3498DB] text-white font-black text-[11px] uppercase rounded shadow-sm hover:brightness-95 flex items-center justify-center">Order</button>
@@ -2362,24 +2429,13 @@ export default function POSOperator() {
 
                             {/* Actions Area */}
                             <div className="p-6 bg-slate-50 border-t flex flex-col sm:flex-row gap-3">
-                                {(() => {
-                                    const isPrintBlocked = lastReceipt?.paymentMethod === "UPI" && !lastReceipt?.order?.isPaid && lastReceipt?.order?.paymentStatus !== "COMPLETED" && lastReceipt?.order?.paymentStatus !== "PAID";
-                                    return (
-                                        <Button 
-                                            onClick={handlePrintReceipt} 
-                                            disabled={isPrintBlocked}
-                                            className={cn(
-                                                "flex-[2] h-14 font-black uppercase text-xs tracking-widest shadow-xl rounded-2xl transition-all active:scale-95",
-                                                isPrintBlocked 
-                                                    ? "bg-slate-300 text-slate-500 cursor-not-allowed shadow-none" 
-                                                    : "bg-slate-900 hover:bg-black text-white shadow-slate-900/20"
-                                            )}
-                                        >
-                                            <Printer className="h-5 w-5 mr-3" /> 
-                                            {isPrintBlocked ? "Print Blocked: Pay Pending" : "Execute Printing"}
-                                        </Button>
-                                    );
-                                })()}
+                                <Button 
+                                    onClick={handlePrintReceipt} 
+                                    className="flex-[2] h-14 bg-slate-900 hover:bg-black text-white font-black uppercase text-xs tracking-widest shadow-xl shadow-slate-900/20 rounded-2xl transition-all active:scale-95 flex items-center justify-center gap-2"
+                                >
+                                    <Printer className="h-5 w-5 mr-1" /> 
+                                    Execute Printing / Reprint
+                                </Button>
                                 <Button onClick={() => forwardWhatsAppLink("BILL", lastReceipt.id || lastReceipt.order?.id)} className="flex-1 h-14 bg-emerald-600 hover:bg-emerald-500 text-white font-black uppercase text-xs tracking-widest shadow-xl rounded-2xl transition-all active:scale-95">
                                     <Smartphone className="h-5 w-5 mr-2" /> Share WA
                                 </Button>
@@ -2875,17 +2931,23 @@ export default function POSOperator() {
                                             <div className="flex flex-col gap-2">
                                                 <div className="flex gap-2">
                                                     <Button
+                                                        onClick={() => handleViewHistoricalReceipt(order)}
+                                                        className="flex-1 h-10 bg-teal-600 hover:bg-teal-700 text-white font-black text-[10px] uppercase rounded-xl shadow-md shadow-teal-100 flex items-center justify-center gap-1"
+                                                    >
+                                                        <Printer className="w-3.5 h-3.5" /> Reprint
+                                                    </Button>
+                                                    <Button
                                                         onClick={() => cancelOrder(order.id)}
                                                         className="flex-1 h-10 bg-red-600 text-white font-black text-[10px] uppercase rounded-xl shadow-lg shadow-red-100 transition-all hover:bg-red-700"
                                                     >
-                                                        Void Full Bill
+                                                        Void Bill
                                                     </Button>
                                                     <Button
                                                         variant="outline"
                                                         className="flex-1 h-10 border-slate-200 text-slate-900 font-black text-[10px] uppercase rounded-xl hover:bg-slate-50"
                                                         onClick={() => setInspectingOrder(order)}
                                                     >
-                                                        View Items / Partial
+                                                        View Items
                                                     </Button>
                                                 </div>
                                                 {(() => {

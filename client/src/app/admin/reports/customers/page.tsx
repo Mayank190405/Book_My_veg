@@ -27,22 +27,26 @@ import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import api from "@/services/api";
 import { toast } from "sonner";
-import { format } from "date-fns";
+import { format, subDays, startOfWeek, startOfMonth } from "date-fns";
 import Link from "next/link";
+import { initSocket } from "@/services/socketService";
 
 export default function CustomerDuesReport() {
+    const todayStr = format(new Date(), "yyyy-MM-dd");
+
     const [customers, setCustomers] = useState<any[]>([]);
     const [summary, setSummary] = useState<any>(null);
     const [stores, setStores] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+    const [lastRefreshedAt, setLastRefreshedAt] = useState<Date>(new Date());
 
-    // Filter states
+    // Filter states — Default to Current Day (Today)
     const [search, setSearch] = useState("");
     const [locationId, setLocationId] = useState("");
     const [dueFilter, setDueFilter] = useState("ALL");
     const [channel, setChannel] = useState("");
-    const [startDate, setStartDate] = useState("");
-    const [endDate, setEndDate] = useState("");
+    const [startDate, setStartDate] = useState(todayStr);
+    const [endDate, setEndDate] = useState(todayStr);
     
     // Pagination states
     const [page, setPage] = useState(1);
@@ -79,6 +83,7 @@ export default function CustomerDuesReport() {
             setStores(storesRes.data);
             setTotalPages(reportRes.data.pagination.totalPages);
             setTotalCustomers(reportRes.data.pagination.totalCustomers);
+            setLastRefreshedAt(new Date());
         } catch (error) {
             toast.error("Failed to generate customer due intelligence report");
         } finally {
@@ -92,6 +97,27 @@ export default function CustomerDuesReport() {
 
     useEffect(() => {
         fetchData();
+
+        // Auto-refresh every 10s for real-time customer due updates
+        const interval = setInterval(() => {
+            fetchData();
+        }, 10000);
+
+        try {
+            const socket = initSocket("customer_report_listener");
+            socket.on("OP_NEW_ORDER", () => fetchData());
+            socket.on("ORDER_STATUS_CHANGED", () => fetchData());
+            socket.on("REALTIME_REPORT_UPDATE", () => fetchData());
+
+            return () => {
+                socket.off("OP_NEW_ORDER");
+                socket.off("ORDER_STATUS_CHANGED");
+                socket.off("REALTIME_REPORT_UPDATE");
+                clearInterval(interval);
+            };
+        } catch {
+            return () => clearInterval(interval);
+        }
     }, [page, limit, search, locationId, dueFilter, channel, startDate, endDate, sortBy, sortOrder]);
 
     const handleSort = (field: string) => {
@@ -138,12 +164,18 @@ export default function CustomerDuesReport() {
             {/* Header Section */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-6 border-b border-slate-200">
                 <div>
-                    <h2 className="text-3xl font-bold text-slate-900 tracking-tight flex items-center gap-3">
-                        <Users className="h-8 w-8 text-emerald-600" />
-                        Customer Dues & Sales
-                    </h2>
+                    <div className="flex items-center gap-3">
+                        <h2 className="text-3xl font-bold text-slate-900 tracking-tight flex items-center gap-3">
+                            <Users className="h-8 w-8 text-emerald-600" />
+                            Daily Customer Dues & Sales
+                        </h2>
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 border border-emerald-200 rounded-full text-emerald-700 text-xs font-black uppercase tracking-wider animate-pulse">
+                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                            Live Realtime
+                        </span>
+                    </div>
                     <p className="text-sm text-slate-500 mt-1">
-                        Track customer outstanding balances, purchase history, and chronological sales ledgers across outlets.
+                        Real-time daily tracking of customer outstanding balances, purchase history, and chronological sales ledgers across outlets.
                     </p>
                 </div>
                 
@@ -153,7 +185,7 @@ export default function CustomerDuesReport() {
                         className="h-11 px-6 bg-slate-900 text-white rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-emerald-600 transition-all flex items-center gap-2 active:scale-95 shadow-lg shadow-slate-200"
                     >
                         <Activity className="h-4 w-4" />
-                        Live Refresh
+                        Live Refresh ({format(lastRefreshedAt, "HH:mm:ss")})
                     </button>
                     <button 
                         onClick={handleExportCSV}
@@ -165,8 +197,66 @@ export default function CustomerDuesReport() {
                 </div>
             </div>
 
-            {/* Filter Suite */}
-            <div className="bg-white rounded-[2rem] border border-slate-100 p-8 shadow-xl shadow-slate-500/5">
+            {/* Filter Suite with Date Quick Presets */}
+            <div className="bg-white rounded-[2rem] border border-slate-100 p-8 shadow-xl shadow-slate-500/5 space-y-6">
+                {/* Date Presets Bar */}
+                <div className="flex items-center justify-between flex-wrap gap-3 pb-4 border-b border-slate-100">
+                    <div className="flex items-center gap-2">
+                        <Calendar className="h-4 w-4 text-emerald-600" />
+                        <span className="text-xs font-black uppercase tracking-wider text-slate-700">Quick Date Presets:</span>
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <button
+                            onClick={() => { setStartDate(todayStr); setEndDate(todayStr); }}
+                            className={cn("px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all",
+                                startDate === todayStr && endDate === todayStr
+                                    ? "bg-emerald-600 text-white shadow-md shadow-emerald-500/20"
+                                    : "bg-slate-100 text-slate-600 hover:bg-slate-200")}
+                        >
+                            Today (Current Day)
+                        </button>
+                        <button
+                            onClick={() => {
+                                const yest = format(subDays(new Date(), 1), "yyyy-MM-dd");
+                                setStartDate(yest);
+                                setEndDate(yest);
+                            }}
+                            className={cn("px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all",
+                                startDate === format(subDays(new Date(), 1), "yyyy-MM-dd") && endDate === format(subDays(new Date(), 1), "yyyy-MM-dd")
+                                    ? "bg-emerald-600 text-white shadow-md shadow-emerald-500/20"
+                                    : "bg-slate-100 text-slate-600 hover:bg-slate-200")}
+                        >
+                            Yesterday
+                        </button>
+                        <button
+                            onClick={() => {
+                                const startW = format(startOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd");
+                                setStartDate(startW);
+                                setEndDate(todayStr);
+                            }}
+                            className={cn("px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all",
+                                startDate === format(startOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd") && endDate === todayStr
+                                    ? "bg-emerald-600 text-white shadow-md shadow-emerald-500/20"
+                                    : "bg-slate-100 text-slate-600 hover:bg-slate-200")}
+                        >
+                            This Week
+                        </button>
+                        <button
+                            onClick={() => {
+                                const startM = format(startOfMonth(new Date()), "yyyy-MM-dd");
+                                setStartDate(startM);
+                                setEndDate(todayStr);
+                            }}
+                            className={cn("px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all",
+                                startDate === format(startOfMonth(new Date()), "yyyy-MM-dd") && endDate === todayStr
+                                    ? "bg-emerald-600 text-white shadow-md shadow-emerald-500/20"
+                                    : "bg-slate-100 text-slate-600 hover:bg-slate-200")}
+                        >
+                            This Month
+                        </button>
+                    </div>
+                </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-6">
                     <div className="space-y-2 lg:col-span-2">
                         <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Search Customer</label>

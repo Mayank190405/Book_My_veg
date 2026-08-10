@@ -23,20 +23,24 @@ import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import api from "@/services/api";
 import { toast } from "sonner";
-import { format } from "date-fns";
+import { format, subDays, startOfWeek, startOfMonth } from "date-fns";
 import { jsPDF } from "jspdf";
+import { initSocket } from "@/services/socketService";
 
 export default function SalesReports() {
+    const todayStr = format(new Date(), "yyyy-MM-dd");
+
     const [orders, setOrders] = useState<any[]>([]);
     const [summary, setSummary] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [stores, setStores] = useState<any[]>([]);
+    const [lastRefreshedAt, setLastRefreshedAt] = useState<Date>(new Date());
 
-    // Filter Stats
+    // Filter Stats — Default to Current Day (Today) for real-time daily generation
     const [filters, setFilters] = useState({
         locationId: "",
-        startDate: format(new Date(new Date().setDate(new Date().getDate() - 7)), "yyyy-MM-dd"),
-        endDate: format(new Date(), "yyyy-MM-dd"),
+        startDate: todayStr,
+        endDate: todayStr,
         channel: "",
         paymentMethod: "",
         isCredit: ""
@@ -58,6 +62,7 @@ export default function SalesReports() {
             setOrders(reportRes.data.orders);
             setSummary(reportRes.data.summary);
             setStores(storesRes.data);
+            setLastRefreshedAt(new Date());
         } catch (error) {
             toast.error("Failed to generate sales intelligence report");
         } finally {
@@ -67,6 +72,27 @@ export default function SalesReports() {
 
     useEffect(() => {
         fetchData();
+
+        // Auto-refresh every 10 seconds for live realtime generation
+        const interval = setInterval(() => {
+            fetchData();
+        }, 10000);
+
+        try {
+            const socket = initSocket("sales_report_listener");
+            socket.on("OP_NEW_ORDER", () => fetchData());
+            socket.on("ORDER_STATUS_CHANGED", () => fetchData());
+            socket.on("REALTIME_REPORT_UPDATE", () => fetchData());
+
+            return () => {
+                socket.off("OP_NEW_ORDER");
+                socket.off("ORDER_STATUS_CHANGED");
+                socket.off("REALTIME_REPORT_UPDATE");
+                clearInterval(interval);
+            };
+        } catch {
+            return () => clearInterval(interval);
+        }
     }, [filters]);
 
     const exportToCSV = () => {
@@ -1091,17 +1117,23 @@ export default function SalesReports() {
             {/* Header Section */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-6 border-b border-slate-200">
                 <div>
-                    <h2 className="text-3xl font-bold text-slate-900 tracking-tight flex items-center gap-3">
-                        <TrendingUp className="h-8 w-8 text-emerald-600" />
-                        Sales Intelligence
-                    </h2>
-                    <p className="text-sm text-slate-500 mt-1">Monitor multi-store performance, reconcile payments, and analyze growth trends.</p>
+                    <div className="flex items-center gap-3">
+                        <h2 className="text-3xl font-bold text-slate-900 tracking-tight flex items-center gap-3">
+                            <TrendingUp className="h-8 w-8 text-emerald-600" />
+                            Daily Sales Intelligence
+                        </h2>
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 border border-emerald-200 rounded-full text-emerald-700 text-xs font-black uppercase tracking-wider animate-pulse">
+                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                            Live Realtime
+                        </span>
+                    </div>
+                    <p className="text-sm text-slate-500 mt-1">Real-time daily sales generation, live order updates, revenue tracking, and channel reports.</p>
                 </div>
                 
                 <div className="flex items-center gap-3">
                     <button onClick={fetchData} className="h-11 px-6 bg-slate-900 text-white rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-emerald-600 transition-all flex items-center gap-2 active:scale-95 shadow-lg shadow-slate-200">
                         <Activity className="h-4 w-4" />
-                        Live Refresh
+                        Live Refresh ({format(lastRefreshedAt, "HH:mm:ss")})
                     </button>
                     <button onClick={exportToPDF} className="h-11 px-5 bg-rose-600 hover:bg-rose-700 text-white border border-rose-600 rounded-xl flex items-center justify-center text-xs font-bold uppercase tracking-wider transition-all shadow-sm gap-2" title="Export to PDF">
                         <Download className="h-4 w-4" /> PDF Report
@@ -1112,8 +1144,63 @@ export default function SalesReports() {
                 </div>
             </div>
 
-            {/* Filter Suite */}
-            <div className="bg-white rounded-[2rem] border border-slate-100 p-8 shadow-xl shadow-slate-500/5">
+            {/* Filter Suite with Date Quick Presets */}
+            <div className="bg-white rounded-[2rem] border border-slate-100 p-8 shadow-xl shadow-slate-500/5 space-y-6">
+                {/* Date Presets Bar */}
+                <div className="flex items-center justify-between flex-wrap gap-3 pb-4 border-b border-slate-100">
+                    <div className="flex items-center gap-2">
+                        <Calendar className="h-4 w-4 text-emerald-600" />
+                        <span className="text-xs font-black uppercase tracking-wider text-slate-700">Quick Date Presets:</span>
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <button
+                            onClick={() => setFilters({ ...filters, startDate: todayStr, endDate: todayStr })}
+                            className={cn("px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all",
+                                filters.startDate === todayStr && filters.endDate === todayStr
+                                    ? "bg-emerald-600 text-white shadow-md shadow-emerald-500/20"
+                                    : "bg-slate-100 text-slate-600 hover:bg-slate-200")}
+                        >
+                            Today (Current Day)
+                        </button>
+                        <button
+                            onClick={() => {
+                                const yest = format(subDays(new Date(), 1), "yyyy-MM-dd");
+                                setFilters({ ...filters, startDate: yest, endDate: yest });
+                            }}
+                            className={cn("px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all",
+                                filters.startDate === format(subDays(new Date(), 1), "yyyy-MM-dd") && filters.endDate === format(subDays(new Date(), 1), "yyyy-MM-dd")
+                                    ? "bg-emerald-600 text-white shadow-md shadow-emerald-500/20"
+                                    : "bg-slate-100 text-slate-600 hover:bg-slate-200")}
+                        >
+                            Yesterday
+                        </button>
+                        <button
+                            onClick={() => {
+                                const startW = format(startOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd");
+                                setFilters({ ...filters, startDate: startW, endDate: todayStr });
+                            }}
+                            className={cn("px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all",
+                                filters.startDate === format(startOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd") && filters.endDate === todayStr
+                                    ? "bg-emerald-600 text-white shadow-md shadow-emerald-500/20"
+                                    : "bg-slate-100 text-slate-600 hover:bg-slate-200")}
+                        >
+                            This Week
+                        </button>
+                        <button
+                            onClick={() => {
+                                const startM = format(startOfMonth(new Date()), "yyyy-MM-dd");
+                                setFilters({ ...filters, startDate: startM, endDate: todayStr });
+                            }}
+                            className={cn("px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all",
+                                filters.startDate === format(startOfMonth(new Date()), "yyyy-MM-dd") && filters.endDate === todayStr
+                                    ? "bg-emerald-600 text-white shadow-md shadow-emerald-500/20"
+                                    : "bg-slate-100 text-slate-600 hover:bg-slate-200")}
+                        >
+                            This Month
+                        </button>
+                    </div>
+                </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-6">
                     <div className="space-y-2">
                         <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Select Store</label>

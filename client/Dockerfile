@@ -1,22 +1,24 @@
-
-# Build stage
+# syntax=docker/dockerfile:1
 FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Install dependencies for build
+# Cache node_modules installation
 COPY package*.json ./
-RUN npm install
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --prefer-offline --no-audit
 
 # Copy source
 COPY . .
 
-# Build Next.js
+# Build Next.js with BuildKit persistent cache mount for .next/cache
 ARG NEXT_PUBLIC_API_URL
 ARG INTERNAL_SERVER_URL
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 ENV INTERNAL_SERVER_URL=${INTERNAL_SERVER_URL}
-RUN npm run build
+
+RUN --mount=type=cache,target=/app/.next/cache \
+    npm run build
 
 # Production stage
 FROM node:20-alpine AS runner

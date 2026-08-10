@@ -488,7 +488,7 @@ const processPOSOrder = (req, res, next) => __awaiter(void 0, void 0, void 0, fu
                     staffId
                 }, tx);
             }
-            if (effectivePaid > 0 && !suspend) {
+            if (effectivePaid > 0 && !suspend && paymentMethod !== "CREDIT") {
                 yield tx.payment.create({
                     data: {
                         orderId: order.id,
@@ -532,7 +532,7 @@ const processPOSOrder = (req, res, next) => __awaiter(void 0, void 0, void 0, fu
         }));
         // ─── SETTLE OLD DUES ────────────────────────────────────────────────
         let settledFromOld = 0;
-        if (duePaymentAmount > 0) {
+        if (duePaymentAmount > 0 && paymentMethod !== "CREDIT") {
             let remaining = Number(duePaymentAmount);
             const unpaidOrders = yield prisma_1.default.order.findMany({
                 where: {
