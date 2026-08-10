@@ -6,7 +6,7 @@ WORKDIR /app
 # Cache node_modules installation
 COPY package*.json ./
 RUN --mount=type=cache,target=/root/.npm \
-    npm ci --prefer-offline --no-audit
+    npm install --prefer-offline --no-audit
 
 # Copy source
 COPY . .

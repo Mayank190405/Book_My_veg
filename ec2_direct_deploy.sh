@@ -26,10 +26,10 @@ fi
 
 if [ -n "$NPM_EXEC" ]; then
     echo "⚡ [2/3] Fast building Server & Client natively with Node..."
-    $NPM_EXEC --prefix server ci --prefer-offline --no-audit
+    $NPM_EXEC --prefix server install --prefer-offline --no-audit
     $NPM_EXEC --prefix server run build
 
-    $NPM_EXEC --prefix client ci --prefer-offline --no-audit
+    $NPM_EXEC --prefix client install --prefer-offline --no-audit
     $NPM_EXEC --prefix client run build
 
     echo "⚡ [3/3] Hot-restarting services..."
