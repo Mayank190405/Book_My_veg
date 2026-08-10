@@ -99,7 +99,8 @@ export const getWebOrders = async (req: AuthenticatedRequest, res: Response, nex
                         name: true,
                         phone: true,
                         email: true,
-                        addresses: { where: { isDefault: true }, take: 1 }
+                        profileAddress: true,
+                        addresses: true
                     }
                 },
                 items: {
@@ -749,6 +750,16 @@ export const getCustomerHistory = async (req: AuthenticatedRequest, res: Respons
         const orders = await prisma.order.findMany({
             where: { userId: customerId, channel: "POS" as Channel },
             include: {
+                user: {
+                    select: {
+                        id: true,
+                        name: true,
+                        phone: true,
+                        email: true,
+                        profileAddress: true,
+                        addresses: true
+                    }
+                },
                 items: { include: { product: { select: { name: true, sku: true } } } },
                 payments: true,
                 staff: { select: { name: true } },

@@ -886,17 +886,34 @@ export default function POSOperator() {
         const orderCust = order.user || order.customer || selectedCustomer;
         const custPhone = orderCust?.phone || order.customerPhone || "";
         const custName = orderCust?.name || order.customerName || "Walk-In";
-        const custAddr = 
-            orderCust?.addresses?.[0]?.fullAddress || 
-            orderCust?.profileAddress || 
-            orderCust?.address || 
-            order.address || 
-            order.shippingAddress?.fullAddress || 
-            order.shippingAddress || 
-            order.user?.addresses?.[0]?.fullAddress || 
-            order.user?.address || 
-            order.user?.profileAddress || 
-            "";
+
+        const getFormattedAddress = (custObj: any, ordObj: any) => {
+            const candidates = [
+                custObj?.addresses?.[0]?.fullAddress,
+                custObj?.addresses?.[0]?.address,
+                custObj?.profileAddress,
+                custObj?.address,
+                ordObj?.user?.addresses?.[0]?.fullAddress,
+                ordObj?.user?.addresses?.[0]?.address,
+                ordObj?.user?.profileAddress,
+                ordObj?.user?.address,
+                ordObj?.customer?.addresses?.[0]?.fullAddress,
+                ordObj?.customer?.profileAddress,
+                ordObj?.customer?.address,
+                typeof ordObj?.shippingAddress === "string" ? ordObj.shippingAddress : (ordObj?.shippingAddress?.fullAddress || ordObj?.shippingAddress?.address),
+                ordObj?.address,
+                ordObj?.customerAddress
+            ];
+
+            for (const cand of candidates) {
+                if (cand && typeof cand === "string" && cand.trim().length > 0 && !cand.includes("[object Object]")) {
+                    return cand.trim();
+                }
+            }
+            return "";
+        };
+
+        const custAddr = getFormattedAddress(orderCust, order);
 
         setLastReceipt({
             id: order.id,
@@ -1073,17 +1090,34 @@ export default function POSOperator() {
         const printCust = lastReceipt.customer || lastReceipt.order?.user || lastReceipt.order?.customer;
         const printCustName = printCust?.name || lastReceipt.order?.customerName || lastReceipt.customerName || "Walk-In";
         const printCustPhone = printCust?.phone || lastReceipt.customerPhone || lastReceipt.order?.customerPhone || "";
-        const printCustAddress = 
-            printCust?.addresses?.[0]?.fullAddress || 
-            printCust?.profileAddress || 
-            printCust?.address || 
-            lastReceipt.order?.address || 
-            lastReceipt.order?.shippingAddress?.fullAddress || 
-            lastReceipt.order?.shippingAddress || 
-            lastReceipt.order?.user?.addresses?.[0]?.fullAddress || 
-            lastReceipt.order?.user?.address || 
-            lastReceipt.order?.user?.profileAddress || 
-            "";
+        
+        const getFormattedAddress = (custObj: any, ordObj: any) => {
+            const candidates = [
+                custObj?.addresses?.[0]?.fullAddress,
+                custObj?.addresses?.[0]?.address,
+                custObj?.profileAddress,
+                custObj?.address,
+                ordObj?.user?.addresses?.[0]?.fullAddress,
+                ordObj?.user?.addresses?.[0]?.address,
+                ordObj?.user?.profileAddress,
+                ordObj?.user?.address,
+                ordObj?.customer?.addresses?.[0]?.fullAddress,
+                ordObj?.customer?.profileAddress,
+                ordObj?.customer?.address,
+                typeof ordObj?.shippingAddress === "string" ? ordObj.shippingAddress : (ordObj?.shippingAddress?.fullAddress || ordObj?.shippingAddress?.address),
+                ordObj?.address,
+                ordObj?.customerAddress
+            ];
+
+            for (const cand of candidates) {
+                if (cand && typeof cand === "string" && cand.trim().length > 0 && !cand.includes("[object Object]")) {
+                    return cand.trim();
+                }
+            }
+            return "";
+        };
+
+        const printCustAddress = getFormattedAddress(printCust, lastReceipt.order);
 
         printWindow.document.write(`
             <html>
