@@ -71,35 +71,22 @@ autoCancelQueue.process(async (job) => {
     }
 
     await prisma.$transaction(async (tx: any) => {
-        // Mark order FAILED
-        await tx.order.update({
-            where: { id: orderId },
-            data: {
-                status: "FAILED" as OrderStatus,
-                paymentStatus: "FAILED",
-            },
-        });
-
-        // Record status history
-        await tx.orderStatusHistory.create({
-            data: {
-                orderId,
-                status: "FAILED" as OrderStatus,
-                remark: "Auto-cancelled: payment not received within 12 minutes",
-                changedBy: "SYSTEM",
-            },
-        });
-
         // Restore inventory via locked wrapper
-        const locationId = (order.shippingAddress as any)?.locationId;
+        const locationId = (order.shippingAddress as any)?.locationId || order.locationId;
         if (locationId) {
             await InventoryService.restoreStock({
                 items: order.items.map(i => ({ productId: i.productId, variantId: i.variantId || undefined, quantity: i.quantity })),
                 locationId,
                 staffId: "SYSTEM",
-                referenceId: `AUTO_CANCEL_${orderId}`
+                referenceId: `AUTO_PURGE_${orderId}`
             }, tx);
         }
+
+        // Delete items, payments, history & order record so NO bill is created
+        await tx.orderItem.deleteMany({ where: { orderId } });
+        await tx.payment.deleteMany({ where: { orderId } });
+        await tx.orderStatusHistory.deleteMany({ where: { orderId } });
+        await tx.order.delete({ where: { id: orderId } });
     });
 
     logger.info("Auto-cancel complete — stock restored", {

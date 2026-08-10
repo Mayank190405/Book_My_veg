@@ -663,32 +663,23 @@ const completeOrderPayment = async (orderId: string, paymentDetails: any) => {
 
         return { status: "SUCCESS" };
     } else {
-        // Payment Failed -> Restore Stock if not already failed
-        if (existing.paymentStatus !== "FAILED") {
+        // Payment Failed or Cancelled -> Purge draft order and restore stock so NO bill is created
+        if (existing && existing.paymentStatus !== "COMPLETED" && existing.paymentStatus !== "PAID" && !existing.isPaid) {
             await prisma.$transaction(async (tx: any) => {
-                await tx.order.update({
-                    where: { id: orderId },
-                    data: { paymentStatus: "FAILED", status: "FAILED" as PrismaOrderStatus },
-                });
-
-                const locationId = (existing.shippingAddress as any)?.locationId;
+                const locationId = (existing.shippingAddress as any)?.locationId || existing.locationId;
                 if (locationId) {
                     await InventoryService.restoreStock({
                         items: existing.items.map(i => ({ productId: i.productId, variantId: i.variantId || undefined, quantity: i.quantity })),
                         locationId,
                         staffId: "SYSTEM",
-                        referenceId: `FAIL_${orderId}`
+                        referenceId: `FAIL_PURGE_${orderId}`
                     }, tx);
                 }
 
-                await tx.orderStatusHistory.create({
-                    data: {
-                        orderId: orderId,
-                        status: "FAILED" as PrismaOrderStatus,
-                        remark: `Payment failed — status: ${paymentDetails.status}`,
-                        changedBy: "SYSTEM",
-                    },
-                });
+                await tx.orderItem.deleteMany({ where: { orderId } });
+                await tx.payment.deleteMany({ where: { orderId } });
+                await tx.orderStatusHistory.deleteMany({ where: { orderId } });
+                await tx.order.delete({ where: { id: orderId } });
             });
         }
         return { status: "FAILED" };
@@ -769,9 +760,35 @@ export const verifyPayment = async (req: AuthenticatedRequest, res: Response) =>
             
             if (!isSuccess) {
                 logger.info(`[Payment] Payment verification received non-success status '${rawStatus}' for order ${resolvedOrderId}`);
+                
+                // Purge draft order & restore stock so no bill is created
+                const orderToPurge = await prisma.order.findUnique({
+                    where: { id: resolvedOrderId },
+                    include: { items: true }
+                });
+
+                if (orderToPurge && !orderToPurge.isPaid && orderToPurge.paymentStatus !== "COMPLETED" && orderToPurge.paymentStatus !== "PAID") {
+                    await prisma.$transaction(async (tx: any) => {
+                        const locationId = (orderToPurge.shippingAddress as any)?.locationId || orderToPurge.locationId;
+                        if (locationId) {
+                            await InventoryService.restoreStock({
+                                items: orderToPurge.items.map(i => ({ productId: i.productId, variantId: i.variantId || undefined, quantity: i.quantity })),
+                                locationId,
+                                staffId: "SYSTEM",
+                                referenceId: `CANCEL_PURGE_${resolvedOrderId}`
+                            }, tx);
+                        }
+
+                        await tx.orderItem.deleteMany({ where: { orderId: resolvedOrderId } });
+                        await tx.payment.deleteMany({ where: { orderId: resolvedOrderId } });
+                        await tx.orderStatusHistory.deleteMany({ where: { orderId: resolvedOrderId } });
+                        await tx.order.delete({ where: { id: resolvedOrderId } });
+                    });
+                }
+
                 return res.status(400).json({ 
                     status: "FAILED",
-                    message: `Payment was not completed (status: ${rawStatus})`
+                    message: `Payment was cancelled or failed (status: ${rawStatus}). Bill was not created.`
                 });
             }
 
