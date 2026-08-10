@@ -4,27 +4,48 @@
 
 set -e
 
-# Automatically load NVM and Node/NPM/PM2 PATH on Ubuntu/Linux EC2
+# 1. Load NVM if present
 export NVM_DIR="$HOME/.nvm"
 if [ -s "$NVM_DIR/nvm.sh" ]; then
     . "$NVM_DIR/nvm.sh"
+elif [ -s "/root/.nvm/nvm.sh" ]; then
+    . "/root/.nvm/nvm.sh"
 fi
-LATEST_NODE=$(ls $HOME/.nvm/versions/node 2>/dev/null | tail -n 1 || true)
-if [ -n "$LATEST_NODE" ]; then
-    export PATH="$HOME/.nvm/versions/node/$LATEST_NODE/bin:$PATH"
+
+# 2. Dynamically locate npm & node binaries on Ubuntu EC2
+NPM_PATH=$(command -v npm || find $HOME /root /usr /usr/local /snap -name npm 2>/dev/null | head -n 1 || true)
+
+if [ -n "$NPM_PATH" ]; then
+    NODE_BIN_DIR=$(dirname "$NPM_PATH")
+    export PATH="$NODE_BIN_DIR:$PATH"
 fi
+
 export PATH=$PATH:/usr/local/bin:/usr/bin:~/.local/bin:~/.npm-global/bin
+
+NPM_EXEC=$(command -v npm || echo "$NPM_PATH")
+
+if [ -z "$NPM_EXEC" ] || [ ! -f "$NPM_EXEC" ]; then
+    echo "❌ NPM binary not found in system or NVM. Please check Node installation."
+    exit 1
+fi
 
 echo "⚡ [1/3] Pulling latest git repository updates..."
 git pull origin main
 
 echo "⚡ [2/3] Fast building Server & Client..."
-(cd server && npm ci --prefer-offline --no-audit && npm run build)
-(cd client && npm ci --prefer-offline --no-audit && npm run build)
+echo "🔨 Building Server..."
+$NPM_EXEC --prefix server ci --prefer-offline --no-audit
+$NPM_EXEC --prefix server run build
+
+echo "🔨 Building Client..."
+$NPM_EXEC --prefix client ci --prefer-offline --no-audit
+$NPM_EXEC --prefix client run build
 
 echo "⚡ [3/3] Hot-restarting services..."
-if command -v pm2 &> /dev/null; then
-    pm2 restart all || pm2 start ecosystem.config.js
+PM2_EXEC=$(command -v pm2 || find $HOME /root /usr /usr/local /snap -name pm2 2>/dev/null | head -n 1 || true)
+
+if [ -n "$PM2_EXEC" ] && [ -f "$PM2_EXEC" ]; then
+    $PM2_EXEC restart all || $PM2_EXEC start ecosystem.config.js
 elif command -v docker-compose &> /dev/null; then
     sudo docker-compose -f docker-compose.yml restart || docker-compose restart
 elif command -v docker &> /dev/null; then
