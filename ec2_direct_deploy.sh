@@ -40,17 +40,21 @@ if [ -n "$NPM_EXEC" ]; then
         echo "✅ Native build completed successfully!"
     fi
 else
-    echo "⚡ [2/3] Node/NPM not installed on host. Rebuilding via Docker Compose..."
+    echo "⚡ [2/3] Building & updating via Docker Compose with BuildKit cache..."
     export DOCKER_BUILDKIT=1
-    COMPOSE_FILE="docker-compose.yml"
-    if [ -f "docker-compose.yml.prod" ]; then
-        COMPOSE_FILE="docker-compose.yml.prod"
+    REGION="ap-south-1"
+    ECR_BASE="071370395808.dkr.ecr.ap-south-1.amazonaws.com"
+
+    # Attempt ECR authentication if AWS CLI is installed
+    if command -v aws &> /dev/null; then
+        aws ecr get-login-password --region $REGION 2>/dev/null | sudo docker login --username AWS --password-stdin $ECR_BASE 2>/dev/null || true
     fi
 
+    # Check if docker-compose.yml.prod can be pulled, else fallback to building from source docker-compose.yml
     if command -v docker-compose &> /dev/null; then
-        sudo docker-compose -f $COMPOSE_FILE up -d --build || docker-compose -f $COMPOSE_FILE up -d --build
+        sudo docker-compose -f docker-compose.yml.prod pull 2>/dev/null && sudo docker-compose -f docker-compose.yml.prod up -d || sudo docker-compose -f docker-compose.yml up -d --build
     elif command -v docker &> /dev/null; then
-        sudo docker compose -f $COMPOSE_FILE up -d --build || docker compose -f $COMPOSE_FILE up -d --build
+        sudo docker compose -f docker-compose.yml.prod pull 2>/dev/null && sudo docker compose -f docker-compose.yml.prod up -d || sudo docker compose -f docker-compose.yml up -d --build
     else
         echo "❌ Neither Node/NPM nor Docker Compose found on EC2 instance."
         exit 1
