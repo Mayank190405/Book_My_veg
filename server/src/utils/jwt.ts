@@ -1,7 +1,7 @@
 import jwt, { Secret, SignOptions } from "jsonwebtoken";
 
-const ACCESS_SECRET: Secret = process.env.JWT_ACCESS_SECRET || "access_secret";
-const REFRESH_SECRET: Secret = process.env.JWT_REFRESH_SECRET || "refresh_secret";
+const ACCESS_SECRET: Secret = process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET || "access_secret";
+const REFRESH_SECRET: Secret = process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET || "refresh_secret";
 
 export const generateTokens = (userId: string, role: string, locationId?: string | null) => {
     const accessOptions: SignOptions = {

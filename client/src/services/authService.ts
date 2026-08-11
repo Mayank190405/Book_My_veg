@@ -69,8 +69,7 @@ export const getMe = async () => {
         }
         return response.data;
     } catch (error) {
-        // If 401, clear user
-        useUserStore.getState().logout();
+        console.warn("[Auth] getMe fetch failed:", error);
         throw error;
     }
 };

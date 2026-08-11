@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import prisma from "../config/prisma";
 
-const ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || "access_secret";
+const ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET || "access_secret";
 
 export interface AuthRequest extends Request {
     user?: {
