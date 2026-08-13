@@ -11,40 +11,59 @@ interface AuthenticatedRequest extends Request {
  */
 export const getDashboardStats = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     const role = req.user?.role;
-    const locationId = req.user?.locationId; // Filter for STORE_ADMIN
-    const isGlobal = role === "ADMIN" || role === "SUPER_ADMIN";
+    const queryLocationId = req.query.locationId as string;
+    const locationId = queryLocationId || req.user?.locationId; // Filter for STORE_ADMIN or explicit locationId query
+    const isGlobal = (role === "ADMIN" || role === "SUPER_ADMIN") && !queryLocationId;
     
     // Safety check: Regional users must have a location assigned
     if (!isGlobal && !locationId) {
         console.error(`[DASHBOARD-FAIL] Regional user ${req.user?.userId} (${role}) has no locationId assigned.`);
         return res.json({
-            metrics: { revenue: 0, expenses: 0, orders: 0, customers: 0, stores: 0 },
+            metrics: { revenue: 0, todayRevenue: 0, totalRevenue: 0, expenses: 0, orders: 0, todayOrders: 0, totalOrders: 0, customers: 0, stores: 0 },
             stores: [], trending: [], customers: [], activeShift: null
         });
     }
 
     try {
         const now = new Date();
+        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
         const thirtyDaysAgo = new Date(now.getTime() - (30 * 24 * 60 * 60 * 1000));
 
-        // 1. Get Core Metrics
+        // 1. Get Core Metrics (Today vs All-time)
         const [
-            ordersCount, 
+            todayOrdersCount,
+            todayRevenue,
+            totalOrdersCount, 
             totalRevenue, 
             totalCustomers, 
             totalStores,
             totalExpenses
         ] = await Promise.all([
+            prisma.order.count({
+                where: {
+                    ...(isGlobal ? {} : { locationId }),
+                    status: { notIn: ["CANCELLED", "FAILED"] },
+                    createdAt: { gte: startOfToday }
+                }
+            }),
+            prisma.order.aggregate({
+                where: {
+                    ...(isGlobal ? {} : { locationId }),
+                    status: { notIn: ["CANCELLED", "FAILED"] },
+                    createdAt: { gte: startOfToday }
+                },
+                _sum: { totalAmount: true }
+            }),
             prisma.order.count({ 
                 where: { 
                     ...(isGlobal ? {} : { locationId }),
-                    status: { not: "CANCELLED" }
+                    status: { notIn: ["CANCELLED", "FAILED"] }
                 } 
             }),
             prisma.order.aggregate({
                 where: { 
                     ...(isGlobal ? {} : { locationId }),
-                    status: { not: "CANCELLED" }
+                    status: { notIn: ["CANCELLED", "FAILED"] }
                 },
                 _sum: { totalAmount: true }
             }),
@@ -185,9 +204,13 @@ export const getDashboardStats = async (req: AuthenticatedRequest, res: Response
 
         res.json({
             metrics: {
-                revenue: Number(totalRevenue._sum.totalAmount || 0),
+                revenue: Number(todayRevenue._sum.totalAmount || 0),
+                todayRevenue: Number(todayRevenue._sum.totalAmount || 0),
+                totalRevenue: Number(totalRevenue._sum.totalAmount || 0),
                 expenses: Number(totalExpenses._sum.amount || 0),
-                orders: ordersCount,
+                orders: todayOrdersCount,
+                todayOrders: todayOrdersCount,
+                totalOrders: totalOrdersCount,
                 customers: totalCustomers,
                 stores: totalStores
             },

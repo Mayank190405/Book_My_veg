@@ -42,18 +42,17 @@ export default function StoreHubDashboard() {
                 setStore(storeRes.data);
 
                 // Fetch hub-specific metrics
-                const [invRes, ordersRes] = await Promise.all([
+                const [invRes, statsRes] = await Promise.all([
                     api.get(`/inventory/store/${storeRes.data.id}`),
-                    api.get(`/orders/admin/all?locationId=${storeRes.data.id}`)
+                    api.get(`/dashboard/stats?locationId=${storeRes.data.id}`)
                 ]);
 
                 const lowStockCount = invRes.data.filter((i: any) => i.currentStock <= i.thresholdStock).length;
-                const ordersData = ordersRes.data.data || ordersRes.data || [];
-                const totalRev = Array.isArray(ordersData) ? ordersData.reduce((acc: number, curr: any) => acc + Number(curr.totalAmount), 0) : 0;
+                const metrics = statsRes.data.metrics || {};
 
                 setStats({
-                    orders: ordersRes.data.total || (Array.isArray(ordersData) ? ordersData.length : 0),
-                    revenue: totalRev,
+                    orders: metrics.todayOrders ?? metrics.orders ?? 0,
+                    revenue: metrics.todayRevenue ?? metrics.revenue ?? 0,
                     lowStock: lowStockCount,
                     activeStaff: 1 // For now
                 });
