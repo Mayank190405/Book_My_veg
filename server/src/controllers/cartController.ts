@@ -10,7 +10,7 @@ interface AuthenticatedRequest extends Request {
 
 export const syncCart = async (req: AuthenticatedRequest, res: Response) => {
     const userId = req.user?.userId;
-    const { items } = req.body; // Expecting { productId, variantId, quantity }[]
+    const items = Array.isArray(req.body?.items) ? req.body.items : [];
 
     if (!userId) {
         return res.status(401).json({ message: "Unauthorized" });

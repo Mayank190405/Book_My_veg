@@ -30,9 +30,15 @@ services:
       JWT_ACCESS_EXPIRY: 7d
       JWT_REFRESH_EXPIRY: 30d
       CLIENT_URL: ${CLIENT_URL:-https://bookmyveg.co.in}
+      EASEBUZZ_SERVICE_URL: http://easebuzz:3000
+      EASEBUZZ_MERCHANT_KEY: ${EASEBUZZ_MERCHANT_KEY}
+      EASEBUZZ_KEY: ${EASEBUZZ_MERCHANT_KEY}
+      EASEBUZZ_SALT: ${EASEBUZZ_SALT}
+      EASEBUZZ_ENV: ${EASEBUZZ_ENV:-test}
     depends_on:
       - db
       - redis
+      - easebuzz
     volumes:
       - bmv-uploads:/app/public/uploads
 
