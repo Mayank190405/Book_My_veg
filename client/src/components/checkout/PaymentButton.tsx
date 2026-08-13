@@ -46,7 +46,7 @@ export default function PaymentButton({ amount, address, items, className }: Pay
             if (data.iframe && data.accessKey) {
                 const triggerIframeCheckout = () => {
                     const EasebuzzCheckout = (window as any).EasebuzzCheckout;
-                    if (EasebuzzCheckout) {
+                    try {
                         const checkoutObj = new EasebuzzCheckout(data.key, data.env);
                         const options = {
                             access_key: data.accessKey,
@@ -58,9 +58,14 @@ export default function PaymentButton({ amount, address, items, className }: Pay
                             }
                         };
                         checkoutObj.initiatePayment(options);
-                    } else {
-                        toast.error("Easebuzz Checkout SDK failed to load");
-                        setLoading(false);
+                    } catch (err) {
+                        console.warn("[Easebuzz] Frame blocked, falling back to direct payment link:", err);
+                        if (data.paymentLink) {
+                            window.location.href = data.paymentLink;
+                        } else {
+                            toast.error("Easebuzz Checkout failed to launch");
+                            setLoading(false);
+                        }
                     }
                 };
 

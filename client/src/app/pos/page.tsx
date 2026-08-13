@@ -742,9 +742,13 @@ export default function POSOperator() {
                                     }
                                 }
                             });
-                        } catch (err) {
-                            setPosPaymentIframeUrl(checkoutUrl);
-                            setShowPosIframeModal(true);
+                        } catch (sdkErr) {
+                            console.warn("[Easebuzz SDK] Frame access blocked, falling back to gateway window:", sdkErr);
+                            setIsProcessing(false);
+                            setShowPaymentDialog(false);
+                            if (checkoutUrl) {
+                                window.open(checkoutUrl, "_blank");
+                            }
                         }
                     } else {
                         setIsProcessing(false);
