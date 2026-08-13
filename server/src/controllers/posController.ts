@@ -273,9 +273,11 @@ export const createOrUpdateCustomer = async (req: AuthenticatedRequest, res: Res
     const cleanDigits = rawPhone.replace(/[^\d]/g, "");
 
     try {
-        const existingCustomer = id 
-            ? await prisma.user.findUnique({ where: { id } })
-            : await prisma.user.findFirst({
+        let existingCustomer = null;
+        if (id) {
+            existingCustomer = await prisma.user.findUnique({ where: { id } });
+        } else if (rawPhone) {
+            existingCustomer = await prisma.user.findFirst({
                 where: {
                     OR: [
                         { phone: rawPhone },
@@ -286,6 +288,26 @@ export const createOrUpdateCustomer = async (req: AuthenticatedRequest, res: Res
                     ]
                 }
             });
+        }
+
+        // If phone is changed, check for conflict with another user
+        if (existingCustomer && rawPhone && existingCustomer.phone !== rawPhone) {
+            const conflictUser = await prisma.user.findFirst({
+                where: {
+                    id: { not: existingCustomer.id },
+                    OR: [
+                        { phone: rawPhone },
+                        ...(cleanDigits.length >= 5 ? [
+                            { phone: cleanDigits },
+                            { phone: `+91${cleanDigits}` }
+                        ] : [])
+                    ]
+                }
+            });
+            if (conflictUser) {
+                return res.status(400).json({ message: "Phone number is already registered under another customer" });
+            }
+        }
 
         let customer;
 
@@ -293,22 +315,22 @@ export const createOrUpdateCustomer = async (req: AuthenticatedRequest, res: Res
             customer = await prisma.user.update({
                 where: { id: existingCustomer.id },
                 data: {
-                    name: name || existingCustomer.name,
-                    phone: rawPhone || existingCustomer.phone,
-                    email: sanitizedEmail !== null ? sanitizedEmail : existingCustomer.email,
-                    profileAddress: address ? address : existingCustomer.profileAddress
+                    name: name !== undefined ? String(name).trim() : existingCustomer.name,
+                    phone: rawPhone ? rawPhone : existingCustomer.phone,
+                    email: sanitizedEmail,
+                    profileAddress: address !== undefined ? String(address).trim() : existingCustomer.profileAddress
                 },
                 include: { addresses: { where: { isDefault: true } } }
             });
         } else {
             customer = await prisma.user.create({
                 data: {
-                    name: name || "Customer",
+                    name: name ? String(name).trim() : "Customer",
                     phone: rawPhone,
                     email: sanitizedEmail,
                     role: "USER",
                     password: "POS_AUTO_GENERATED_" + Math.random().toString(36).slice(-8),
-                    profileAddress: address || null
+                    profileAddress: address ? String(address).trim() : null
                 },
                 include: { addresses: { where: { isDefault: true } } }
             });
@@ -325,7 +347,7 @@ export const createOrUpdateCustomer = async (req: AuthenticatedRequest, res: Res
         }
 
         // Save or update default address safely without Prisma upsert id crashes
-        if (address && String(address).trim() !== "") {
+        if (address !== undefined && String(address).trim() !== "") {
             const existingAddress = await prisma.address.findFirst({
                 where: { userId: customer.id, isDefault: true }
             });
@@ -333,35 +355,44 @@ export const createOrUpdateCustomer = async (req: AuthenticatedRequest, res: Res
             if (existingAddress) {
                 await prisma.address.update({
                     where: { id: existingAddress.id },
-                    data: { fullAddress: address }
+                    data: { fullAddress: String(address).trim() }
                 });
             } else {
                 await prisma.address.create({
                     data: {
                         userId: customer.id,
-                        fullAddress: address,
-                        isDefault: true,
-                        type: "HOME"
+                        fullAddress: String(address).trim(),
+                        tag: "Home",
+                        isDefault: true
                     }
                 });
             }
         }
 
-        const freshCustomer = await prisma.user.findUnique({
+        // Refetch full customer object with updated addresses
+        const fullCustomer = await prisma.user.findUnique({
             where: { id: customer.id },
-            include: { addresses: { where: { isDefault: true } } }
+            select: {
+                id: true,
+                name: true,
+                phone: true,
+                email: true,
+                profileAddress: true,
+                addresses: { where: { isDefault: true }, take: 1 }
+            }
         });
 
-        const mappedCustomer = {
-            id: freshCustomer?.id,
-            name: freshCustomer?.name,
-            phone: freshCustomer?.phone,
-            email: freshCustomer?.email || "",
-            address: freshCustomer?.addresses?.[0]?.fullAddress || freshCustomer?.profileAddress || address || "",
-            profileAddress: freshCustomer?.profileAddress || ""
+        const formatted = {
+            id: fullCustomer?.id || customer.id,
+            name: fullCustomer?.name || customer.name,
+            phone: fullCustomer?.phone || customer.phone,
+            email: fullCustomer?.email || "",
+            profileAddress: fullCustomer?.profileAddress || "",
+            address: fullCustomer?.addresses?.[0]?.fullAddress || fullCustomer?.profileAddress || (typeof address === "string" ? address : ""),
+            addresses: fullCustomer?.addresses || []
         };
 
-        return res.json({ message: existingCustomer ? "Customer updated" : "Customer created", customer: mappedCustomer });
+        res.json({ message: existingCustomer ? "Customer updated" : "Customer created", customer: formatted, ...formatted });
     } catch (error) {
         next(error);
     }

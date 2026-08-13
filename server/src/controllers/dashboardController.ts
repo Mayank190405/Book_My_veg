@@ -502,17 +502,17 @@ export const getCustomerSalesAndDueReports = async (req: AuthenticatedRequest, r
             targetLocationId = locId;
         }
 
-        // Fetch users matching search query (all non-admin customer accounts)
-        const userWhere: Prisma.UserWhereInput = {
-            role: { notIn: ["ADMIN", "STORE_ADMIN", "MANAGER"] as Role[] },
-            ...(searchStr ? {
-                OR: [
-                    { name: { contains: searchStr, mode: "insensitive" } },
-                    { phone: { contains: searchStr } },
-                    { email: { contains: searchStr, mode: "insensitive" } }
-                ]
-            } : {})
-        };
+        // Fetch users matching search query
+        const cleanDigits = searchStr ? searchStr.replace(/\D/g, "") : "";
+        const userWhere: Prisma.UserWhereInput = searchStr ? {
+            OR: [
+                { name: { contains: searchStr, mode: "insensitive" } },
+                { phone: { contains: searchStr } },
+                ...(cleanDigits ? [{ phone: { contains: cleanDigits } }] : []),
+                { email: { contains: searchStr, mode: "insensitive" } },
+                { orders: { some: { id: { contains: searchStr, mode: "insensitive" } } } }
+            ]
+        } : {};
 
         const users = await prisma.user.findMany({
             where: userWhere,
@@ -524,7 +524,7 @@ export const getCustomerSalesAndDueReports = async (req: AuthenticatedRequest, r
                 createdAt: true,
                 orders: {
                     where: {
-                        status: { notIn: ["CANCELLED", "FAILED", "PAYMENT_PENDING"] }
+                        status: { notIn: ["CANCELLED", "FAILED"] }
                     },
                     select: {
                         id: true,

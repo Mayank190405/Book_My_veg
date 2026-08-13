@@ -20,23 +20,24 @@ services:
     container_name: bmv-server
     restart: always
     ports:
-      - "5000:5000"
+      - "5001:5000"
     environment:
       DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres_password}@db:5432/${DB_NAME:-bookmyveg}?schema=public
       JWT_SECRET: ${JWT_SECRET:-supersecret}
       REDIS_HOST: redis
       REDIS_PORT: 6379
       PORT: 5000
+      JWT_ACCESS_EXPIRY: 7d
+      JWT_REFRESH_EXPIRY: 30d
       CLIENT_URL: ${CLIENT_URL:-https://bookmyveg.co.in}
     depends_on:
       - db
       - redis
     volumes:
-      - ./server/.env:/app/.env
       - bmv-uploads:/app/public/uploads
 
   redis:
-    image: redis:7-alpine
+    image: redis:7
     container_name: bmv-redis
     restart: always
     ports:
@@ -51,7 +52,7 @@ services:
     container_name: bmv-client
     restart: always
     ports:
-      - "3000:3000"
+      - "3002:3000"
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:5001/api/v1}
       INTERNAL_SERVER_URL: http://server:5000

@@ -99,7 +99,7 @@ export default function POSOperator() {
     const [isUpdatingWebOrderStatus, setIsUpdatingWebOrderStatus] = useState(false);
 
     // Customer form
-    const [customerFormData, setCustomerFormData] = useState({ id: "", name: "", phone: "", address: "" });
+    const [customerFormData, setCustomerFormData] = useState({ id: "", name: "", phone: "", email: "", address: "" });
 
     // Payment
     const [paymentMethod, setPaymentMethod] = useState("CASH");
@@ -363,15 +363,36 @@ export default function POSOperator() {
         finally { setIsSearchingCustomer(false); }
     };
 
+    const openEditCustomerModal = (cust: any) => {
+        if (!cust) return;
+        setCustomerFormData({
+            id: cust.id || "",
+            name: cust.name || "",
+            phone: cust.phone || "",
+            email: cust.email || "",
+            address: cust.addresses?.[0]?.fullAddress || cust.profileAddress || cust.address || ""
+        });
+        setShowCustomerDialog(true);
+    };
+
     const handleCustomerUpsert = async () => {
         if (!customerFormData.name || !customerFormData.phone) { toast.error("Name and phone are required"); return; }
         try {
-            const res = await api.post("/pos/customers/upsert", { ...customerFormData, email: null });
-            setSelectedCustomer(res.data.customer || res.data);
-            toast.success(customerFormData.id ? "Customer updated" : "Customer created");
+            const res = await api.post("/pos/customers/upsert", { 
+                id: customerFormData.id || undefined,
+                name: customerFormData.name,
+                phone: customerFormData.phone,
+                email: customerFormData.email ? customerFormData.email.trim() : null,
+                address: customerFormData.address 
+            });
+            const updatedCust = res.data.customer || res.data;
+            setSelectedCustomer(updatedCust);
+            toast.success(customerFormData.id ? "Customer details updated" : "Customer created & tagged");
             setShowCustomerDialog(false);
-            setCustomerFormData({ id: "", name: "", phone: "", address: "" });
-        } catch { toast.error("Failed to save customer"); }
+            setCustomerFormData({ id: "", name: "", phone: "", email: "", address: "" });
+        } catch (err: any) { 
+            toast.error(err.response?.data?.message || "Failed to save customer"); 
+        }
     };
 
     const fetchCustomerHistory = async (customerId: string, showDialog: boolean = true) => {
@@ -1550,10 +1571,13 @@ export default function POSOperator() {
                         <div className="flex gap-1">
                             {selectedCustomer?.id && (
                                 <>
+                                    <button onClick={() => openEditCustomerModal(selectedCustomer)} className="p-1.5 bg-white border rounded text-slate-700 hover:bg-slate-100" title="Edit Customer Details">
+                                        <SquarePen className="h-3.5 w-3.5" />
+                                    </button>
                                     <button onClick={() => fetchCustomerHistory(selectedCustomer.id)} className="p-1.5 bg-white border rounded text-teal-500 hover:bg-teal-50" title="History">
                                         <History className="h-3.5 w-3.5" />
                                     </button>
-                                    <button onClick={() => setSelectedCustomer(null)} className="p-1.5 bg-white border rounded text-red-400 hover:bg-red-50">
+                                    <button onClick={() => setSelectedCustomer(null)} className="p-1.5 bg-white border rounded text-red-400 hover:bg-red-50" title="Untag">
                                         <X className="h-3.5 w-3.5" />
                                     </button>
                                 </>
@@ -1814,22 +1838,26 @@ export default function POSOperator() {
                                 {customerSearchResults.length > 0 && (
                                     <div className="absolute top-full left-0 right-0 mt-1 bg-[#2C3E50] border border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden">
                                         {customerSearchResults.map(c => (
-                                            <button key={c.id} onClick={() => { setSelectedCustomer(c); setCustomerSearchResults([]); setCustomerSearch(""); }}
-                                                className="w-full p-3 flex items-center gap-3 hover:bg-white/5 border-b border-white/5 text-left">
-                                                <div className="w-8 h-8 bg-teal-500/20 text-teal-400 rounded-full flex items-center justify-center font-bold text-xs">{c.name?.charAt(0)}</div>
-                                                <div>
-                                                    <p className="text-xs font-bold text-white">{c.name}</p>
-                                                    <p className="text-[10px] text-slate-400 tabular-nums">{c.phone}</p>
-                                                    {c.addresses?.[0]?.fullAddress && (
-                                                        <p className="text-[9px] text-teal-400 truncate w-40 italic">{c.addresses[0].fullAddress}</p>
-                                                    )}
-                                                </div>
-                                            </button>
+                                            <div key={c.id} className="w-full p-3 flex items-center justify-between hover:bg-white/5 border-b border-white/5 text-left">
+                                                <button onClick={() => { setSelectedCustomer(c); setCustomerSearchResults([]); setCustomerSearch(""); }} className="flex items-center gap-3 text-left flex-1 min-w-0">
+                                                    <div className="w-8 h-8 bg-teal-500/20 text-teal-400 rounded-full flex items-center justify-center font-bold text-xs shrink-0">{c.name?.charAt(0)}</div>
+                                                    <div className="min-w-0">
+                                                        <p className="text-xs font-bold text-white truncate">{c.name}</p>
+                                                        <p className="text-[10px] text-slate-400 tabular-nums">{c.phone}</p>
+                                                        {(c.addresses?.[0]?.fullAddress || c.address) && (
+                                                            <p className="text-[9px] text-teal-400 truncate max-w-[180px] italic">{c.addresses?.[0]?.fullAddress || c.address}</p>
+                                                        )}
+                                                    </div>
+                                                </button>
+                                                <button onClick={(e) => { e.stopPropagation(); openEditCustomerModal(c); setCustomerSearchResults([]); setCustomerSearch(""); }} className="p-2 bg-white/10 hover:bg-white/20 text-slate-200 rounded-lg transition-all ml-2 shrink-0" title="Edit Customer Details">
+                                                    <SquarePen className="h-4 w-4" />
+                                                </button>
+                                            </div>
                                         ))}
                                     </div>
                                 )}
                             </div>
-                            <button onClick={() => { setCustomerFormData({ id: "", name: "", phone: "", address: "" }); setShowCustomerDialog(true); }}
+                            <button onClick={() => { setCustomerFormData({ id: "", name: "", phone: "", email: "", address: "" }); setShowCustomerDialog(true); }}
                                 className="h-12 px-5 bg-teal-500 hover:bg-teal-400 text-white rounded-lg font-bold text-[10px] uppercase tracking-wider flex items-center gap-2">
                                 <UserPlus className="h-4 w-4" /> New
                             </button>
@@ -1949,6 +1977,10 @@ export default function POSOperator() {
                         <div>
                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">Mobile Number *</label>
                             <input value={customerFormData.phone} onChange={e => setCustomerFormData(p => ({ ...p, phone: e.target.value }))} placeholder="10-digit mobile number" className="w-full h-12 bg-slate-50 border border-slate-200 rounded-xl px-4 text-sm font-bold text-slate-900 focus:bg-white focus:ring-2 ring-teal-500/20 outline-none transition-all" />
+                        </div>
+                        <div>
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">Email Address</label>
+                            <input value={customerFormData.email} onChange={e => setCustomerFormData(p => ({ ...p, email: e.target.value }))} placeholder="customer@email.com (optional)" className="w-full h-12 bg-slate-50 border border-slate-200 rounded-xl px-4 text-sm font-bold text-slate-900 focus:bg-white focus:ring-2 ring-teal-500/20 outline-none transition-all" />
                         </div>
                         <div>
                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">Full Address</label>
