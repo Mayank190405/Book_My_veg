@@ -807,21 +807,147 @@ export const getCustomerHistory = async (req: AuthenticatedRequest, res: Respons
             o.paymentStatus !== "PAID" && 
             o.paymentStatus !== "SETTLED" && 
             o.status !== "CANCELLED" && 
-            o.status !== "FAILED" && 
-            o.status !== "PAYMENT_PENDING"
+            o.status !== "FAILED"
         );
-        const totalDue = dueOrders.reduce((acc, o) => {
+
+        const now = new Date();
+        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+
+        let todayDue = 0;
+        let pastDue = 0;
+
+        dueOrders.forEach(o => {
             const paid = o.payments ? o.payments.filter((p: any) => p.status === "SUCCESS" || !p.status).reduce((pAcc: number, p: any) => pAcc + Number(p.amount), 0) : 0;
             const remaining = Number(o.totalAmount) - paid;
-            return acc + (remaining > 0 ? remaining : 0);
-        }, 0);
-        
-        const totalSpend = orders.filter(o => o.status !== "CANCELLED" && o.status !== "FAILED" && o.status !== "PAYMENT_PENDING").reduce((acc, o) => acc + Number(o.totalAmount), 0);
+            if (remaining > 0) {
+                if (new Date(o.createdAt) >= startOfToday) {
+                    todayDue += remaining;
+                } else {
+                    pastDue += remaining;
+                }
+            }
+        });
+
+        const totalDue = todayDue + pastDue;
+        const totalSpend = orders.filter(o => o.status !== "CANCELLED" && o.status !== "FAILED").reduce((acc, o) => acc + Number(o.totalAmount), 0);
         const lastVisit = orders[0]?.createdAt || null;
 
         res.json({
             orders,
-            summary: { totalOrders: orders.length, totalSpend, totalDue, lastVisit }
+            summary: { 
+                totalOrders: orders.length, 
+                totalSpend, 
+                totalDue, 
+                todayDue, 
+                pastDue, 
+                lastVisit 
+            }
+        });
+    } catch (error) { next(error); }
+};
+
+export const getTodayPOSSales = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    let locationId = req.user?.locationId;
+    const isGlobal = req.user?.role === "ADMIN" || req.user?.role === "SUPER_ADMIN";
+
+    if (!locationId && isGlobal) {
+        const loc = await prisma.location.findFirst();
+        locationId = loc?.id;
+    }
+
+    try {
+        const now = new Date();
+        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+        const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+
+        const orders = await prisma.order.findMany({
+            where: {
+                ...(locationId ? { locationId } : {}),
+                channel: "POS" as Channel,
+                status: { notIn: ["CANCELLED", "FAILED"] },
+                createdAt: {
+                    gte: startOfToday,
+                    lte: endOfToday
+                }
+            },
+            include: {
+                user: {
+                    select: {
+                        id: true,
+                        name: true,
+                        phone: true,
+                        email: true,
+                        profileAddress: true
+                    }
+                },
+                items: {
+                    include: {
+                        product: { select: { name: true, sku: true } }
+                    }
+                },
+                payments: true,
+                staff: { select: { name: true } }
+            },
+            orderBy: { createdAt: "desc" }
+        });
+
+        let totalSales = 0;
+        let cashSales = 0;
+        let upiSales = 0;
+        let creditSales = 0;
+        let onlineSales = 0;
+
+        const formattedOrders = orders.map(order => {
+            const amount = Number(order.totalAmount);
+            totalSales += amount;
+
+            const successfulPayments = order.payments.filter(p => p.status === "SUCCESS" || !p.status);
+            const mainMethod = successfulPayments[0]?.method || (order.isCredit ? "CREDIT" : "CASH");
+
+            if (order.isCredit) {
+                creditSales += amount;
+            } else if (mainMethod === "CASH" || mainMethod === "LIQUID_CASH") {
+                cashSales += amount;
+            } else if (mainMethod === "UPI") {
+                upiSales += amount;
+            } else if (mainMethod === "ONLINE" || mainMethod === "CARD" || mainMethod === "WALLET") {
+                onlineSales += amount;
+            } else {
+                cashSales += amount;
+            }
+
+            return {
+                id: order.id,
+                totalAmount: amount,
+                status: order.status,
+                paymentStatus: order.paymentStatus,
+                isCredit: order.isCredit,
+                isPaid: order.isPaid,
+                paymentMethod: mainMethod,
+                createdAt: order.createdAt,
+                customer: order.user ? {
+                    id: order.user.id,
+                    name: order.user.name,
+                    phone: order.user.phone,
+                    email: order.user.email
+                } : null,
+                itemsCount: order.items.length,
+                items: order.items,
+                payments: order.payments,
+                staffName: order.staff?.name || "POS Cashier"
+            };
+        });
+
+        res.json({
+            summary: {
+                totalSales,
+                orderCount: orders.length,
+                cashSales,
+                upiSales,
+                creditSales,
+                onlineSales
+            },
+            orders: formattedOrders
         });
     } catch (error) { next(error); }
 };

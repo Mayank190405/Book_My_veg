@@ -98,6 +98,37 @@ export default function POSOperator() {
     const [selectedWebOrder, setSelectedWebOrder] = useState<any>(null);
     const [isUpdatingWebOrderStatus, setIsUpdatingWebOrderStatus] = useState(false);
 
+    // Bill-wise Today Sales
+    const [showTodaySalesDialog, setShowTodaySalesDialog] = useState(false);
+    const [todaySalesSummary, setTodaySalesSummary] = useState({
+        totalSales: 0,
+        orderCount: 0,
+        cashSales: 0,
+        upiSales: 0,
+        creditSales: 0,
+        onlineSales: 0
+    });
+    const [todaySalesOrders, setTodaySalesOrders] = useState<any[]>([]);
+    const [todaySalesFilter, setTodaySalesFilter] = useState<string>("ALL");
+    const [todaySalesSearch, setTodaySalesSearch] = useState<string>("");
+    const [isLoadingTodaySales, setIsLoadingTodaySales] = useState(false);
+
+    const fetchTodaySales = async (showDialog: boolean = true) => {
+        setIsLoadingTodaySales(true);
+        try {
+            const res = await api.get("/pos/orders/today-sales");
+            setTodaySalesSummary(res.data.summary || {
+                totalSales: 0, orderCount: 0, cashSales: 0, upiSales: 0, creditSales: 0, onlineSales: 0
+            });
+            setTodaySalesOrders(res.data.orders || []);
+            if (showDialog) setShowTodaySalesDialog(true);
+        } catch {
+            /* silent */
+        } finally {
+            setIsLoadingTodaySales(false);
+        }
+    };
+
     // Customer form
     const [customerFormData, setCustomerFormData] = useState({ id: "", name: "", phone: "", email: "", address: "" });
 
@@ -152,6 +183,7 @@ export default function POSOperator() {
         fetchProducts();
         fetchStoreConfig();
         checkShiftStatus();
+        fetchTodaySales(false);
         const tick = setInterval(() => setTime(new Date()), 1000);
 
         const handleKeyPress = (e: KeyboardEvent) => {
@@ -1509,6 +1541,15 @@ export default function POSOperator() {
                             </span>
                         )}
                     </button>
+
+                    <button
+                        onClick={() => fetchTodaySales(true)}
+                        className="h-8 px-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-md active:scale-95"
+                        title="Click to view Bill-Wise Sales Report"
+                    >
+                        <Receipt className="h-3.5 w-3.5 text-white" />
+                        Today Sales: ₹{todaySalesSummary.totalSales.toLocaleString()}
+                    </button>
                     {suspendedBills.length > 0 && (
                         <div className="relative">
                             <button className="px-3 h-8 bg-orange-500 text-white text-[10px] font-bold rounded flex items-center gap-1.5">
@@ -2307,16 +2348,34 @@ export default function POSOperator() {
                                     <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest mb-1">Total Spend</p>
                                     <p className="text-2xl font-black text-teal-600 tabular-nums">₹{customerHistory.summary.totalSpend?.toFixed(0)}</p>
                                 </div>
-                                <div className="flex flex-col items-center justify-center p-4 bg-red-50 border border-red-100 rounded-2xl">
+                                <div className="flex flex-col items-center justify-center p-3 bg-red-50 border border-red-100 rounded-2xl text-center">
                                     <p className="text-[9px] text-red-400 font-black uppercase tracking-widest leading-none mb-1 text-center">Due Balance</p>
-                                    <p className="text-2xl font-black text-red-600 tabular-nums mb-2">₹{customerHistory.summary.totalDue.toFixed(0)}</p>
+                                    <p className="text-xl font-black text-red-600 tabular-nums mb-1">₹{customerHistory.summary.totalDue.toFixed(0)}</p>
+                                    {(customerHistory.summary.todayDue > 0 || customerHistory.summary.pastDue > 0) && (
+                                        <div className="flex flex-col gap-0.5 text-[9px] font-bold mb-2 w-full">
+                                            <span className="text-amber-700 bg-amber-100/80 px-2 py-0.5 rounded font-black">Today: ₹{(customerHistory.summary.todayDue || 0).toFixed(0)}</span>
+                                            {customerHistory.summary.pastDue > 0 && (
+                                                <span className="text-red-700 bg-red-100/80 px-2 py-0.5 rounded font-black">Past: ₹{(customerHistory.summary.pastDue || 0).toFixed(0)}</span>
+                                            )}
+                                        </div>
+                                    )}
                                     {customerHistory.summary.totalDue > 0 && (
-                                        <Button
-                                            onClick={() => { setShowSettleDialog(true); setSettleAmount(customerHistory.summary.totalDue); }}
-                                            className="h-8 px-4 bg-red-600 hover:bg-red-700 text-white font-black uppercase text-[9px] tracking-widest rounded-xl shadow-lg shadow-red-200"
-                                        >
-                                            Settle Now
-                                        </Button>
+                                        <div className="flex flex-col gap-1 w-full">
+                                            {customerHistory.summary.todayDue > 0 && customerHistory.summary.pastDue > 0 && (
+                                                <Button
+                                                    onClick={() => { setShowSettleDialog(true); setSettleAmount(customerHistory.summary.todayDue); }}
+                                                    className="h-7 px-2 bg-amber-600 hover:bg-amber-700 text-white font-black uppercase text-[8px] tracking-wider rounded-lg shadow"
+                                                >
+                                                    Pay Today Due (₹{customerHistory.summary.todayDue.toFixed(0)})
+                                                </Button>
+                                            )}
+                                            <Button
+                                                onClick={() => { setShowSettleDialog(true); setSettleAmount(customerHistory.summary.totalDue); }}
+                                                className="h-7 px-2 bg-red-600 hover:bg-red-700 text-white font-black uppercase text-[8px] tracking-wider rounded-lg shadow"
+                                            >
+                                                {customerHistory.summary.pastDue > 0 ? `Pay All Dues (₹${customerHistory.summary.totalDue.toFixed(0)})` : "Settle Now"}
+                                            </Button>
+                                        </div>
                                     )}
                                 </div>
                                 <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 text-center">
@@ -2363,6 +2422,181 @@ export default function POSOperator() {
                             </div>
                         </div>
                     )}
+                </DialogContent>
+            </Dialog>
+
+            {/* ── TODAY BILL-WISE SALES REPORT DIALOG ── */}
+            <Dialog open={showTodaySalesDialog} onOpenChange={setShowTodaySalesDialog}>
+                <DialogContent className="max-w-4xl bg-white rounded-3xl p-6 border-none shadow-2xl max-h-[90vh] overflow-hidden flex flex-col">
+                    <DialogHeader>
+                        <div className="flex items-center justify-between pr-6">
+                            <div>
+                                <DialogTitle className="text-2xl font-black uppercase tracking-tight text-slate-900 flex items-center gap-2">
+                                    <Receipt className="h-6 w-6 text-emerald-500" />
+                                    Today's Bill-Wise Sales Report
+                                </DialogTitle>
+                                <DialogDescription className="text-slate-500 text-xs font-medium">
+                                    Real-time transaction breakdown of all sales for today.
+                                </DialogDescription>
+                            </div>
+                            <Button onClick={() => fetchTodaySales(true)} variant="outline" size="sm" className="rounded-xl border-slate-200 text-slate-700 font-bold">
+                                <RefreshCw className={cn("h-4 w-4 mr-1", isLoadingTodaySales && "animate-spin")} /> Refresh
+                            </Button>
+                        </div>
+                    </DialogHeader>
+
+                    {/* Summary Metric Cards */}
+                    <div className="grid grid-cols-5 gap-3 mt-4">
+                        <div className="bg-emerald-50 border border-emerald-200/60 rounded-2xl p-3 text-center">
+                            <p className="text-[9px] font-black uppercase tracking-widest text-emerald-600">Total Sales</p>
+                            <p className="text-xl font-black text-emerald-700 tabular-nums">₹{todaySalesSummary.totalSales.toLocaleString()}</p>
+                            <p className="text-[10px] font-bold text-slate-500 mt-0.5">{todaySalesSummary.orderCount} Bills</p>
+                        </div>
+                        <div className="bg-slate-50 border border-slate-200/60 rounded-2xl p-3 text-center">
+                            <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Cash Sales</p>
+                            <p className="text-xl font-black text-slate-900 tabular-nums">₹{todaySalesSummary.cashSales.toLocaleString()}</p>
+                        </div>
+                        <div className="bg-sky-50 border border-sky-200/60 rounded-2xl p-3 text-center">
+                            <p className="text-[9px] font-black uppercase tracking-widest text-sky-600">UPI / QR Sales</p>
+                            <p className="text-xl font-black text-sky-700 tabular-nums">₹{todaySalesSummary.upiSales.toLocaleString()}</p>
+                        </div>
+                        <div className="bg-amber-50 border border-amber-200/60 rounded-2xl p-3 text-center">
+                            <p className="text-[9px] font-black uppercase tracking-widest text-amber-600">Credit Sales</p>
+                            <p className="text-xl font-black text-amber-700 tabular-nums">₹{todaySalesSummary.creditSales.toLocaleString()}</p>
+                        </div>
+                        <div className="bg-purple-50 border border-purple-200/60 rounded-2xl p-3 text-center">
+                            <p className="text-[9px] font-black uppercase tracking-widest text-purple-600">Online Sales</p>
+                            <p className="text-xl font-black text-purple-700 tabular-nums">₹{todaySalesSummary.onlineSales.toLocaleString()}</p>
+                        </div>
+                    </div>
+
+                    {/* Filters & Search */}
+                    <div className="flex items-center justify-between gap-3 mt-4 bg-slate-50 p-2 rounded-2xl border border-slate-200/60">
+                        <div className="flex items-center gap-1.5">
+                            {["ALL", "CASH", "UPI", "CREDIT", "ONLINE"].map((mode) => (
+                                <button
+                                    key={mode}
+                                    onClick={() => setTodaySalesFilter(mode)}
+                                    className={cn(
+                                        "px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all",
+                                        todaySalesFilter === mode
+                                            ? "bg-slate-900 text-white shadow-md"
+                                            : "text-slate-500 hover:bg-slate-200/60"
+                                    )}
+                                >
+                                    {mode === "ALL" ? `All (${todaySalesOrders.length})` : mode}
+                                </button>
+                            ))}
+                        </div>
+                        <div className="relative w-64">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                            <input
+                                type="text"
+                                value={todaySalesSearch}
+                                onChange={(e) => setTodaySalesSearch(e.target.value)}
+                                placeholder="Search Bill # or Customer..."
+                                className="w-full h-8 pl-9 pr-3 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 ring-emerald-500/20"
+                            />
+                        </div>
+                    </div>
+
+                    {/* Bill List Table */}
+                    <div className="flex-1 overflow-y-auto mt-3 border border-slate-200/60 rounded-2xl">
+                        {todaySalesOrders.filter((ord) => {
+                            if (todaySalesFilter !== "ALL") {
+                                if (todaySalesFilter === "CREDIT" && !ord.isCredit) return false;
+                                if (todaySalesFilter !== "CREDIT" && ord.paymentMethod !== todaySalesFilter) return false;
+                            }
+                            if (todaySalesSearch) {
+                                const q = todaySalesSearch.toLowerCase();
+                                const matchId = ord.id.toLowerCase().includes(q);
+                                const matchName = ord.customer?.name?.toLowerCase().includes(q);
+                                const matchPhone = ord.customer?.phone?.includes(q);
+                                if (!matchId && !matchName && !matchPhone) return false;
+                            }
+                            return true;
+                        }).length === 0 ? (
+                            <div className="p-8 text-center text-slate-400 font-bold text-xs uppercase tracking-wider">
+                                No sales records found matching filter.
+                            </div>
+                        ) : (
+                            <table className="w-full text-left text-xs">
+                                <thead className="bg-slate-100 text-slate-500 font-black uppercase text-[10px] tracking-wider sticky top-0 border-b border-slate-200">
+                                    <tr>
+                                        <th className="py-3 px-4">Bill #</th>
+                                        <th className="py-3 px-4">Time</th>
+                                        <th className="py-3 px-4">Customer</th>
+                                        <th className="py-3 px-4">Payment Mode</th>
+                                        <th className="py-3 px-4">Items</th>
+                                        <th className="py-3 px-4 text-right">Total Amount</th>
+                                        <th className="py-3 px-4 text-center">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100 font-medium text-slate-800">
+                                    {todaySalesOrders
+                                        .filter((ord) => {
+                                            if (todaySalesFilter !== "ALL") {
+                                                if (todaySalesFilter === "CREDIT" && !ord.isCredit) return false;
+                                                if (todaySalesFilter !== "CREDIT" && ord.paymentMethod !== todaySalesFilter) return false;
+                                            }
+                                            if (todaySalesSearch) {
+                                                const q = todaySalesSearch.toLowerCase();
+                                                const matchId = ord.id.toLowerCase().includes(q);
+                                                const matchName = ord.customer?.name?.toLowerCase().includes(q);
+                                                const matchPhone = ord.customer?.phone?.includes(q);
+                                                if (!matchId && !matchName && !matchPhone) return false;
+                                            }
+                                            return true;
+                                        })
+                                        .map((ord) => (
+                                            <tr key={ord.id} className="hover:bg-slate-50 transition-colors">
+                                                <td className="py-3 px-4 font-black text-slate-900">
+                                                    #{ord.id.slice(0, 8).toUpperCase()}
+                                                </td>
+                                                <td className="py-3 px-4 text-slate-500 font-bold tabular-nums">
+                                                    {new Date(ord.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                </td>
+                                                <td className="py-3 px-4">
+                                                    <div className="font-bold text-slate-900">{ord.customer?.name || "Walk-in Guest"}</div>
+                                                    {ord.customer?.phone && <div className="text-[10px] text-slate-400 font-mono">{ord.customer.phone}</div>}
+                                                </td>
+                                                <td className="py-3 px-4">
+                                                    <span className={cn(
+                                                        "px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider",
+                                                        ord.isCredit
+                                                            ? "bg-amber-100 text-amber-800 border border-amber-200"
+                                                            : ord.paymentMethod === "CASH"
+                                                            ? "bg-slate-100 text-slate-800 border border-slate-200"
+                                                            : ord.paymentMethod === "UPI"
+                                                            ? "bg-sky-100 text-sky-800 border border-sky-200"
+                                                            : "bg-purple-100 text-purple-800 border border-purple-200"
+                                                    )}>
+                                                        {ord.isCredit ? "CREDIT" : ord.paymentMethod}
+                                                    </span>
+                                                </td>
+                                                <td className="py-3 px-4 text-slate-500 font-bold">
+                                                    {ord.itemsCount} {ord.itemsCount === 1 ? "Item" : "Items"}
+                                                </td>
+                                                <td className="py-3 px-4 text-right font-black text-emerald-700 tabular-nums text-sm">
+                                                    ₹{ord.totalAmount.toFixed(2)}
+                                                </td>
+                                                <td className="py-3 px-4 text-center">
+                                                    <button
+                                                        onClick={() => {
+                                                            setShowTodaySalesDialog(false);
+                                                            handleViewHistoricalReceipt(ord);
+                                                        }}
+                                                        className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-[10px] rounded-xl tracking-wider uppercase transition-all shadow-sm"
+                                                    >
+                                                        Reprint
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                </tbody>
+                            </table>
+                        )}
+                    </div>
                 </DialogContent>
             </Dialog>
 

@@ -10,7 +10,8 @@ import {
     collectDuePayment,
     settleAccountBalance,
     getWebOrders,
-    updateWebOrderStatus
+    updateWebOrderStatus,
+    getTodayPOSSales
 } from "../controllers/posController";
 import { authenticate, authorize } from "../middleware/auth";
 
@@ -28,6 +29,7 @@ router.post("/customers/:customerId/settle", settleAccountBalance);
 // ─── Transaction Node ─────────────────────────────────────────────────────────
 router.post("/orders/process", processPOSOrder);
 router.get("/orders/web", getWebOrders);
+router.get("/orders/today-sales", getTodayPOSSales);
 router.post("/orders/:orderId/status", updateWebOrderStatus);
 router.patch("/orders/:orderId/status", updateWebOrderStatus);
 router.get("/products/store", getStoreProducts);
