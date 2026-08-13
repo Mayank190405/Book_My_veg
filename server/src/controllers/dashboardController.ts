@@ -576,9 +576,11 @@ export const getCustomerSalesAndDueReports = async (req: AuthenticatedRequest, r
                 return sum + orderPaid;
             }, 0);
 
-            // Calculate current total outstanding due across ALL active orders of the customer
-            const totalDue = allOrders.reduce((sum, o) => {
-                const isSettled = o.isPaid || o.paymentStatus === "COMPLETED" || o.paymentStatus === "PAID" || o.paymentStatus === "SETTLED";
+            // 🛡️ Calculate outstanding due: if date/channel/location filter is active, calculate due for filtered orders (e.g. Current Day Due)
+            const targetDueOrders = (startStr || endStr || channelStr || targetLocationId) ? dateFilteredOrders : allOrders;
+
+            const totalDue = targetDueOrders.reduce((sum, o) => {
+                const isSettled = o.isPaid || o.paymentStatus === "COMPLETED" || o.paymentStatus === "PAID" || o.paymentStatus === "SETTLED" || o.status === "CANCELLED" || o.status === "FAILED";
                 if (!isSettled) {
                     const paid = o.payments.reduce((pSum, p) => pSum + Number(p.amount), 0);
                     const due = Number(o.totalAmount) - paid;
@@ -609,12 +611,17 @@ export const getCustomerSalesAndDueReports = async (req: AuthenticatedRequest, r
             };
         });
 
-        // Apply dueFilter
+        // If date range is specified (e.g. TODAY), filter out accounts with 0 orders and 0 due in that period
         let filteredReports = customerReports;
+        if (startStr || endStr) {
+            filteredReports = filteredReports.filter(c => c.orderCount > 0 || c.totalDue > 0);
+        }
+
+        // Apply dueFilter
         if (dueFilterStr === "HAS_DUE") {
-            filteredReports = customerReports.filter(c => c.totalDue > 0);
+            filteredReports = filteredReports.filter(c => c.totalDue > 0);
         } else if (dueFilterStr === "NO_DUE") {
-            filteredReports = customerReports.filter(c => c.totalDue === 0);
+            filteredReports = filteredReports.filter(c => c.totalDue === 0);
         }
 
         // Apply Sorting
