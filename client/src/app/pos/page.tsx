@@ -2427,7 +2427,7 @@ export default function POSOperator() {
 
             {/* ── TODAY BILL-WISE SALES REPORT DIALOG ── */}
             <Dialog open={showTodaySalesDialog} onOpenChange={setShowTodaySalesDialog}>
-                <DialogContent className="max-w-4xl bg-white rounded-3xl p-6 border-none shadow-2xl max-h-[90vh] overflow-hidden flex flex-col">
+                <DialogContent className="max-w-5xl sm:max-w-5xl md:max-w-5xl lg:max-w-6xl w-[94vw] bg-white rounded-3xl p-6 sm:p-8 border-none shadow-2xl max-h-[90vh] overflow-hidden flex flex-col">
                     <DialogHeader>
                         <div className="flex items-center justify-between pr-6">
                             <div>
@@ -2446,32 +2446,32 @@ export default function POSOperator() {
                     </DialogHeader>
 
                     {/* Summary Metric Cards */}
-                    <div className="grid grid-cols-5 gap-3 mt-4">
-                        <div className="bg-emerald-50 border border-emerald-200/60 rounded-2xl p-3 text-center">
-                            <p className="text-[9px] font-black uppercase tracking-widest text-emerald-600">Total Sales</p>
-                            <p className="text-xl font-black text-emerald-700 tabular-nums">₹{todaySalesSummary.totalSales.toLocaleString()}</p>
-                            <p className="text-[10px] font-bold text-slate-500 mt-0.5">{todaySalesSummary.orderCount} Bills</p>
+                    <div className="grid grid-cols-5 gap-3 sm:gap-4 mt-5">
+                        <div className="bg-emerald-50 border border-emerald-200/60 rounded-2xl p-4 flex flex-col items-center justify-center text-center shadow-sm">
+                            <p className="text-[10px] sm:text-[11px] font-black uppercase tracking-wider text-emerald-600 mb-1 whitespace-nowrap">Total Sales</p>
+                            <p className="text-lg sm:text-xl font-black text-emerald-700 tabular-nums whitespace-nowrap">₹{todaySalesSummary.totalSales.toLocaleString()}</p>
+                            <p className="text-[10px] font-bold text-slate-500 mt-1 whitespace-nowrap">{todaySalesSummary.orderCount} Bills</p>
                         </div>
-                        <div className="bg-slate-50 border border-slate-200/60 rounded-2xl p-3 text-center">
-                            <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Cash Sales</p>
-                            <p className="text-xl font-black text-slate-900 tabular-nums">₹{todaySalesSummary.cashSales.toLocaleString()}</p>
+                        <div className="bg-slate-50 border border-slate-200/60 rounded-2xl p-4 flex flex-col items-center justify-center text-center shadow-sm">
+                            <p className="text-[10px] sm:text-[11px] font-black uppercase tracking-wider text-slate-500 mb-1 whitespace-nowrap">Cash Sales</p>
+                            <p className="text-lg sm:text-xl font-black text-slate-900 tabular-nums whitespace-nowrap">₹{todaySalesSummary.cashSales.toLocaleString()}</p>
                         </div>
-                        <div className="bg-sky-50 border border-sky-200/60 rounded-2xl p-3 text-center">
-                            <p className="text-[9px] font-black uppercase tracking-widest text-sky-600">UPI / QR Sales</p>
-                            <p className="text-xl font-black text-sky-700 tabular-nums">₹{todaySalesSummary.upiSales.toLocaleString()}</p>
+                        <div className="bg-sky-50 border border-sky-200/60 rounded-2xl p-4 flex flex-col items-center justify-center text-center shadow-sm">
+                            <p className="text-[10px] sm:text-[11px] font-black uppercase tracking-wider text-sky-600 mb-1 whitespace-nowrap">UPI / QR Sales</p>
+                            <p className="text-lg sm:text-xl font-black text-sky-700 tabular-nums whitespace-nowrap">₹{todaySalesSummary.upiSales.toLocaleString()}</p>
                         </div>
-                        <div className="bg-amber-50 border border-amber-200/60 rounded-2xl p-3 text-center">
-                            <p className="text-[9px] font-black uppercase tracking-widest text-amber-600">Credit Sales</p>
-                            <p className="text-xl font-black text-amber-700 tabular-nums">₹{todaySalesSummary.creditSales.toLocaleString()}</p>
+                        <div className="bg-amber-50 border border-amber-200/60 rounded-2xl p-4 flex flex-col items-center justify-center text-center shadow-sm">
+                            <p className="text-[10px] sm:text-[11px] font-black uppercase tracking-wider text-amber-600 mb-1 whitespace-nowrap">Credit Sales</p>
+                            <p className="text-lg sm:text-xl font-black text-amber-700 tabular-nums whitespace-nowrap">₹{todaySalesSummary.creditSales.toLocaleString()}</p>
                         </div>
-                        <div className="bg-purple-50 border border-purple-200/60 rounded-2xl p-3 text-center">
-                            <p className="text-[9px] font-black uppercase tracking-widest text-purple-600">Online Sales</p>
-                            <p className="text-xl font-black text-purple-700 tabular-nums">₹{todaySalesSummary.onlineSales.toLocaleString()}</p>
+                        <div className="bg-purple-50 border border-purple-200/60 rounded-2xl p-4 flex flex-col items-center justify-center text-center shadow-sm">
+                            <p className="text-[10px] sm:text-[11px] font-black uppercase tracking-wider text-purple-600 mb-1 whitespace-nowrap">Online Sales</p>
+                            <p className="text-lg sm:text-xl font-black text-purple-700 tabular-nums whitespace-nowrap">₹{todaySalesSummary.onlineSales.toLocaleString()}</p>
                         </div>
                     </div>
 
                     {/* Filters & Search */}
-                    <div className="flex items-center justify-between gap-3 mt-4 bg-slate-50 p-2 rounded-2xl border border-slate-200/60">
+                    <div className="flex items-center justify-between gap-3 mt-5 bg-slate-50 p-2.5 rounded-2xl border border-slate-200/60">
                         <div className="flex items-center gap-1.5">
                             {["ALL", "CASH", "UPI", "CREDIT", "ONLINE"].map((mode) => (
                                 <button
