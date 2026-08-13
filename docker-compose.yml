@@ -20,7 +20,7 @@ services:
     container_name: bmv-server
     restart: always
     ports:
-      - "5001:5000"
+      - "5000:5000"
     environment:
       DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres_password}@db:5432/${DB_NAME:-bookmyveg}?schema=public
       JWT_SECRET: ${JWT_SECRET:-supersecret}
