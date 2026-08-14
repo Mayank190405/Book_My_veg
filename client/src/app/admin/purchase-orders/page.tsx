@@ -122,7 +122,7 @@ export default function PurchaseOrdersPage() {
         try {
             const [locRes, prodRes] = await Promise.all([
                 api.get("/locations"),
-                api.get("/products/all")
+                api.get("/products/admin")
             ]);
             setLocations(locRes.data || []);
             setProducts(prodRes.data?.products || prodRes.data || []);
