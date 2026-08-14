@@ -13,7 +13,8 @@ import {
     updateWebOrderStatus,
     getTodayPOSSales,
     getPOSDueCustomers,
-    sendPOSWhatsappDueReminders
+    sendPOSWhatsappDueReminders,
+    getPOSOrderById
 } from "../controllers/posController";
 import { authenticate, authorize } from "../middleware/auth";
 
@@ -32,6 +33,7 @@ router.post("/customers/:customerId/settle", settleAccountBalance);
 router.post("/orders/process", processPOSOrder);
 router.get("/orders/web", getWebOrders);
 router.get("/orders/today-sales", getTodayPOSSales);
+router.get("/orders/single/:orderId", getPOSOrderById);
 router.get("/due-customers", getPOSDueCustomers);
 router.post("/send-whatsapp-reminders", sendPOSWhatsappDueReminders);
 router.post("/orders/:orderId/status", updateWebOrderStatus);

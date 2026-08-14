@@ -12,7 +12,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.sendPOSWhatsappDueReminders = exports.getPOSDueCustomers = exports.settleAccountBalance = exports.collectDuePayment = exports.getStoreConfig = exports.cancelPOSOrder = exports.getTodayPOSSales = exports.getCustomerHistory = exports.getStoreProducts = exports.processPOSOrder = exports.createOrUpdateCustomer = exports.updateWebOrderStatus = exports.getWebOrders = exports.searchCustomer = void 0;
+exports.getPOSOrderById = exports.sendPOSWhatsappDueReminders = exports.getPOSDueCustomers = exports.settleAccountBalance = exports.collectDuePayment = exports.getStoreConfig = exports.cancelPOSOrder = exports.getTodayPOSSales = exports.getCustomerHistory = exports.getStoreProducts = exports.processPOSOrder = exports.createOrUpdateCustomer = exports.updateWebOrderStatus = exports.getWebOrders = exports.searchCustomer = void 0;
 const prisma_1 = __importDefault(require("../config/prisma"));
 const errors_1 = require("../utils/errors");
 const client_1 = require("@prisma/client");
@@ -1198,3 +1198,30 @@ const sendPOSWhatsappDueReminders = (req, res, next) => __awaiter(void 0, void 0
     }
 });
 exports.sendPOSWhatsappDueReminders = sendPOSWhatsappDueReminders;
+const getPOSOrderById = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    const idStr = String(req.params.orderId || "");
+    try {
+        const order = yield prisma_1.default.order.findFirst({
+            where: {
+                OR: [
+                    { id: idStr },
+                    { id: { startsWith: idStr } },
+                    { id: { contains: idStr, mode: 'insensitive' } }
+                ]
+            },
+            include: {
+                user: { select: { id: true, name: true, phone: true, email: true } },
+                items: { include: { product: { select: { name: true, sku: true } } } },
+                payments: true
+            }
+        });
+        if (!order) {
+            return res.status(404).json({ message: "Order not found" });
+        }
+        res.json(order);
+    }
+    catch (error) {
+        next(error);
+    }
+});
+exports.getPOSOrderById = getPOSOrderById;

@@ -36,14 +36,15 @@ export default function PaymentButton({ amount, address, items, className }: Pay
 
         try {
             // Initiate Payment (Create DB Order + Payment Session)
-            const { data } = await api.post("/payments/initiate", {
+            const res = await api.post("/payments/initiate", {
                 amount,
                 address,
                 items,
                 locationId: activeStore?.id
             });
+            const data = res?.data;
 
-            if (data.iframe && data.accessKey) {
+            if (data?.iframe && data?.accessKey) {
                 const triggerIframeCheckout = () => {
                     const EasebuzzCheckout = (window as any).EasebuzzCheckout;
                     try {

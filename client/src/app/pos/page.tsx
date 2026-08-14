@@ -58,7 +58,7 @@ function getStandardGreedyBreakdown(amount: number): Record<number, number> {
 }
 
 export default function POSOperator() {
-    const { user } = useUserStore();
+    const { user } = useUserStore() || {};
     const router = useRouter();
     const [products, setProducts] = useState<any[]>([]);
     const [cart, setCart] = useState<any[]>([]);
@@ -1070,19 +1070,12 @@ export default function POSOperator() {
             }
 
             // Try searching by specific Order ID if no customer found
-            const orderRes = await api.get(`/orders/${cancelBillSearch}`);
+            const orderRes = await api.get(`/pos/orders/single/${cancelBillSearch}`);
             if (orderRes.data) {
                 setCancelSearchResults([orderRes.data]);
             }
         } catch {
-            // Fallback: try searching directly by ID if previous fails
-            try {
-                const orderRes = await api.get(`/orders/id/${cancelBillSearch}`);
-                if (orderRes.data) setCancelSearchResults([orderRes.data]);
-                else toast.error("No matching bill found");
-            } catch {
-                toast.error("No matching customer or bill found");
-            }
+            toast.error("No matching customer or bill found");
         }
     };
 

@@ -1288,3 +1288,27 @@ export const sendPOSWhatsappDueReminders = async (req: AuthenticatedRequest, res
         });
     } catch (error) { next(error); }
 };
+
+export const getPOSOrderById = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    const idStr = String(req.params.orderId || "");
+    try {
+        const order = await prisma.order.findFirst({
+            where: {
+                OR: [
+                    { id: idStr },
+                    { id: { startsWith: idStr } },
+                    { id: { contains: idStr, mode: 'insensitive' } }
+                ]
+            },
+            include: {
+                user: { select: { id: true, name: true, phone: true, email: true } },
+                items: { include: { product: { select: { name: true, sku: true } } } },
+                payments: true
+            }
+        });
+        if (!order) {
+            return res.status(404).json({ message: "Order not found" });
+        }
+        res.json(order);
+    } catch (error) { next(error); }
+};
