@@ -15,33 +15,40 @@ const generatePONumber = async (): Promise<string> => {
 };
 
 // Helper: Get list of location IDs accessible by caller
-const getAccessibleLocationIds = async (user?: { userId: string; role: string; locationId?: string }): Promise<string[] | null> => {
+const getAccessibleLocationIds = async (user?: { userId?: string; id?: string; role?: string; locationId?: string }): Promise<string[] | null> => {
     if (!user) return [];
-    if (user.role === "ADMIN" || user.role === "SUPER_ADMIN") {
+    const uid = user.userId || user.id || "";
+    const role = user.role || "";
+
+    if (role === "ADMIN" || role === "SUPER_ADMIN") {
         return null; // Null means unrestricted access to all stores
     }
-    if (user.role === "PURCHASE_MANAGER") {
-        const [assignments, stores] = await Promise.all([
-            prisma.purchaseManagerLocation.findMany({
-                where: { userId: user.userId },
-                select: { locationId: true }
-            }),
-            prisma.location.findMany({
-                where: { purchaseManagerId: user.userId },
-                select: { id: true }
-            })
-        ]);
-        const assignedIds = new Set([
-            ...assignments.map(a => a.locationId),
-            ...stores.map(s => s.id)
-        ]);
-        if (user.locationId) assignedIds.add(user.locationId);
-        return Array.from(assignedIds);
+    if (role === "PURCHASE_MANAGER" && uid) {
+        try {
+            const [assignments, stores] = await Promise.all([
+                prisma.purchaseManagerLocation.findMany({
+                    where: { userId: uid },
+                    select: { locationId: true }
+                }).catch(() => []),
+                prisma.location.findMany({
+                    where: { purchaseManagerId: uid },
+                    select: { id: true }
+                }).catch(() => [])
+            ]);
+            const assignedIds = new Set([
+                ...assignments.map(a => a.locationId),
+                ...stores.map(s => s.id)
+            ]);
+            if (user.locationId) assignedIds.add(user.locationId);
+            return Array.from(assignedIds);
+        } catch (e) {
+            console.error("[getAccessibleLocationIds Error]:", e);
+        }
     }
     // Store Admin / Operator
     let locId = user.locationId;
-    if (user.userId.startsWith("STORE_")) {
-        locId = user.userId.replace("STORE_", "");
+    if (uid && uid.startsWith("STORE_")) {
+        locId = uid.replace("STORE_", "");
     }
     return locId ? [locId] : [];
 };
@@ -204,25 +211,43 @@ export const getPurchaseOrders = async (req: AuthenticatedRequest, res: Response
             whereClause.status = String(status) as POStatus;
         }
 
-        const purchaseOrders = await prisma.purchaseOrder.findMany({
-            where: whereClause,
-            include: {
-                location: { select: { id: true, name: true, slug: true } },
-                createdBy: { select: { id: true, name: true, role: true, phone: true } },
-                reviewedBy: { select: { id: true, name: true, role: true } },
-                items: {
-                    include: {
-                        product: { select: { id: true, name: true, sku: true, images: true, basePrice: true } },
-                        variant: { select: { id: true, name: true, price: true } }
+        let purchaseOrders: any[] = [];
+        try {
+            purchaseOrders = await prisma.purchaseOrder.findMany({
+                where: whereClause,
+                include: {
+                    location: { select: { id: true, name: true, slug: true } },
+                    createdBy: { select: { id: true, name: true, role: true, phone: true } },
+                    reviewedBy: { select: { id: true, name: true, role: true } },
+                    items: {
+                        include: {
+                            product: { select: { id: true, name: true, sku: true, images: true, basePrice: true } },
+                            variant: { select: { id: true, name: true, price: true } }
+                        }
                     }
-                }
-            },
-            orderBy: { createdAt: "desc" }
-        });
+                },
+                orderBy: { createdAt: "desc" }
+            });
+        } catch (queryErr) {
+            console.warn("[getPurchaseOrders fallback query]:", queryErr);
+            purchaseOrders = await prisma.purchaseOrder.findMany({
+                where: whereClause,
+                include: {
+                    location: { select: { id: true, name: true, slug: true } },
+                    items: {
+                        include: {
+                            product: { select: { id: true, name: true, sku: true, images: true, basePrice: true } },
+                            variant: { select: { id: true, name: true, price: true } }
+                        }
+                    }
+                },
+                orderBy: { createdAt: "desc" }
+            });
+        }
 
         res.json({ purchaseOrders });
     } catch (error: any) {
-        console.error("[GET PURCHASE ORDERS ERROR]:", error);
+        console.error("[GET PURCHASE ORDERS CRITICAL ERROR]:", error);
         res.json({ purchaseOrders: [] });
     }
 };
