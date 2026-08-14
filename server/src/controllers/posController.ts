@@ -903,20 +903,37 @@ export const getTodayPOSSales = async (req: AuthenticatedRequest, res: Response,
             const amount = Number(order.totalAmount);
             totalSales += amount;
 
-            const successfulPayments = order.payments.filter(p => p.status === "SUCCESS" || !p.status);
-            const mainMethod = successfulPayments[0]?.method || (order.isCredit ? "CREDIT" : "CASH");
+            const successfulPayments = order.payments ? order.payments.filter((p: any) => p.status === "SUCCESS" || !p.status) : [];
+            let paidCash = 0;
+            let paidUpi = 0;
+            let paidOnline = 0;
 
-            if (order.isCredit || mainMethod === "CREDIT") {
-                creditSales += amount;
-            } else if (mainMethod === "CASH" || mainMethod === "LIQUID_CASH") {
-                cashSales += amount;
-            } else if (mainMethod === "UPI" || mainMethod === "ONLINE" || mainMethod === "CARD" || mainMethod === "WALLET" || mainMethod === "NET_BANKING") {
-                onlineSales += amount;
-                if (mainMethod === "UPI") {
-                    upiSales += amount;
+            for (const p of successfulPayments) {
+                const pAmt = Number(p.amount || 0);
+                const method = String(p.method || "CASH").toUpperCase();
+                if (method === "CASH" || method === "LIQUID_CASH") {
+                    paidCash += pAmt;
+                } else if (method === "UPI") {
+                    paidUpi += pAmt;
+                    paidOnline += pAmt;
+                } else if (method === "ONLINE" || method === "CARD" || method === "WALLET" || method === "NET_BANKING") {
+                    paidOnline += pAmt;
+                } else {
+                    paidCash += pAmt;
                 }
-            } else {
-                cashSales += amount;
+            }
+
+            const totalPaid = paidCash + paidOnline;
+            const dueAmount = Math.max(0, amount - totalPaid);
+            const mainMethod = order.isCredit ? "CREDIT" : (successfulPayments[0]?.method || (dueAmount > 0 ? "CREDIT" : "CASH"));
+
+            cashSales += paidCash;
+            upiSales += paidUpi;
+            onlineSales += paidOnline;
+
+            if (order.isCredit || mainMethod === "CREDIT" || !order.isPaid || dueAmount > 0) {
+                const orderDue = (order.isCredit || mainMethod === "CREDIT") && totalPaid === 0 ? amount : dueAmount;
+                creditSales += orderDue;
             }
 
             return {

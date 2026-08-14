@@ -2511,7 +2511,7 @@ export default function POSOperator() {
                             <p className="text-lg sm:text-xl font-black text-sky-700 tabular-nums whitespace-nowrap">₹{todaySalesSummary.upiSales.toLocaleString()}</p>
                         </div>
                         <div className="bg-amber-50 border border-amber-200/60 rounded-2xl p-4 flex flex-col items-center justify-center text-center shadow-sm">
-                            <p className="text-[10px] sm:text-[11px] font-black uppercase tracking-wider text-amber-600 mb-1 whitespace-nowrap">Credit Sales</p>
+                            <p className="text-[10px] sm:text-[11px] font-black uppercase tracking-wider text-amber-600 mb-1 whitespace-nowrap">Credit / Due Sales</p>
                             <p className="text-lg sm:text-xl font-black text-amber-700 tabular-nums whitespace-nowrap">₹{todaySalesSummary.creditSales.toLocaleString()}</p>
                         </div>
                         <div className="bg-purple-50 border border-purple-200/60 rounded-2xl p-4 flex flex-col items-center justify-center text-center shadow-sm">
