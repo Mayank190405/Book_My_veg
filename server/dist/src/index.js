@@ -41,6 +41,7 @@ const notificationRoutes_1 = __importDefault(require("./routes/notificationRoute
 const unitRoutes_1 = __importDefault(require("./routes/unitRoutes"));
 const variantRoutes_1 = __importDefault(require("./routes/variantRoutes"));
 const posRoutes_1 = __importDefault(require("./routes/posRoutes"));
+const poRoutes_1 = __importDefault(require("./routes/poRoutes"));
 const dashboardRoutes_1 = __importDefault(require("./routes/dashboardRoutes"));
 const attendanceRoutes_1 = __importDefault(require("./routes/attendanceRoutes"));
 const expenseRoutes_1 = __importDefault(require("./routes/expenseRoutes"));
@@ -127,6 +128,7 @@ app.use("/api/v1/inventory", inventoryRoutes_1.default);
 app.use("/api/v1/notifications", notificationRoutes_1.default);
 app.use("/api/v1/units", unitRoutes_1.default);
 app.use("/api/v1/variants", variantRoutes_1.default);
+app.use("/api/v1/purchase-orders", poRoutes_1.default);
 app.use("/api/v1/pos", posRoutes_1.default);
 app.use("/api/v1/dashboard", dashboardRoutes_1.default);
 app.use("/api/v1/attendance", attendanceRoutes_1.default);

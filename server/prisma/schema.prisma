@@ -43,6 +43,9 @@ model User {
   targetedCoupons CouponUserTarget[]
   assignedIncidents SecurityIncident[] @relation("IncidentAssignee")
   incidentComments  IncidentComment[]
+  createdPOs        PurchaseOrder[]           @relation("POCreatedBy")
+  reviewedPOs       PurchaseOrder[]           @relation("POReviewedBy")
+  managedLocations  PurchaseManagerLocation[]
 }
 
 model Address {
@@ -132,6 +135,7 @@ model Product {
   variants           ProductVariant[]
   reviews            Review[]
   sectionProducts    SectionProduct[]
+  purchaseOrderItems PurchaseOrderItem[]
 
   @@index([categoryId])
   @@index([isActive])
@@ -156,6 +160,7 @@ model ProductVariant {
   inventoryLogs InventoryLog[]
   orderItems    OrderItem[]
   pricing       Pricing[]
+  purchaseOrderItems PurchaseOrderItem[]
   product       Product        @relation(fields: [productId], references: [id])
 
   @@index([productId])
@@ -188,6 +193,8 @@ model Location {
   expenses       StoreExpense[]
   users          User[]
   apiKeys        ApiKey[]
+  purchaseOrders PurchaseOrder[]
+  purchaseManagerLocations PurchaseManagerLocation[]
 }
 
 model Inventory {
@@ -897,4 +904,77 @@ model PageContent {
   content   String   @db.Text
   updatedAt DateTime @updatedAt
   createdAt DateTime @default(now())
+}
+
+enum POStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  ORDERED
+  PARTIALLY_RECEIVED
+  RECEIVED
+  CANCELLED
+}
+
+model PurchaseOrder {
+  id                  String              @id @default(uuid())
+  poNumber            String              @unique
+  locationId          String
+  createdById         String
+  reviewedById        String?
+  supplierName        String?
+  supplierPhone       String?
+  notes               String?
+  status              POStatus            @default(SUBMITTED)
+  totalEstimatedCost  Decimal             @default(0) @db.Decimal(12, 2)
+  actualCost          Decimal             @default(0) @db.Decimal(12, 2)
+  expectedDate        DateTime?
+  receivedAt          DateTime?
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+  
+  location            Location            @relation(fields: [locationId], references: [id])
+  createdBy           User                @relation("POCreatedBy", fields: [createdById], references: [id])
+  reviewedBy          User?               @relation("POReviewedBy", fields: [reviewedById], references: [id])
+  items               PurchaseOrderItem[]
+
+  @@index([locationId])
+  @@index([status])
+}
+
+model PurchaseOrderItem {
+  id                String          @id @default(uuid())
+  purchaseOrderId   String
+  productId         String
+  variantId         String?
+  requestedQty      Decimal         @db.Decimal(12, 3)
+  approvedQty       Decimal?        @db.Decimal(12, 3)
+  receivedQty       Decimal?        @db.Decimal(12, 3)
+  buyingPrice       Decimal         @default(0) @db.Decimal(10, 2)
+  totalCost         Decimal         @default(0) @db.Decimal(12, 2)
+  addedByManager    Boolean         @default(false)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  purchaseOrder     PurchaseOrder   @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  product           Product         @relation(fields: [productId], references: [id])
+  variant           ProductVariant? @relation(fields: [variantId], references: [id])
+
+  @@index([purchaseOrderId])
+  @@index([productId])
+  @@index([variantId])
+}
+
+model PurchaseManagerLocation {
+  id          String   @id @default(uuid())
+  userId      String
+  locationId  String
+  createdAt   DateTime @default(now())
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  location    Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, locationId])
+  @@index([userId])
+  @@index([locationId])
 }
