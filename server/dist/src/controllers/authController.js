@@ -121,12 +121,11 @@ const verifyOtpAndLogin = (req, res) => __awaiter(void 0, void 0, void 0, functi
             user = yield (0, prisma_1.withRetry)(() => prisma_1.default.user.create({ data: { phone } }));
         }
         const { accessToken, refreshToken } = (0, jwt_1.generateTokens)(user.id, user.role, user.locationId);
-        // Set Refresh Token in HTTP-only cookie
         res.cookie("refreshToken", refreshToken, {
             httpOnly: true,
             secure: process.env.NODE_ENV === "production",
             sameSite: "lax",
-            maxAge: 7 * 24 * 60 * 60 * 1000,
+            maxAge: 30 * 24 * 60 * 60 * 1000,
         });
         // Create Audit Log
         yield prisma_1.default.auditLog.create({
@@ -142,6 +141,7 @@ const verifyOtpAndLogin = (req, res) => __awaiter(void 0, void 0, void 0, functi
         res.status(200).json({
             message: "Login successful",
             accessToken,
+            refreshToken,
             user: { id: user.id, phone: user.phone, role: user.role, name: user.name },
         });
     }
@@ -278,7 +278,8 @@ const whatsappWebhook = (req, res) => __awaiter(void 0, void 0, void 0, function
 });
 exports.whatsappWebhook = whatsappWebhook;
 const refreshToken = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    const token = req.cookies.refreshToken;
+    var _a;
+    const token = req.cookies.refreshToken || req.headers["x-refresh-token"] || ((_a = req.body) === null || _a === void 0 ? void 0 : _a.refreshToken);
     if (!token) {
         return res.status(401).json({ message: "Refresh token required" });
     }
@@ -293,9 +294,9 @@ const refreshToken = (req, res) => __awaiter(void 0, void 0, void 0, function* (
             httpOnly: true,
             secure: process.env.NODE_ENV === "production",
             sameSite: "lax",
-            maxAge: 7 * 24 * 60 * 60 * 1000,
+            maxAge: 30 * 24 * 60 * 60 * 1000, // 30 Days
         });
-        res.status(200).json({ accessToken: tokens.accessToken });
+        res.status(200).json({ accessToken: tokens.accessToken, refreshToken: tokens.refreshToken, user });
     }
     catch (error) {
         return res.status(403).json({ message: "Invalid refresh token" });
@@ -341,7 +342,7 @@ const loginWithPassword = (req, res) => __awaiter(void 0, void 0, void 0, functi
                 httpOnly: true,
                 secure: process.env.NODE_ENV === "production",
                 sameSite: "lax",
-                maxAge: 7 * 24 * 60 * 60 * 1000,
+                maxAge: 30 * 24 * 60 * 60 * 1000,
             });
             // Create Audit Log - Set staffId to null for virtual store logins (avoids FK violation)
             try {
@@ -363,6 +364,7 @@ const loginWithPassword = (req, res) => __awaiter(void 0, void 0, void 0, functi
             return res.status(200).json({
                 message: "Store login successful",
                 accessToken,
+                refreshToken,
                 user: {
                     id: `STORE_${locationMatch.id}`,
                     phone: locationMatch.contactNumber,
@@ -383,7 +385,7 @@ const loginWithPassword = (req, res) => __awaiter(void 0, void 0, void 0, functi
             httpOnly: true,
             secure: process.env.NODE_ENV === "production",
             sameSite: "lax",
-            maxAge: 7 * 24 * 60 * 60 * 1000,
+            maxAge: 30 * 24 * 60 * 60 * 1000,
         });
         // Create Audit Log
         try {
@@ -405,6 +407,7 @@ const loginWithPassword = (req, res) => __awaiter(void 0, void 0, void 0, functi
         res.status(200).json({
             message: "Login successful",
             accessToken,
+            refreshToken,
             user: { id: user.id, phone: user.phone, role: user.role, name: user.name, locationId: user.locationId },
         });
     }

@@ -500,6 +500,7 @@ export const processPOSOrder = async (req: AuthenticatedRequest, res: Response, 
                         status: (suspend ? "PENDING" : (existingOrder.status === "PENDING" ? "CONFIRMED" : existingOrder.status)) as OrderStatus,
                         paymentStatus: pStatus,
                         isPaid: isFull,
+                        isCredit: paymentMethod === "CREDIT",
                         packerId,
                         staffId: validatedStaffId,
                         items: {
@@ -524,6 +525,7 @@ export const processPOSOrder = async (req: AuthenticatedRequest, res: Response, 
                         status: (suspend ? "PENDING" : "CONFIRMED") as OrderStatus,
                         paymentStatus: pStatus,
                         isPaid: isFull,
+                        isCredit: paymentMethod === "CREDIT",
                         shippingAddress: { type: "POS_IN_STORE", note: "Handover at Counter" } as any,
                         channel: Channel.POS,
                         notes: `POS Transaction by ${staffId}${!staffExists ? " (SESSION_RECOVERED)" : ""}`,
@@ -904,14 +906,15 @@ export const getTodayPOSSales = async (req: AuthenticatedRequest, res: Response,
             const successfulPayments = order.payments.filter(p => p.status === "SUCCESS" || !p.status);
             const mainMethod = successfulPayments[0]?.method || (order.isCredit ? "CREDIT" : "CASH");
 
-            if (order.isCredit) {
+            if (order.isCredit || mainMethod === "CREDIT") {
                 creditSales += amount;
             } else if (mainMethod === "CASH" || mainMethod === "LIQUID_CASH") {
                 cashSales += amount;
-            } else if (mainMethod === "UPI") {
-                upiSales += amount;
-            } else if (mainMethod === "ONLINE" || mainMethod === "CARD" || mainMethod === "WALLET") {
+            } else if (mainMethod === "UPI" || mainMethod === "ONLINE" || mainMethod === "CARD" || mainMethod === "WALLET" || mainMethod === "NET_BANKING") {
                 onlineSales += amount;
+                if (mainMethod === "UPI") {
+                    upiSales += amount;
+                }
             } else {
                 cashSales += amount;
             }
@@ -1146,5 +1149,142 @@ export const settleAccountBalance = async (req: AuthenticatedRequest, res: Respo
             return { settled: Number(amount) - remaining };
         });
         res.json(result);
+    } catch (error) { next(error); }
+};
+
+// ─── POS WhatsApp Due Reminders ────────────────────────────────────────────────
+
+export const getPOSDueCustomers = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    let locationId = req.user?.locationId;
+    const isGlobal = req.user?.role === "ADMIN" || req.user?.role === "SUPER_ADMIN";
+
+    if (!locationId && isGlobal) {
+        const loc = await prisma.location.findFirst();
+        locationId = loc?.id;
+    }
+
+    try {
+        const orders = await prisma.order.findMany({
+            where: {
+                ...(locationId ? { locationId } : {}),
+                status: { notIn: ["CANCELLED", "FAILED"] },
+                isPaid: false,
+                paymentStatus: { notIn: ["COMPLETED", "PAID", "SETTLED"] }
+            },
+            include: {
+                user: {
+                    select: {
+                        id: true,
+                        name: true,
+                        phone: true,
+                        email: true
+                    }
+                },
+                payments: true
+            },
+            orderBy: { createdAt: "desc" }
+        });
+
+        const customerMap: Record<string, {
+            id: string;
+            name: string;
+            phone: string;
+            email: string;
+            totalDue: number;
+            dueOrdersCount: number;
+            latestOrderId: string;
+        }> = {};
+
+        for (const order of orders) {
+            if (!order.user || !order.user.phone) continue;
+            const paid = order.payments ? order.payments.filter((p: any) => p.status === "SUCCESS" || !p.status).reduce((acc: number, p: any) => acc + Number(p.amount), 0) : 0;
+            const dueAmount = Number(order.totalAmount) - paid;
+            if (dueAmount <= 0) continue;
+
+            const uId = order.user.id;
+            if (!customerMap[uId]) {
+                customerMap[uId] = {
+                    id: order.user.id,
+                    name: order.user.name || "Customer",
+                    phone: order.user.phone,
+                    email: order.user.email || "",
+                    totalDue: 0,
+                    dueOrdersCount: 0,
+                    latestOrderId: order.id
+                };
+            }
+            customerMap[uId].totalDue += dueAmount;
+            customerMap[uId].dueOrdersCount += 1;
+        }
+
+        const dueCustomers = Object.values(customerMap).sort((a, b) => b.totalDue - a.totalDue);
+        res.json({ dueCustomers });
+    } catch (error) { next(error); }
+};
+
+export const sendPOSWhatsappDueReminders = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    const { customerIds } = req.body; // Array of selected customer IDs, or empty/all to send to all due customers
+
+    try {
+        const { sendPaymentReminderViaWhatsapp } = require("../services/mbgcard");
+
+        const orders = await prisma.order.findMany({
+            where: {
+                status: { notIn: ["CANCELLED", "FAILED"] },
+                isPaid: false,
+                paymentStatus: { notIn: ["COMPLETED", "PAID", "SETTLED"] },
+                ...(Array.isArray(customerIds) && customerIds.length > 0 ? { userId: { in: customerIds } } : {})
+            },
+            include: { user: true, payments: true }
+        });
+
+        const customerDueSummary: Record<string, {
+            user: any;
+            totalDue: number;
+            latestOrderId: string;
+        }> = {};
+
+        for (const order of orders) {
+            if (!order.user || !order.user.phone) continue;
+            const paid = order.payments ? order.payments.filter((p: any) => p.status === "SUCCESS" || !p.status).reduce((acc: number, p: any) => acc + Number(p.amount), 0) : 0;
+            const dueAmount = Number(order.totalAmount) - paid;
+            if (dueAmount <= 0) continue;
+
+            const uId = order.user.id;
+            if (!customerDueSummary[uId]) {
+                customerDueSummary[uId] = {
+                    user: order.user,
+                    totalDue: 0,
+                    latestOrderId: order.id
+                };
+            }
+            customerDueSummary[uId].totalDue += dueAmount;
+        }
+
+        let sentCount = 0;
+        let failedCount = 0;
+
+        for (const summary of Object.values(customerDueSummary)) {
+            try {
+                await sendPaymentReminderViaWhatsapp(
+                    summary.user.phone,
+                    summary.user.name || "Customer",
+                    summary.totalDue,
+                    summary.latestOrderId,
+                    summary.user.id,
+                    summary.latestOrderId
+                );
+                sentCount++;
+            } catch (err: any) {
+                console.error(`Failed to send WhatsApp reminder to ${summary.user.phone}:`, err.message);
+                failedCount++;
+            }
+        }
+
+        res.json({
+            message: `WhatsApp payment reminders sent to ${sentCount} customer(s).${failedCount > 0 ? ` (${failedCount} failed)` : ""}`,
+            sentCount,
+            failedCount
+        });
     } catch (error) { next(error); }
 };

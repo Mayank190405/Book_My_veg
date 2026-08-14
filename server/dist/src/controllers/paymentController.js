@@ -591,31 +591,23 @@ const completeOrderPayment = (orderId, paymentDetails) => __awaiter(void 0, void
         return { status: "SUCCESS" };
     }
     else {
-        // Payment Failed -> Restore Stock if not already failed
-        if (existing.paymentStatus !== "FAILED") {
+        // Payment Failed or Cancelled -> Purge draft order and restore stock so NO bill is created
+        if (existing && existing.paymentStatus !== "COMPLETED" && existing.paymentStatus !== "PAID" && !existing.isPaid) {
             yield prisma_1.default.$transaction((tx) => __awaiter(void 0, void 0, void 0, function* () {
                 var _a;
-                yield tx.order.update({
-                    where: { id: orderId },
-                    data: { paymentStatus: "FAILED", status: "FAILED" },
-                });
-                const locationId = (_a = existing.shippingAddress) === null || _a === void 0 ? void 0 : _a.locationId;
+                const locationId = ((_a = existing.shippingAddress) === null || _a === void 0 ? void 0 : _a.locationId) || existing.locationId;
                 if (locationId) {
                     yield inventoryService_1.InventoryService.restoreStock({
                         items: existing.items.map(i => ({ productId: i.productId, variantId: i.variantId || undefined, quantity: i.quantity })),
                         locationId,
                         staffId: "SYSTEM",
-                        referenceId: `FAIL_${orderId}`
+                        referenceId: `FAIL_PURGE_${orderId}`
                     }, tx);
                 }
-                yield tx.orderStatusHistory.create({
-                    data: {
-                        orderId: orderId,
-                        status: "FAILED",
-                        remark: `Payment failed — status: ${paymentDetails.status}`,
-                        changedBy: "SYSTEM",
-                    },
-                });
+                yield tx.orderItem.deleteMany({ where: { orderId } });
+                yield tx.payment.deleteMany({ where: { orderId } });
+                yield tx.orderStatusHistory.deleteMany({ where: { orderId } });
+                yield tx.order.delete({ where: { id: orderId } });
             }));
         }
         return { status: "FAILED" };
@@ -688,9 +680,32 @@ const verifyPayment = (req, res) => __awaiter(void 0, void 0, void 0, function* 
             const isSuccess = SUCCESS_STATUSES.includes(rawStatus.toUpperCase());
             if (!isSuccess) {
                 logger_1.default.info(`[Payment] Payment verification received non-success status '${rawStatus}' for order ${resolvedOrderId}`);
+                // Purge draft order & restore stock so no bill is created
+                const orderToPurge = yield prisma_1.default.order.findUnique({
+                    where: { id: resolvedOrderId },
+                    include: { items: true }
+                });
+                if (orderToPurge && !orderToPurge.isPaid && orderToPurge.paymentStatus !== "COMPLETED" && orderToPurge.paymentStatus !== "PAID") {
+                    yield prisma_1.default.$transaction((tx) => __awaiter(void 0, void 0, void 0, function* () {
+                        var _a;
+                        const locationId = ((_a = orderToPurge.shippingAddress) === null || _a === void 0 ? void 0 : _a.locationId) || orderToPurge.locationId;
+                        if (locationId) {
+                            yield inventoryService_1.InventoryService.restoreStock({
+                                items: orderToPurge.items.map(i => ({ productId: i.productId, variantId: i.variantId || undefined, quantity: i.quantity })),
+                                locationId,
+                                staffId: "SYSTEM",
+                                referenceId: `CANCEL_PURGE_${resolvedOrderId}`
+                            }, tx);
+                        }
+                        yield tx.orderItem.deleteMany({ where: { orderId: resolvedOrderId } });
+                        yield tx.payment.deleteMany({ where: { orderId: resolvedOrderId } });
+                        yield tx.orderStatusHistory.deleteMany({ where: { orderId: resolvedOrderId } });
+                        yield tx.order.delete({ where: { id: resolvedOrderId } });
+                    }));
+                }
                 return res.status(400).json({
                     status: "FAILED",
-                    message: `Payment was not completed (status: ${rawStatus})`
+                    message: `Payment was cancelled or failed (status: ${rawStatus}). Bill was not created.`
                 });
             }
             logger_1.default.info(`[Payment] Running payment verification for order ${resolvedOrderId} (status: ${rawStatus})`);

@@ -15,9 +15,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.updateCartItem = exports.getCart = exports.syncCart = void 0;
 const prisma_1 = __importDefault(require("../config/prisma"));
 const syncCart = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a;
+    var _a, _b;
     const userId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.userId;
-    const { items } = req.body; // Expecting { productId, variantId, quantity }[]
+    const items = Array.isArray((_b = req.body) === null || _b === void 0 ? void 0 : _b.items) ? req.body.items : [];
     if (!userId) {
         return res.status(401).json({ message: "Unauthorized" });
     }

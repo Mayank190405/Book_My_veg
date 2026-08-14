@@ -12,7 +12,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.settleAccountBalance = exports.collectDuePayment = exports.getStoreConfig = exports.cancelPOSOrder = exports.getCustomerHistory = exports.getStoreProducts = exports.processPOSOrder = exports.createOrUpdateCustomer = exports.updateWebOrderStatus = exports.getWebOrders = exports.searchCustomer = void 0;
+exports.sendPOSWhatsappDueReminders = exports.getPOSDueCustomers = exports.settleAccountBalance = exports.collectDuePayment = exports.getStoreConfig = exports.cancelPOSOrder = exports.getTodayPOSSales = exports.getCustomerHistory = exports.getStoreProducts = exports.processPOSOrder = exports.createOrUpdateCustomer = exports.updateWebOrderStatus = exports.getWebOrders = exports.searchCustomer = void 0;
 const prisma_1 = __importDefault(require("../config/prisma"));
 const errors_1 = require("../utils/errors");
 const client_1 = require("@prisma/client");
@@ -99,7 +99,8 @@ const getWebOrders = (req, res, next) => __awaiter(void 0, void 0, void 0, funct
                         name: true,
                         phone: true,
                         email: true,
-                        addresses: { where: { isDefault: true }, take: 1 }
+                        profileAddress: true,
+                        addresses: true
                     }
                 },
                 items: {
@@ -235,6 +236,10 @@ const updateWebOrderStatus = (req, res, next) => __awaiter(void 0, void 0, void 
                 status: targetStatus,
                 updatedBy: staffId
             });
+            (0, io_1.getIo)().emit("REALTIME_REPORT_UPDATE", {
+                orderId: orderId,
+                status: targetStatus
+            });
             if (packerId) {
                 (0, io_1.getIo)().to(packerId).emit("OP_NEW_ORDER", {
                     id: orderId,
@@ -260,9 +265,12 @@ const createOrUpdateCustomer = (req, res, next) => __awaiter(void 0, void 0, voi
     const rawPhone = String(phone || "").trim();
     const cleanDigits = rawPhone.replace(/[^\d]/g, "");
     try {
-        const existingCustomer = id
-            ? yield prisma_1.default.user.findUnique({ where: { id } })
-            : yield prisma_1.default.user.findFirst({
+        let existingCustomer = null;
+        if (id) {
+            existingCustomer = yield prisma_1.default.user.findUnique({ where: { id } });
+        }
+        else if (rawPhone) {
+            existingCustomer = yield prisma_1.default.user.findFirst({
                 where: {
                     OR: [
                         { phone: rawPhone },
@@ -273,15 +281,34 @@ const createOrUpdateCustomer = (req, res, next) => __awaiter(void 0, void 0, voi
                     ]
                 }
             });
+        }
+        // If phone is changed, check for conflict with another user
+        if (existingCustomer && rawPhone && existingCustomer.phone !== rawPhone) {
+            const conflictUser = yield prisma_1.default.user.findFirst({
+                where: {
+                    id: { not: existingCustomer.id },
+                    OR: [
+                        { phone: rawPhone },
+                        ...(cleanDigits.length >= 5 ? [
+                            { phone: cleanDigits },
+                            { phone: `+91${cleanDigits}` }
+                        ] : [])
+                    ]
+                }
+            });
+            if (conflictUser) {
+                return res.status(400).json({ message: "Phone number is already registered under another customer" });
+            }
+        }
         let customer;
         if (existingCustomer) {
             customer = yield prisma_1.default.user.update({
                 where: { id: existingCustomer.id },
                 data: {
-                    name: name || existingCustomer.name,
-                    phone: rawPhone || existingCustomer.phone,
-                    email: sanitizedEmail !== null ? sanitizedEmail : existingCustomer.email,
-                    profileAddress: address ? address : existingCustomer.profileAddress
+                    name: name !== undefined ? String(name).trim() : existingCustomer.name,
+                    phone: rawPhone ? rawPhone : existingCustomer.phone,
+                    email: sanitizedEmail,
+                    profileAddress: address !== undefined ? String(address).trim() : existingCustomer.profileAddress
                 },
                 include: { addresses: { where: { isDefault: true } } }
             });
@@ -289,12 +316,12 @@ const createOrUpdateCustomer = (req, res, next) => __awaiter(void 0, void 0, voi
         else {
             customer = yield prisma_1.default.user.create({
                 data: {
-                    name: name || "Customer",
+                    name: name ? String(name).trim() : "Customer",
                     phone: rawPhone,
                     email: sanitizedEmail,
                     role: "USER",
                     password: "POS_AUTO_GENERATED_" + Math.random().toString(36).slice(-8),
-                    profileAddress: address || null
+                    profileAddress: address ? String(address).trim() : null
                 },
                 include: { addresses: { where: { isDefault: true } } }
             });
@@ -310,40 +337,49 @@ const createOrUpdateCustomer = (req, res, next) => __awaiter(void 0, void 0, voi
             }
         }
         // Save or update default address safely without Prisma upsert id crashes
-        if (address && String(address).trim() !== "") {
+        if (address !== undefined && String(address).trim() !== "") {
             const existingAddress = yield prisma_1.default.address.findFirst({
                 where: { userId: customer.id, isDefault: true }
             });
             if (existingAddress) {
                 yield prisma_1.default.address.update({
                     where: { id: existingAddress.id },
-                    data: { fullAddress: address }
+                    data: { fullAddress: String(address).trim() }
                 });
             }
             else {
                 yield prisma_1.default.address.create({
                     data: {
                         userId: customer.id,
-                        fullAddress: address,
-                        isDefault: true,
-                        type: "HOME"
+                        fullAddress: String(address).trim(),
+                        tag: "Home",
+                        isDefault: true
                     }
                 });
             }
         }
-        const freshCustomer = yield prisma_1.default.user.findUnique({
+        // Refetch full customer object with updated addresses
+        const fullCustomer = yield prisma_1.default.user.findUnique({
             where: { id: customer.id },
-            include: { addresses: { where: { isDefault: true } } }
+            select: {
+                id: true,
+                name: true,
+                phone: true,
+                email: true,
+                profileAddress: true,
+                addresses: { where: { isDefault: true }, take: 1 }
+            }
         });
-        const mappedCustomer = {
-            id: freshCustomer === null || freshCustomer === void 0 ? void 0 : freshCustomer.id,
-            name: freshCustomer === null || freshCustomer === void 0 ? void 0 : freshCustomer.name,
-            phone: freshCustomer === null || freshCustomer === void 0 ? void 0 : freshCustomer.phone,
-            email: (freshCustomer === null || freshCustomer === void 0 ? void 0 : freshCustomer.email) || "",
-            address: ((_b = (_a = freshCustomer === null || freshCustomer === void 0 ? void 0 : freshCustomer.addresses) === null || _a === void 0 ? void 0 : _a[0]) === null || _b === void 0 ? void 0 : _b.fullAddress) || (freshCustomer === null || freshCustomer === void 0 ? void 0 : freshCustomer.profileAddress) || address || "",
-            profileAddress: (freshCustomer === null || freshCustomer === void 0 ? void 0 : freshCustomer.profileAddress) || ""
+        const formatted = {
+            id: (fullCustomer === null || fullCustomer === void 0 ? void 0 : fullCustomer.id) || customer.id,
+            name: (fullCustomer === null || fullCustomer === void 0 ? void 0 : fullCustomer.name) || customer.name,
+            phone: (fullCustomer === null || fullCustomer === void 0 ? void 0 : fullCustomer.phone) || customer.phone,
+            email: (fullCustomer === null || fullCustomer === void 0 ? void 0 : fullCustomer.email) || "",
+            profileAddress: (fullCustomer === null || fullCustomer === void 0 ? void 0 : fullCustomer.profileAddress) || "",
+            address: ((_b = (_a = fullCustomer === null || fullCustomer === void 0 ? void 0 : fullCustomer.addresses) === null || _a === void 0 ? void 0 : _a[0]) === null || _b === void 0 ? void 0 : _b.fullAddress) || (fullCustomer === null || fullCustomer === void 0 ? void 0 : fullCustomer.profileAddress) || (typeof address === "string" ? address : ""),
+            addresses: (fullCustomer === null || fullCustomer === void 0 ? void 0 : fullCustomer.addresses) || []
         };
-        return res.json({ message: existingCustomer ? "Customer updated" : "Customer created", customer: mappedCustomer });
+        res.json(Object.assign({ message: existingCustomer ? "Customer updated" : "Customer created", customer: formatted }, formatted));
     }
     catch (error) {
         next(error);
@@ -431,6 +467,7 @@ const processPOSOrder = (req, res, next) => __awaiter(void 0, void 0, void 0, fu
                         status: (suspend ? "PENDING" : (existingOrder.status === "PENDING" ? "CONFIRMED" : existingOrder.status)),
                         paymentStatus: pStatus,
                         isPaid: isFull,
+                        isCredit: paymentMethod === "CREDIT",
                         packerId,
                         staffId: validatedStaffId,
                         items: {
@@ -456,6 +493,7 @@ const processPOSOrder = (req, res, next) => __awaiter(void 0, void 0, void 0, fu
                         status: (suspend ? "PENDING" : "CONFIRMED"),
                         paymentStatus: pStatus,
                         isPaid: isFull,
+                        isCredit: paymentMethod === "CREDIT",
                         shippingAddress: { type: "POS_IN_STORE", note: "Handover at Counter" },
                         channel: client_1.Channel.POS,
                         notes: `POS Transaction by ${staffId}${!staffExists ? " (SESSION_RECOVERED)" : ""}`,
@@ -697,6 +735,16 @@ const getCustomerHistory = (req, res, next) => __awaiter(void 0, void 0, void 0,
         const orders = yield prisma_1.default.order.findMany({
             where: { userId: customerId, channel: "POS" },
             include: {
+                user: {
+                    select: {
+                        id: true,
+                        name: true,
+                        phone: true,
+                        email: true,
+                        profileAddress: true,
+                        addresses: true
+                    }
+                },
                 items: { include: { product: { select: { name: true, sku: true } } } },
                 payments: true,
                 staff: { select: { name: true } },
@@ -705,17 +753,42 @@ const getCustomerHistory = (req, res, next) => __awaiter(void 0, void 0, void 0,
             orderBy: { createdAt: "desc" },
             take: 50
         });
-        // 🛡️ ACCURATE DUE: amount - SUM(payments) where paymentStatus != COMPLETED
-        const dueOrders = orders.filter(o => o.paymentStatus !== "COMPLETED" && o.status !== "CANCELLED" && o.status !== "FAILED" && o.status !== "PAYMENT_PENDING");
-        const totalDue = dueOrders.reduce((acc, o) => {
-            const paid = o.payments.reduce((pAcc, p) => pAcc + Number(p.amount), 0);
-            return acc + (Number(o.totalAmount) - paid);
-        }, 0);
-        const totalSpend = orders.filter(o => o.status !== "CANCELLED" && o.status !== "FAILED" && o.status !== "PAYMENT_PENDING").reduce((acc, o) => acc + Number(o.totalAmount), 0);
+        // 🛡️ ACCURATE DUE: Only calculate due on unpaid orders (!isPaid & paymentStatus not completed/paid/settled)
+        const dueOrders = orders.filter(o => !o.isPaid &&
+            o.paymentStatus !== "COMPLETED" &&
+            o.paymentStatus !== "PAID" &&
+            o.paymentStatus !== "SETTLED" &&
+            o.status !== "CANCELLED" &&
+            o.status !== "FAILED");
+        const now = new Date();
+        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+        let todayDue = 0;
+        let pastDue = 0;
+        dueOrders.forEach(o => {
+            const paid = o.payments ? o.payments.filter((p) => p.status === "SUCCESS" || !p.status).reduce((pAcc, p) => pAcc + Number(p.amount), 0) : 0;
+            const remaining = Number(o.totalAmount) - paid;
+            if (remaining > 0) {
+                if (new Date(o.createdAt) >= startOfToday) {
+                    todayDue += remaining;
+                }
+                else {
+                    pastDue += remaining;
+                }
+            }
+        });
+        const totalDue = todayDue + pastDue;
+        const totalSpend = orders.filter(o => o.status !== "CANCELLED" && o.status !== "FAILED").reduce((acc, o) => acc + Number(o.totalAmount), 0);
         const lastVisit = ((_a = orders[0]) === null || _a === void 0 ? void 0 : _a.createdAt) || null;
         res.json({
             orders,
-            summary: { totalOrders: orders.length, totalSpend, totalDue, lastVisit }
+            summary: {
+                totalOrders: orders.length,
+                totalSpend,
+                totalDue,
+                todayDue,
+                pastDue,
+                lastVisit
+            }
         });
     }
     catch (error) {
@@ -723,6 +796,107 @@ const getCustomerHistory = (req, res, next) => __awaiter(void 0, void 0, void 0,
     }
 });
 exports.getCustomerHistory = getCustomerHistory;
+const getTodayPOSSales = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a, _b, _c;
+    let locationId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.locationId;
+    const isGlobal = ((_b = req.user) === null || _b === void 0 ? void 0 : _b.role) === "ADMIN" || ((_c = req.user) === null || _c === void 0 ? void 0 : _c.role) === "SUPER_ADMIN";
+    if (!locationId && isGlobal) {
+        const loc = yield prisma_1.default.location.findFirst();
+        locationId = loc === null || loc === void 0 ? void 0 : loc.id;
+    }
+    try {
+        const now = new Date();
+        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+        const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+        const orders = yield prisma_1.default.order.findMany({
+            where: Object.assign(Object.assign({}, (locationId ? { locationId } : {})), { channel: "POS", status: { notIn: ["CANCELLED", "FAILED"] }, createdAt: {
+                    gte: startOfToday,
+                    lte: endOfToday
+                } }),
+            include: {
+                user: {
+                    select: {
+                        id: true,
+                        name: true,
+                        phone: true,
+                        email: true,
+                        profileAddress: true
+                    }
+                },
+                items: {
+                    include: {
+                        product: { select: { name: true, sku: true } }
+                    }
+                },
+                payments: true,
+                staff: { select: { name: true } }
+            },
+            orderBy: { createdAt: "desc" }
+        });
+        let totalSales = 0;
+        let cashSales = 0;
+        let upiSales = 0;
+        let creditSales = 0;
+        let onlineSales = 0;
+        const formattedOrders = orders.map(order => {
+            var _a, _b;
+            const amount = Number(order.totalAmount);
+            totalSales += amount;
+            const successfulPayments = order.payments.filter(p => p.status === "SUCCESS" || !p.status);
+            const mainMethod = ((_a = successfulPayments[0]) === null || _a === void 0 ? void 0 : _a.method) || (order.isCredit ? "CREDIT" : "CASH");
+            if (order.isCredit || mainMethod === "CREDIT") {
+                creditSales += amount;
+            }
+            else if (mainMethod === "CASH" || mainMethod === "LIQUID_CASH") {
+                cashSales += amount;
+            }
+            else if (mainMethod === "UPI" || mainMethod === "ONLINE" || mainMethod === "CARD" || mainMethod === "WALLET" || mainMethod === "NET_BANKING") {
+                onlineSales += amount;
+                if (mainMethod === "UPI") {
+                    upiSales += amount;
+                }
+            }
+            else {
+                cashSales += amount;
+            }
+            return {
+                id: order.id,
+                totalAmount: amount,
+                status: order.status,
+                paymentStatus: order.paymentStatus,
+                isCredit: order.isCredit,
+                isPaid: order.isPaid,
+                paymentMethod: mainMethod,
+                createdAt: order.createdAt,
+                customer: order.user ? {
+                    id: order.user.id,
+                    name: order.user.name,
+                    phone: order.user.phone,
+                    email: order.user.email
+                } : null,
+                itemsCount: order.items.length,
+                items: order.items,
+                payments: order.payments,
+                staffName: ((_b = order.staff) === null || _b === void 0 ? void 0 : _b.name) || "POS Cashier"
+            };
+        });
+        res.json({
+            summary: {
+                totalSales,
+                orderCount: orders.length,
+                cashSales,
+                upiSales,
+                creditSales,
+                onlineSales
+            },
+            orders: formattedOrders
+        });
+    }
+    catch (error) {
+        next(error);
+    }
+});
+exports.getTodayPOSSales = getTodayPOSSales;
 const cancelPOSOrder = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
     const orderId = req.params.orderId;
@@ -919,3 +1093,108 @@ const settleAccountBalance = (req, res, next) => __awaiter(void 0, void 0, void 
     }
 });
 exports.settleAccountBalance = settleAccountBalance;
+// ─── POS WhatsApp Due Reminders ────────────────────────────────────────────────
+const getPOSDueCustomers = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a, _b, _c;
+    let locationId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.locationId;
+    const isGlobal = ((_b = req.user) === null || _b === void 0 ? void 0 : _b.role) === "ADMIN" || ((_c = req.user) === null || _c === void 0 ? void 0 : _c.role) === "SUPER_ADMIN";
+    if (!locationId && isGlobal) {
+        const loc = yield prisma_1.default.location.findFirst();
+        locationId = loc === null || loc === void 0 ? void 0 : loc.id;
+    }
+    try {
+        const orders = yield prisma_1.default.order.findMany({
+            where: Object.assign(Object.assign({}, (locationId ? { locationId } : {})), { status: { notIn: ["CANCELLED", "FAILED"] }, isPaid: false, paymentStatus: { notIn: ["COMPLETED", "PAID", "SETTLED"] } }),
+            include: {
+                user: {
+                    select: {
+                        id: true,
+                        name: true,
+                        phone: true,
+                        email: true
+                    }
+                },
+                payments: true
+            },
+            orderBy: { createdAt: "desc" }
+        });
+        const customerMap = {};
+        for (const order of orders) {
+            if (!order.user || !order.user.phone)
+                continue;
+            const paid = order.payments ? order.payments.filter((p) => p.status === "SUCCESS" || !p.status).reduce((acc, p) => acc + Number(p.amount), 0) : 0;
+            const dueAmount = Number(order.totalAmount) - paid;
+            if (dueAmount <= 0)
+                continue;
+            const uId = order.user.id;
+            if (!customerMap[uId]) {
+                customerMap[uId] = {
+                    id: order.user.id,
+                    name: order.user.name || "Customer",
+                    phone: order.user.phone,
+                    email: order.user.email || "",
+                    totalDue: 0,
+                    dueOrdersCount: 0,
+                    latestOrderId: order.id
+                };
+            }
+            customerMap[uId].totalDue += dueAmount;
+            customerMap[uId].dueOrdersCount += 1;
+        }
+        const dueCustomers = Object.values(customerMap).sort((a, b) => b.totalDue - a.totalDue);
+        res.json({ dueCustomers });
+    }
+    catch (error) {
+        next(error);
+    }
+});
+exports.getPOSDueCustomers = getPOSDueCustomers;
+const sendPOSWhatsappDueReminders = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    const { customerIds } = req.body; // Array of selected customer IDs, or empty/all to send to all due customers
+    try {
+        const { sendPaymentReminderViaWhatsapp } = require("../services/mbgcard");
+        const orders = yield prisma_1.default.order.findMany({
+            where: Object.assign({ status: { notIn: ["CANCELLED", "FAILED"] }, isPaid: false, paymentStatus: { notIn: ["COMPLETED", "PAID", "SETTLED"] } }, (Array.isArray(customerIds) && customerIds.length > 0 ? { userId: { in: customerIds } } : {})),
+            include: { user: true, payments: true }
+        });
+        const customerDueSummary = {};
+        for (const order of orders) {
+            if (!order.user || !order.user.phone)
+                continue;
+            const paid = order.payments ? order.payments.filter((p) => p.status === "SUCCESS" || !p.status).reduce((acc, p) => acc + Number(p.amount), 0) : 0;
+            const dueAmount = Number(order.totalAmount) - paid;
+            if (dueAmount <= 0)
+                continue;
+            const uId = order.user.id;
+            if (!customerDueSummary[uId]) {
+                customerDueSummary[uId] = {
+                    user: order.user,
+                    totalDue: 0,
+                    latestOrderId: order.id
+                };
+            }
+            customerDueSummary[uId].totalDue += dueAmount;
+        }
+        let sentCount = 0;
+        let failedCount = 0;
+        for (const summary of Object.values(customerDueSummary)) {
+            try {
+                yield sendPaymentReminderViaWhatsapp(summary.user.phone, summary.user.name || "Customer", summary.totalDue, summary.latestOrderId, summary.user.id, summary.latestOrderId);
+                sentCount++;
+            }
+            catch (err) {
+                console.error(`Failed to send WhatsApp reminder to ${summary.user.phone}:`, err.message);
+                failedCount++;
+            }
+        }
+        res.json({
+            message: `WhatsApp payment reminders sent to ${sentCount} customer(s).${failedCount > 0 ? ` (${failedCount} failed)` : ""}`,
+            sentCount,
+            failedCount
+        });
+    }
+    catch (error) {
+        next(error);
+    }
+});
+exports.sendPOSWhatsappDueReminders = sendPOSWhatsappDueReminders;

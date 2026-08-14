@@ -14,6 +14,9 @@ router.post("/customers/:customerId/settle", posController_1.settleAccountBalanc
 // ─── Transaction Node ─────────────────────────────────────────────────────────
 router.post("/orders/process", posController_1.processPOSOrder);
 router.get("/orders/web", posController_1.getWebOrders);
+router.get("/orders/today-sales", posController_1.getTodayPOSSales);
+router.get("/due-customers", posController_1.getPOSDueCustomers);
+router.post("/send-whatsapp-reminders", posController_1.sendPOSWhatsappDueReminders);
 router.post("/orders/:orderId/status", posController_1.updateWebOrderStatus);
 router.patch("/orders/:orderId/status", posController_1.updateWebOrderStatus);
 router.get("/products/store", posController_1.getStoreProducts);

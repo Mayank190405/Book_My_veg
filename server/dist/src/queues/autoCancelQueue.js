@@ -75,33 +75,21 @@ exports.autoCancelQueue.process((job) => __awaiter(void 0, void 0, void 0, funct
     }
     yield prisma_1.default.$transaction((tx) => __awaiter(void 0, void 0, void 0, function* () {
         var _a;
-        // Mark order FAILED
-        yield tx.order.update({
-            where: { id: orderId },
-            data: {
-                status: "FAILED",
-                paymentStatus: "FAILED",
-            },
-        });
-        // Record status history
-        yield tx.orderStatusHistory.create({
-            data: {
-                orderId,
-                status: "FAILED",
-                remark: "Auto-cancelled: payment not received within 12 minutes",
-                changedBy: "SYSTEM",
-            },
-        });
         // Restore inventory via locked wrapper
-        const locationId = (_a = order.shippingAddress) === null || _a === void 0 ? void 0 : _a.locationId;
+        const locationId = ((_a = order.shippingAddress) === null || _a === void 0 ? void 0 : _a.locationId) || order.locationId;
         if (locationId) {
             yield inventoryService_1.InventoryService.restoreStock({
                 items: order.items.map(i => ({ productId: i.productId, variantId: i.variantId || undefined, quantity: i.quantity })),
                 locationId,
                 staffId: "SYSTEM",
-                referenceId: `AUTO_CANCEL_${orderId}`
+                referenceId: `AUTO_PURGE_${orderId}`
             }, tx);
         }
+        // Delete items, payments, history & order record so NO bill is created
+        yield tx.orderItem.deleteMany({ where: { orderId } });
+        yield tx.payment.deleteMany({ where: { orderId } });
+        yield tx.orderStatusHistory.deleteMany({ where: { orderId } });
+        yield tx.order.delete({ where: { id: orderId } });
     }));
     logger_1.default.info("Auto-cancel complete — stock restored", {
         orderId,

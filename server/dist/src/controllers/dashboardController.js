@@ -21,26 +21,35 @@ const client_1 = require("@prisma/client");
 const getDashboardStats = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     var _a, _b, _c;
     const role = (_a = req.user) === null || _a === void 0 ? void 0 : _a.role;
-    const locationId = (_b = req.user) === null || _b === void 0 ? void 0 : _b.locationId; // Filter for STORE_ADMIN
-    const isGlobal = role === "ADMIN" || role === "SUPER_ADMIN";
+    const queryLocationId = req.query.locationId;
+    const locationId = queryLocationId || ((_b = req.user) === null || _b === void 0 ? void 0 : _b.locationId); // Filter for STORE_ADMIN or explicit locationId query
+    const isGlobal = (role === "ADMIN" || role === "SUPER_ADMIN") && !queryLocationId;
     // Safety check: Regional users must have a location assigned
     if (!isGlobal && !locationId) {
         console.error(`[DASHBOARD-FAIL] Regional user ${(_c = req.user) === null || _c === void 0 ? void 0 : _c.userId} (${role}) has no locationId assigned.`);
         return res.json({
-            metrics: { revenue: 0, expenses: 0, orders: 0, customers: 0, stores: 0 },
+            metrics: { revenue: 0, todayRevenue: 0, totalRevenue: 0, expenses: 0, orders: 0, todayOrders: 0, totalOrders: 0, customers: 0, stores: 0 },
             stores: [], trending: [], customers: [], activeShift: null
         });
     }
     try {
         const now = new Date();
+        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
         const thirtyDaysAgo = new Date(now.getTime() - (30 * 24 * 60 * 60 * 1000));
-        // 1. Get Core Metrics
-        const [ordersCount, totalRevenue, totalCustomers, totalStores, totalExpenses] = yield Promise.all([
+        // 1. Get Core Metrics (Today vs All-time)
+        const [todayOrdersCount, todayRevenue, totalOrdersCount, totalRevenue, totalCustomers, totalStores, totalExpenses] = yield Promise.all([
             prisma_1.default.order.count({
-                where: Object.assign(Object.assign({}, (isGlobal ? {} : { locationId })), { status: { not: "CANCELLED" } })
+                where: Object.assign(Object.assign({}, (isGlobal ? {} : { locationId })), { status: { notIn: ["CANCELLED", "FAILED"] }, createdAt: { gte: startOfToday } })
             }),
             prisma_1.default.order.aggregate({
-                where: Object.assign(Object.assign({}, (isGlobal ? {} : { locationId })), { status: { not: "CANCELLED" } }),
+                where: Object.assign(Object.assign({}, (isGlobal ? {} : { locationId })), { status: { notIn: ["CANCELLED", "FAILED"] }, createdAt: { gte: startOfToday } }),
+                _sum: { totalAmount: true }
+            }),
+            prisma_1.default.order.count({
+                where: Object.assign(Object.assign({}, (isGlobal ? {} : { locationId })), { status: { notIn: ["CANCELLED", "FAILED"] } })
+            }),
+            prisma_1.default.order.aggregate({
+                where: Object.assign(Object.assign({}, (isGlobal ? {} : { locationId })), { status: { notIn: ["CANCELLED", "FAILED"] } }),
                 _sum: { totalAmount: true }
             }),
             prisma_1.default.user.count({ where: { role: "USER" } }),
@@ -158,9 +167,13 @@ const getDashboardStats = (req, res, next) => __awaiter(void 0, void 0, void 0, 
         }
         res.json({
             metrics: {
-                revenue: Number(totalRevenue._sum.totalAmount || 0),
+                revenue: Number(todayRevenue._sum.totalAmount || 0),
+                todayRevenue: Number(todayRevenue._sum.totalAmount || 0),
+                totalRevenue: Number(totalRevenue._sum.totalAmount || 0),
                 expenses: Number(totalExpenses._sum.amount || 0),
-                orders: ordersCount,
+                orders: todayOrdersCount,
+                todayOrders: todayOrdersCount,
+                totalOrders: totalOrdersCount,
                 customers: totalCustomers,
                 stores: totalStores
             },
@@ -247,10 +260,16 @@ const getSalesReports = (req, res, next) => __awaiter(void 0, void 0, void 0, fu
         // 2. Date Filtering
         if (startDate || endDate) {
             where.createdAt = {};
-            if (startDate)
-                where.createdAt.gte = new Date(startDate);
-            if (endDate)
-                where.createdAt.lte = new Date(endDate);
+            if (startDate) {
+                const s = new Date(startDate);
+                s.setHours(0, 0, 0, 0);
+                where.createdAt.gte = s;
+            }
+            if (endDate) {
+                const e = new Date(endDate);
+                e.setHours(23, 59, 59, 999);
+                where.createdAt.lte = e;
+            }
         }
         // 3. Channel Filter (WEB / POS)
         if (channel) {
@@ -429,14 +448,17 @@ const getCustomerSalesAndDueReports = (req, res, next) => __awaiter(void 0, void
         else if (locId) {
             targetLocationId = locId;
         }
-        // Fetch users matching search query who are customers (role = USER)
-        const userWhere = Object.assign({ role: "USER", isActive: true }, (searchStr ? {
+        // Fetch users matching search query
+        const cleanDigits = searchStr ? searchStr.replace(/\D/g, "") : "";
+        const userWhere = searchStr ? {
             OR: [
                 { name: { contains: searchStr, mode: "insensitive" } },
                 { phone: { contains: searchStr } },
-                { email: { contains: searchStr, mode: "insensitive" } }
+                ...(cleanDigits ? [{ phone: { contains: cleanDigits } }] : []),
+                { email: { contains: searchStr, mode: "insensitive" } },
+                { orders: { some: { id: { contains: searchStr, mode: "insensitive" } } } }
             ]
-        } : {}));
+        } : {};
         const users = yield prisma_1.default.user.findMany({
             where: userWhere,
             select: {
@@ -446,15 +468,18 @@ const getCustomerSalesAndDueReports = (req, res, next) => __awaiter(void 0, void
                 email: true,
                 createdAt: true,
                 orders: {
-                    where: Object.assign(Object.assign(Object.assign({ status: { notIn: ["CANCELLED", "FAILED", "PAYMENT_PENDING"] } }, (channelStr ? { channel: channelStr } : {})), (targetLocationId ? { locationId: targetLocationId } : {})), (startStr || endStr ? {
-                        createdAt: Object.assign(Object.assign({}, (startStr ? { gte: new Date(startStr) } : {})), (endStr ? { lte: new Date(endStr) } : {}))
-                    } : {})),
+                    where: {
+                        status: { notIn: ["CANCELLED", "FAILED"] }
+                    },
                     select: {
                         id: true,
                         totalAmount: true,
                         paymentStatus: true,
+                        isPaid: true,
                         status: true,
                         createdAt: true,
+                        channel: true,
+                        locationId: true,
                         payments: {
                             where: { status: "SUCCESS" },
                             select: {
@@ -472,28 +497,44 @@ const getCustomerSalesAndDueReports = (req, res, next) => __awaiter(void 0, void
         });
         // Compute aggregates in-memory
         const customerReports = users.map(user => {
-            const orders = user.orders;
-            const orderCount = orders.length;
-            const totalSpend = orders.reduce((sum, o) => sum + Number(o.totalAmount), 0);
-            // Calculate total paid across all orders
-            const totalPaid = orders.reduce((sum, o) => {
+            const allOrders = user.orders;
+            const startDateObj = startStr ? (() => { const s = new Date(startStr); s.setHours(0, 0, 0, 0); return s; })() : null;
+            const endDateObj = endStr ? (() => { const e = new Date(endStr); e.setHours(23, 59, 59, 999); return e; })() : null;
+            // Filter orders for spend/count stats if date range / location / channel specified
+            const dateFilteredOrders = allOrders.filter(o => {
+                if (channelStr && o.channel !== channelStr)
+                    return false;
+                if (targetLocationId && o.locationId !== targetLocationId)
+                    return false;
+                if (startDateObj && o.createdAt < startDateObj)
+                    return false;
+                if (endDateObj && o.createdAt > endDateObj)
+                    return false;
+                return true;
+            });
+            const orderCount = dateFilteredOrders.length;
+            const totalSpend = dateFilteredOrders.reduce((sum, o) => sum + Number(o.totalAmount), 0);
+            // Calculate total paid across date-filtered orders
+            const totalPaid = dateFilteredOrders.reduce((sum, o) => {
                 const orderPaid = o.payments.reduce((pSum, p) => pSum + Number(p.amount), 0);
                 return sum + orderPaid;
             }, 0);
-            // Calculate outstanding due (only on non-cancelled orders that aren't fully paid)
-            const totalDue = orders.reduce((sum, o) => {
-                if (o.paymentStatus !== "COMPLETED") {
+            // 🛡️ Calculate outstanding due: if date/channel/location filter is active, calculate due for filtered orders (e.g. Current Day Due)
+            const targetDueOrders = (startStr || endStr || channelStr || targetLocationId) ? dateFilteredOrders : allOrders;
+            const totalDue = targetDueOrders.reduce((sum, o) => {
+                const isSettled = o.isPaid || o.paymentStatus === "COMPLETED" || o.paymentStatus === "PAID" || o.paymentStatus === "SETTLED" || o.status === "CANCELLED" || o.status === "FAILED";
+                if (!isSettled) {
                     const paid = o.payments.reduce((pSum, p) => pSum + Number(p.amount), 0);
                     const due = Number(o.totalAmount) - paid;
                     return sum + (due > 0 ? due : 0);
                 }
                 return sum;
             }, 0);
-            const lastVisit = orders.length > 0
-                ? orders.reduce((latest, o) => o.createdAt > latest ? o.createdAt : latest, orders[0].createdAt)
+            const lastVisit = allOrders.length > 0
+                ? allOrders.reduce((latest, o) => o.createdAt > latest ? o.createdAt : latest, allOrders[0].createdAt)
                 : null;
             // Get store locations user has shopped at
-            const storesList = Array.from(new Set(orders.map(o => { var _a; return (_a = o.location) === null || _a === void 0 ? void 0 : _a.name; }).filter(Boolean)));
+            const storesList = Array.from(new Set(allOrders.map(o => { var _a; return (_a = o.location) === null || _a === void 0 ? void 0 : _a.name; }).filter(Boolean)));
             return {
                 id: user.id,
                 name: user.name || "Walk-in Guest",
@@ -508,13 +549,17 @@ const getCustomerSalesAndDueReports = (req, res, next) => __awaiter(void 0, void
                 stores: storesList
             };
         });
-        // Apply dueFilter
+        // If date range is specified (e.g. TODAY), filter out accounts with 0 orders and 0 due in that period
         let filteredReports = customerReports;
+        if (startStr || endStr) {
+            filteredReports = filteredReports.filter(c => c.orderCount > 0 || c.totalDue > 0);
+        }
+        // Apply dueFilter
         if (dueFilterStr === "HAS_DUE") {
-            filteredReports = customerReports.filter(c => c.totalDue > 0);
+            filteredReports = filteredReports.filter(c => c.totalDue > 0);
         }
         else if (dueFilterStr === "NO_DUE") {
-            filteredReports = customerReports.filter(c => c.totalDue === 0);
+            filteredReports = filteredReports.filter(c => c.totalDue === 0);
         }
         // Apply Sorting
         filteredReports.sort((a, b) => {

@@ -5,14 +5,14 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.verifyRefreshToken = exports.verifyAccessToken = exports.generateTokens = void 0;
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
-const ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || "access_secret";
-const REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || "refresh_secret";
+const ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET || "access_secret";
+const REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET || "refresh_secret";
 const generateTokens = (userId, role, locationId) => {
     const accessOptions = {
-        expiresIn: (process.env.JWT_ACCESS_EXPIRY || "15m"),
+        expiresIn: (process.env.JWT_ACCESS_EXPIRY || "7d"),
     };
     const refreshOptions = {
-        expiresIn: (process.env.JWT_REFRESH_EXPIRY || "7d"),
+        expiresIn: (process.env.JWT_REFRESH_EXPIRY || "30d"),
     };
     const accessToken = jsonwebtoken_1.default.sign({ userId, role, locationId }, ACCESS_SECRET, accessOptions);
     const refreshToken = jsonwebtoken_1.default.sign({ userId }, REFRESH_SECRET, refreshOptions);

@@ -9,7 +9,7 @@ import {
     Clock, User, Printer, AlertTriangle, ChevronDown, Receipt,
     Banknote, Smartphone, BookOpen, XCircle, Check, Package, Settings, SquarePen, Globe,
     ArrowLeft, Bell, Wallet, CheckCircle2, AlertCircle, ScanLine,
-    Power, PowerOff, RefreshCw
+    Power, PowerOff, RefreshCw, MessageCircle, Send
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -128,6 +128,51 @@ export default function POSOperator() {
             setIsLoadingTodaySales(false);
         }
     };
+
+    // WhatsApp Due Reminders
+    const [showWhatsappRemindersDialog, setShowWhatsappRemindersDialog] = useState(false);
+    const [dueCustomersList, setDueCustomersList] = useState<any[]>([]);
+    const [selectedDueCustomerIds, setSelectedDueCustomerIds] = useState<string[]>([]);
+    const [isLoadingDueCustomers, setIsLoadingDueCustomers] = useState(false);
+    const [isSendingReminders, setIsSendingReminders] = useState(false);
+    const [dueCustomersSearch, setDueCustomersSearch] = useState("");
+
+    const fetchDueCustomers = async () => {
+        setIsLoadingDueCustomers(true);
+        try {
+            const res = await api.get("/pos/due-customers");
+            setDueCustomersList(res.data.dueCustomers || []);
+            setSelectedDueCustomerIds([]);
+            setShowWhatsappRemindersDialog(true);
+        } catch {
+            toast.error("Failed to load due customers");
+        } finally {
+            setIsLoadingDueCustomers(false);
+        }
+    };
+
+    const sendWhatsappReminders = async (customerIds: string[]) => {
+        if (dueCustomersList.length === 0) return;
+        setIsSendingReminders(true);
+        try {
+            const res = await api.post("/pos/send-whatsapp-reminders", { customerIds });
+            toast.success(res.data.message || "WhatsApp reminders sent successfully!");
+            fetchDueCustomers();
+        } catch {
+            toast.error("Failed to send WhatsApp reminders");
+        } finally {
+            setIsSendingReminders(false);
+        }
+    };
+
+    const filteredDueCustomers = useMemo(() => {
+        if (!dueCustomersSearch.trim()) return dueCustomersList;
+        const q = dueCustomersSearch.toLowerCase();
+        return dueCustomersList.filter(c =>
+            (c.name && c.name.toLowerCase().includes(q)) ||
+            (c.phone && c.phone.includes(q))
+        );
+    }, [dueCustomersList, dueCustomersSearch]);
 
     // Customer form
     const [customerFormData, setCustomerFormData] = useState({ id: "", name: "", phone: "", email: "", address: "" });
@@ -1554,6 +1599,14 @@ export default function POSOperator() {
                         <Receipt className="h-3.5 w-3.5 text-white" />
                         Today Sales: ₹{todaySalesSummary.totalSales.toLocaleString()}
                     </button>
+                    <button
+                        onClick={() => fetchDueCustomers()}
+                        className="h-8 px-3 bg-teal-600 hover:bg-teal-500 text-white rounded text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-md active:scale-95"
+                        title="Send WhatsApp payment reminders to due customers"
+                    >
+                        <MessageCircle className="h-3.5 w-3.5 text-white" />
+                        WhatsApp Reminders
+                    </button>
                     {suspendedBills.length > 0 && (
                         <div className="relative">
                             <button className="px-3 h-8 bg-orange-500 text-white text-[10px] font-bold rounded flex items-center gap-1.5">
@@ -2508,8 +2561,9 @@ export default function POSOperator() {
                     <div className="flex-1 overflow-y-auto mt-3 border border-slate-200/60 rounded-2xl">
                         {todaySalesOrders.filter((ord) => {
                             if (todaySalesFilter !== "ALL") {
-                                if (todaySalesFilter === "CREDIT" && !ord.isCredit) return false;
-                                if (todaySalesFilter !== "CREDIT" && ord.paymentMethod !== todaySalesFilter) return false;
+                                if (todaySalesFilter === "CREDIT" && !ord.isCredit && ord.paymentMethod !== "CREDIT") return false;
+                                if (todaySalesFilter === "ONLINE" && !["ONLINE", "UPI", "CARD", "WALLET", "NET_BANKING"].includes(ord.paymentMethod)) return false;
+                                if (todaySalesFilter !== "CREDIT" && todaySalesFilter !== "ONLINE" && ord.paymentMethod !== todaySalesFilter) return false;
                             }
                             if (todaySalesSearch) {
                                 const q = todaySalesSearch.toLowerCase();
@@ -2597,6 +2651,156 @@ export default function POSOperator() {
                                                 </td>
                                             </tr>
                                         ))}
+                                </tbody>
+                            </table>
+                        )}
+                    </div>
+                </DialogContent>
+            </Dialog>
+
+            {/* ── WHATSAPP DUE REMINDERS DIALOG ── */}
+            <Dialog open={showWhatsappRemindersDialog} onOpenChange={setShowWhatsappRemindersDialog}>
+                <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col p-6 rounded-3xl bg-white border border-slate-200 shadow-2xl">
+                    <DialogHeader className="border-b pb-4 flex flex-row items-center justify-between">
+                        <div>
+                            <DialogTitle className="text-xl font-black text-slate-900 flex items-center gap-2">
+                                <MessageCircle className="h-6 w-6 text-emerald-600" />
+                                WhatsApp Due Reminders
+                            </DialogTitle>
+                            <DialogDescription className="text-slate-500 text-xs font-medium mt-1">
+                                Send automated WhatsApp payment reminder links to customers with pending balances.
+                            </DialogDescription>
+                        </div>
+                        <Button onClick={() => fetchDueCustomers()} variant="outline" size="sm" className="rounded-xl border-slate-200 text-slate-700 font-bold">
+                            <RefreshCw className={cn("h-4 w-4 mr-1", isLoadingDueCustomers && "animate-spin")} /> Refresh
+                        </Button>
+                    </DialogHeader>
+
+                    {/* Top Summary & Actions */}
+                    <div className="flex items-center justify-between gap-3 mt-4 bg-emerald-50/60 p-3.5 rounded-2xl border border-emerald-200/60">
+                        <div>
+                            <p className="text-xs font-black uppercase text-emerald-800 tracking-wider">
+                                Total Due Customers: {dueCustomersList.length}
+                            </p>
+                            <p className="text-sm font-bold text-emerald-700 mt-0.5">
+                                Combined Dues: ₹{dueCustomersList.reduce((acc, c) => acc + c.totalDue, 0).toLocaleString()}
+                            </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <Button
+                                onClick={() => {
+                                    if (selectedDueCustomerIds.length === dueCustomersList.length) {
+                                        setSelectedDueCustomerIds([]);
+                                    } else {
+                                        setSelectedDueCustomerIds(dueCustomersList.map(c => c.id));
+                                    }
+                                }}
+                                variant="outline"
+                                size="sm"
+                                className="rounded-xl border-slate-300 text-xs font-bold"
+                            >
+                                {selectedDueCustomerIds.length === dueCustomersList.length ? "Deselect All" : "Select All"}
+                            </Button>
+                            <Button
+                                onClick={() => sendWhatsappReminders(selectedDueCustomerIds)}
+                                disabled={isSendingReminders || dueCustomersList.length === 0}
+                                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-md"
+                            >
+                                <Send className={cn("h-3.5 w-3.5", isSendingReminders && "animate-spin")} />
+                                {selectedDueCustomerIds.length > 0 ? `Send to Selected (${selectedDueCustomerIds.length})` : `Send to All (${dueCustomersList.length})`}
+                            </Button>
+                        </div>
+                    </div>
+
+                    {/* Search */}
+                    <div className="mt-3 relative">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                        <input
+                            type="text"
+                            value={dueCustomersSearch}
+                            onChange={(e) => setDueCustomersSearch(e.target.value)}
+                            placeholder="Search due customer by name or phone..."
+                            className="w-full h-9 pl-9 pr-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 ring-emerald-500/20"
+                        />
+                    </div>
+
+                    {/* Customer List */}
+                    <div className="flex-1 overflow-y-auto mt-3 border border-slate-200/60 rounded-2xl">
+                        {isLoadingDueCustomers ? (
+                            <div className="p-10 text-center text-slate-400 font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2">
+                                <RefreshCw className="h-4 w-4 animate-spin text-emerald-600" /> Loading due records...
+                            </div>
+                        ) : filteredDueCustomers.length === 0 ? (
+                            <div className="p-10 text-center text-slate-400 font-bold text-xs uppercase tracking-wider">
+                                No customers found with outstanding dues.
+                            </div>
+                        ) : (
+                            <table className="w-full text-left text-xs">
+                                <thead className="bg-slate-100 text-slate-500 font-black uppercase text-[10px] tracking-wider sticky top-0 border-b border-slate-200">
+                                    <tr>
+                                        <th className="py-3 px-4 w-10 text-center">
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedDueCustomerIds.length === filteredDueCustomers.length && filteredDueCustomers.length > 0}
+                                                onChange={(e) => {
+                                                    if (e.target.checked) {
+                                                        setSelectedDueCustomerIds(filteredDueCustomers.map(c => c.id));
+                                                    } else {
+                                                        setSelectedDueCustomerIds([]);
+                                                    }
+                                                }}
+                                                className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                                            />
+                                        </th>
+                                        <th className="py-3 px-4">Customer</th>
+                                        <th className="py-3 px-4">Phone</th>
+                                        <th className="py-3 px-4 text-center">Unpaid Bills</th>
+                                        <th className="py-3 px-4 text-right">Total Due Amount</th>
+                                        <th className="py-3 px-4 text-center">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100 font-medium text-slate-800">
+                                    {filteredDueCustomers.map((cust) => {
+                                        const isSelected = selectedDueCustomerIds.includes(cust.id);
+                                        return (
+                                            <tr key={cust.id} className={cn("hover:bg-slate-50 transition-colors", isSelected && "bg-emerald-50/40")}>
+                                                <td className="py-3 px-4 text-center">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={isSelected}
+                                                        onChange={(e) => {
+                                                            if (e.target.checked) {
+                                                                setSelectedDueCustomerIds([...selectedDueCustomerIds, cust.id]);
+                                                            } else {
+                                                                setSelectedDueCustomerIds(selectedDueCustomerIds.filter(id => id !== cust.id));
+                                                            }
+                                                        }}
+                                                        className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                                                    />
+                                                </td>
+                                                <td className="py-3 px-4 font-black text-slate-900">{cust.name}</td>
+                                                <td className="py-3 px-4 text-slate-600 font-mono font-bold">{cust.phone}</td>
+                                                <td className="py-3 px-4 text-center">
+                                                    <span className="bg-amber-100 text-amber-800 text-[10px] font-black px-2 py-0.5 rounded-full border border-amber-200">
+                                                        {cust.dueOrdersCount} {cust.dueOrdersCount === 1 ? "Bill" : "Bills"}
+                                                    </span>
+                                                </td>
+                                                <td className="py-3 px-4 text-right font-black text-rose-600 tabular-nums text-sm">
+                                                    ₹{cust.totalDue.toFixed(2)}
+                                                </td>
+                                                <td className="py-3 px-4 text-center">
+                                                    <Button
+                                                        onClick={() => sendWhatsappReminders([cust.id])}
+                                                        disabled={isSendingReminders}
+                                                        size="sm"
+                                                        className="bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold rounded-lg h-7 px-2.5 flex items-center gap-1 shadow-sm"
+                                                    >
+                                                        <MessageCircle className="h-3 w-3" /> Remind
+                                                    </Button>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
                                 </tbody>
                             </table>
                         )}
