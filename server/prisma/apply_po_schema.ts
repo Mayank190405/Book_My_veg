@@ -43,7 +43,7 @@ async function main() {
             CREATE UNIQUE INDEX IF NOT EXISTS "PurchaseOrder_poNumber_key" ON "PurchaseOrder"("poNumber");
         `).catch(err => console.log('PurchaseOrder table:', err.message));
 
-        // 4. Create PurchaseOrderItem Table
+        // 4. Create PurchaseOrderItem Table & Columns
         await prisma.$executeRawUnsafe(`
             CREATE TABLE IF NOT EXISTS "PurchaseOrderItem" (
                 "id" TEXT NOT NULL,
@@ -56,10 +56,13 @@ async function main() {
                 "buyingPrice" DECIMAL(10,2) NOT NULL DEFAULT 0,
                 "totalCost" DECIMAL(12,2) NOT NULL DEFAULT 0,
                 "addedByManager" BOOLEAN NOT NULL DEFAULT false,
+                "itemStatus" TEXT NOT NULL DEFAULT 'APPROVED',
                 "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 CONSTRAINT "PurchaseOrderItem_pkey" PRIMARY KEY ("id")
             );
+            ALTER TABLE "Location" ADD COLUMN IF NOT EXISTS "purchaseManagerId" TEXT;
+            ALTER TABLE "PurchaseOrderItem" ADD COLUMN IF NOT EXISTS "itemStatus" TEXT DEFAULT 'APPROVED';
         `).catch(err => console.log('PurchaseOrderItem table:', err.message));
 
         // 5. Create PurchaseManagerLocation Table

@@ -226,16 +226,17 @@ export default function PurchaseOrdersPage() {
         setReviewSupplierPhone(po.supplierPhone || "");
         setReviewNotes(po.notes || "");
         setReviewItems(
-            po.items.map(item => ({
+            po.items.map((item: any) => ({
                 id: item.id,
                 productId: item.productId,
                 variantId: item.variantId,
                 name: `${item.product?.name || 'Product'} ${item.variant ? `(${item.variant.name})` : ''}`,
                 requestedQty: Number(item.requestedQty),
-                approvedQty: Number(item.approvedQty || item.requestedQty),
+                approvedQty: Number(item.approvedQty !== undefined ? item.approvedQty : item.requestedQty),
                 buyingPrice: Number(item.buyingPrice || 0),
                 sellingPrice: Number(item.variant?.price || item.product?.basePrice || 0),
-                addedByManager: Boolean(item.addedByManager)
+                addedByManager: Boolean(item.addedByManager),
+                itemStatus: item.itemStatus || "APPROVED"
             }))
         );
         setShowReviewModal(true);
@@ -260,7 +261,8 @@ export default function PurchaseOrdersPage() {
                 approvedQty: 10,
                 buyingPrice: (sellingPrice * 0.7).toFixed(2),
                 sellingPrice,
-                addedByManager: true
+                addedByManager: true,
+                itemStatus: "APPROVED"
             }
         ]);
         setExtraProductSearch("");
@@ -280,9 +282,10 @@ export default function PurchaseOrdersPage() {
                     productId: i.productId,
                     variantId: i.variantId,
                     requestedQty: parseFloat(i.requestedQty) || 0,
-                    approvedQty: parseFloat(i.approvedQty) || 0,
+                    approvedQty: i.itemStatus === "REJECTED" ? 0 : (parseFloat(i.approvedQty) || 0),
                     buyingPrice: parseFloat(i.buyingPrice) || 0,
-                    addedByManager: i.addedByManager
+                    addedByManager: i.addedByManager,
+                    itemStatus: i.itemStatus || "APPROVED"
                 }))
             });
 
@@ -792,13 +795,19 @@ export default function PurchaseOrdersPage() {
 
                         {/* Items Review Table */}
                         <div className="space-y-3">
-                            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 block">Review & Set Unit Buying Prices</label>
+                            <div className="flex items-center justify-between">
+                                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 block">Product-Wise Approval & Unit Buying Prices</label>
+                                <span className="text-xs font-bold text-teal-700">
+                                    Approved Total: ₹{reviewItems.filter(i => i.itemStatus !== "REJECTED").reduce((sum, i) => sum + (parseFloat(i.approvedQty) || 0) * (parseFloat(i.buyingPrice) || 0), 0).toFixed(2)}
+                                </span>
+                            </div>
                             <div className="overflow-x-auto rounded-2xl border border-slate-200">
                                 <table className="w-full text-left text-xs">
                                     <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-widest text-slate-400 border-b border-slate-200">
                                         <tr>
                                             <th className="p-3">Product</th>
                                             <th className="p-3 text-center">Store Requested</th>
+                                            <th className="p-3 text-center">Product-Wise Action</th>
                                             <th className="p-3 text-center">Approved Qty</th>
                                             <th className="p-3 text-center">Buying Price (₹)</th>
                                             <th className="p-3 text-right">Total Cost (₹)</th>
@@ -807,36 +816,81 @@ export default function PurchaseOrdersPage() {
                                     </thead>
                                     <tbody className="divide-y divide-slate-100 font-medium text-slate-800">
                                         {reviewItems.map((item, idx) => {
-                                            const total = (parseFloat(item.approvedQty) || 0) * (parseFloat(item.buyingPrice) || 0);
+                                            const isRejected = item.itemStatus === "REJECTED";
+                                            const total = isRejected ? 0 : (parseFloat(item.approvedQty) || 0) * (parseFloat(item.buyingPrice) || 0);
                                             return (
-                                                <tr key={idx} className={cn(item.addedByManager && "bg-amber-50/40")}>
+                                                <tr key={idx} className={cn(
+                                                    item.addedByManager && "bg-amber-50/40",
+                                                    isRejected && "bg-red-50/40 opacity-70"
+                                                )}>
                                                     <td className="p-3 font-bold">
-                                                        {item.name}
-                                                        {item.addedByManager && (
-                                                            <span className="ml-2 bg-amber-100 text-amber-800 text-[9px] px-1.5 py-0.5 rounded-md font-black uppercase">Extra</span>
-                                                        )}
+                                                        <div className="flex items-center gap-2">
+                                                            <span className={cn(isRejected && "line-through text-slate-400")}>{item.name}</span>
+                                                            {item.addedByManager && (
+                                                                <span className="bg-amber-100 text-amber-800 text-[9px] px-1.5 py-0.5 rounded-md font-black uppercase">Manager Extra</span>
+                                                            )}
+                                                            {isRejected && (
+                                                                <span className="bg-red-100 text-red-700 text-[9px] px-1.5 py-0.5 rounded-md font-black uppercase">Rejected</span>
+                                                            )}
+                                                        </div>
                                                     </td>
                                                     <td className="p-3 text-center text-slate-500">{item.requestedQty}</td>
                                                     <td className="p-3 text-center">
+                                                        <div className="flex items-center justify-center gap-1 bg-slate-100 p-1 rounded-xl w-max mx-auto">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setReviewItems(prev => prev.map((it, i) => i === idx ? { ...it, itemStatus: "APPROVED" } : it))}
+                                                                className={cn(
+                                                                    "px-2.5 py-1 rounded-lg text-[10px] font-black uppercase transition-all",
+                                                                    !isRejected
+                                                                        ? "bg-emerald-600 text-white shadow-sm"
+                                                                        : "text-slate-500 hover:text-slate-900"
+                                                                )}
+                                                            >
+                                                                ✓ Approve
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setReviewItems(prev => prev.map((it, i) => i === idx ? { ...it, itemStatus: "REJECTED", approvedQty: 0 } : it))}
+                                                                className={cn(
+                                                                    "px-2.5 py-1 rounded-lg text-[10px] font-black uppercase transition-all",
+                                                                    isRejected
+                                                                        ? "bg-red-600 text-white shadow-sm"
+                                                                        : "text-slate-500 hover:text-slate-900"
+                                                                )}
+                                                            >
+                                                                ✕ Reject
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                    <td className="p-3 text-center">
                                                         <input
                                                             type="number"
-                                                            value={item.approvedQty}
+                                                            disabled={isRejected}
+                                                            value={isRejected ? 0 : item.approvedQty}
                                                             onChange={(e) => {
                                                                 const val = e.target.value;
                                                                 setReviewItems(prev => prev.map((it, i) => i === idx ? { ...it, approvedQty: val } : it));
                                                             }}
-                                                            className="w-20 bg-white border border-slate-200 rounded-xl px-2 py-1 text-center font-bold outline-none"
+                                                            className={cn(
+                                                                "w-20 bg-white border border-slate-200 rounded-xl px-2 py-1 text-center font-bold outline-none",
+                                                                isRejected && "bg-slate-100 text-slate-400 cursor-not-allowed"
+                                                            )}
                                                         />
                                                     </td>
                                                     <td className="p-3 text-center">
                                                         <input
                                                             type="number"
+                                                            disabled={isRejected}
                                                             value={item.buyingPrice}
                                                             onChange={(e) => {
                                                                 const val = e.target.value;
                                                                 setReviewItems(prev => prev.map((it, i) => i === idx ? { ...it, buyingPrice: val } : it));
                                                             }}
-                                                            className="w-24 bg-white border border-slate-200 rounded-xl px-2 py-1 text-center font-bold text-teal-700 outline-none"
+                                                            className={cn(
+                                                                "w-24 bg-white border border-slate-200 rounded-xl px-2 py-1 text-center font-bold text-teal-700 outline-none",
+                                                                isRejected && "bg-slate-100 text-slate-400 cursor-not-allowed"
+                                                            )}
                                                         />
                                                     </td>
                                                     <td className="p-3 text-right font-black text-slate-900 tabular-nums">

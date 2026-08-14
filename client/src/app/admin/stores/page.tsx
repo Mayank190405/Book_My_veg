@@ -19,7 +19,8 @@ import {
     Shield,
     Key,
     Eye,
-    EyeOff
+    EyeOff,
+    UserCheck
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
@@ -45,7 +46,8 @@ export default function AdminStores() {
         latitude: "",
         longitude: "",
         deliveryRadius: "10.0",
-        upiId: ""
+        upiId: "",
+        purchaseManagerId: ""
     });
     const [showPassword, setShowPassword] = useState(false);
 
@@ -252,6 +254,21 @@ export default function AdminStores() {
                                         value={formData.contactNumber}
                                         onChange={(e) => setFormData({...formData, contactNumber: e.target.value})}
                                     />
+                                </div>
+                                <div className="space-y-2 group">
+                                    <label className="text-[10px] font-bold text-teal-600 uppercase tracking-widest px-1 flex items-center gap-2">
+                                        <UserCheck className="h-3 w-3" /> Assigned Purchase Manager (1 Store → 1 Manager)
+                                    </label>
+                                    <select
+                                        className="w-full h-12 bg-teal-50/50 rounded-xl border border-teal-200 px-4 text-sm font-bold text-slate-900 outline-none focus:border-teal-500 cursor-pointer"
+                                        value={formData.purchaseManagerId || ""}
+                                        onChange={(e) => setFormData({...formData, purchaseManagerId: e.target.value})}
+                                    >
+                                        <option value="">Unassigned (No Purchase Manager)</option>
+                                        {users.filter(u => u.role === "PURCHASE_MANAGER" || u.role === "ADMIN" || u.role === "STORE_ADMIN").map(u => (
+                                            <option key={u.id} value={u.id}>{u.name || u.phone} ({u.role?.replace('_', ' ')})</option>
+                                        ))}
+                                    </select>
                                 </div>
                                 <div className="space-y-2 group relative">
                                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1 flex items-center gap-2 group-focus-within:text-emerald-600 transition-colors">

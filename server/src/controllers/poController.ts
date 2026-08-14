@@ -21,15 +21,22 @@ const getAccessibleLocationIds = async (user?: { userId: string; role: string; l
         return null; // Null means unrestricted access to all stores
     }
     if (user.role === "PURCHASE_MANAGER") {
-        const assignments = await prisma.purchaseManagerLocation.findMany({
-            where: { userId: user.userId },
-            select: { locationId: true }
-        });
-        const assignedIds = assignments.map(a => a.locationId);
-        if (user.locationId && !assignedIds.includes(user.locationId)) {
-            assignedIds.push(user.locationId);
-        }
-        return assignedIds;
+        const [assignments, stores] = await Promise.all([
+            prisma.purchaseManagerLocation.findMany({
+                where: { userId: user.userId },
+                select: { locationId: true }
+            }),
+            prisma.location.findMany({
+                where: { purchaseManagerId: user.userId },
+                select: { id: true }
+            })
+        ]);
+        const assignedIds = new Set([
+            ...assignments.map(a => a.locationId),
+            ...stores.map(s => s.id)
+        ]);
+        if (user.locationId) assignedIds.add(user.locationId);
+        return Array.from(assignedIds);
     }
     // Store Admin / Operator
     let locId = user.locationId;
@@ -272,11 +279,15 @@ export const reviewPurchaseOrder = async (req: AuthenticatedRequest, res: Respon
 
             let totalEst = 0;
             const updatedItems = items.map((i: any) => {
+                const itemStatus = String(i.itemStatus || "APPROVED").toUpperCase();
+                const isRejected = itemStatus === "REJECTED";
                 const reqQty = Number(i.requestedQty || i.quantity || 1);
-                const appQty = Number(i.approvedQty !== undefined ? i.approvedQty : reqQty);
+                const appQty = isRejected ? 0 : Number(i.approvedQty !== undefined ? i.approvedQty : reqQty);
                 const buyPrice = Number(i.buyingPrice || 0);
-                const totalCost = appQty * buyPrice;
-                totalEst += totalCost;
+                const totalCost = isRejected ? 0 : appQty * buyPrice;
+                if (!isRejected) {
+                    totalEst += totalCost;
+                }
 
                 return {
                     purchaseOrderId: id,
@@ -286,7 +297,8 @@ export const reviewPurchaseOrder = async (req: AuthenticatedRequest, res: Respon
                     approvedQty: new Prisma.Decimal(appQty),
                     buyingPrice: new Prisma.Decimal(buyPrice),
                     totalCost: new Prisma.Decimal(totalCost),
-                    addedByManager: Boolean(i.addedByManager || i.isExtra)
+                    addedByManager: Boolean(i.addedByManager || i.isExtra),
+                    itemStatus: itemStatus
                 };
             });
 

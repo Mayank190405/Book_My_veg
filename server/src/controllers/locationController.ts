@@ -47,7 +47,9 @@ export const getLocations = async (_req: Request, res: Response) => {
                 longitude: true,
                 deliveryRadius: true,
                 isOpen: true,
-                upiId: true
+                upiId: true,
+                purchaseManagerId: true,
+                purchaseManager: { select: { id: true, name: true, phone: true, email: true } }
             }
         });
         res.status(200).json(locations);

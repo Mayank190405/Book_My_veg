@@ -73,7 +73,9 @@ const getLocations = (_req, res) => __awaiter(void 0, void 0, void 0, function* 
                 longitude: true,
                 deliveryRadius: true,
                 isOpen: true,
-                upiId: true
+                upiId: true,
+                purchaseManagerId: true,
+                purchaseManager: { select: { id: true, name: true, phone: true, email: true } }
             }
         });
         res.status(200).json(locations);

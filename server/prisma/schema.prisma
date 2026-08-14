@@ -46,6 +46,7 @@ model User {
   createdPOs        PurchaseOrder[]           @relation("POCreatedBy")
   reviewedPOs       PurchaseOrder[]           @relation("POReviewedBy")
   managedLocations  PurchaseManagerLocation[]
+  managedStores     Location[]                @relation("StorePurchaseManager")
 }
 
 model Address {
@@ -195,6 +196,8 @@ model Location {
   apiKeys        ApiKey[]
   purchaseOrders PurchaseOrder[]
   purchaseManagerLocations PurchaseManagerLocation[]
+  purchaseManagerId String?
+  purchaseManager   User?           @relation("StorePurchaseManager", fields: [purchaseManagerId], references: [id])
 }
 
 model Inventory {
@@ -953,6 +956,7 @@ model PurchaseOrderItem {
   buyingPrice       Decimal         @default(0) @db.Decimal(10, 2)
   totalCost         Decimal         @default(0) @db.Decimal(12, 2)
   addedByManager    Boolean         @default(false)
+  itemStatus        String          @default("APPROVED")
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
 

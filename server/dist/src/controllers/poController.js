@@ -30,15 +30,23 @@ const getAccessibleLocationIds = (user) => __awaiter(void 0, void 0, void 0, fun
         return null; // Null means unrestricted access to all stores
     }
     if (user.role === "PURCHASE_MANAGER") {
-        const assignments = yield prisma_1.default.purchaseManagerLocation.findMany({
-            where: { userId: user.userId },
-            select: { locationId: true }
-        });
-        const assignedIds = assignments.map(a => a.locationId);
-        if (user.locationId && !assignedIds.includes(user.locationId)) {
-            assignedIds.push(user.locationId);
-        }
-        return assignedIds;
+        const [assignments, stores] = yield Promise.all([
+            prisma_1.default.purchaseManagerLocation.findMany({
+                where: { userId: user.userId },
+                select: { locationId: true }
+            }),
+            prisma_1.default.location.findMany({
+                where: { purchaseManagerId: user.userId },
+                select: { id: true }
+            })
+        ]);
+        const assignedIds = new Set([
+            ...assignments.map(a => a.locationId),
+            ...stores.map(s => s.id)
+        ]);
+        if (user.locationId)
+            assignedIds.add(user.locationId);
+        return Array.from(assignedIds);
     }
     // Store Admin / Operator
     let locId = user.locationId;
@@ -262,11 +270,15 @@ const reviewPurchaseOrder = (req, res, next) => __awaiter(void 0, void 0, void 0
             yield tx.purchaseOrderItem.deleteMany({ where: { purchaseOrderId: id } });
             let totalEst = 0;
             const updatedItems = items.map((i) => {
+                const itemStatus = String(i.itemStatus || "APPROVED").toUpperCase();
+                const isRejected = itemStatus === "REJECTED";
                 const reqQty = Number(i.requestedQty || i.quantity || 1);
-                const appQty = Number(i.approvedQty !== undefined ? i.approvedQty : reqQty);
+                const appQty = isRejected ? 0 : Number(i.approvedQty !== undefined ? i.approvedQty : reqQty);
                 const buyPrice = Number(i.buyingPrice || 0);
-                const totalCost = appQty * buyPrice;
-                totalEst += totalCost;
+                const totalCost = isRejected ? 0 : appQty * buyPrice;
+                if (!isRejected) {
+                    totalEst += totalCost;
+                }
                 return {
                     purchaseOrderId: id,
                     productId: String(i.productId),
@@ -275,7 +287,8 @@ const reviewPurchaseOrder = (req, res, next) => __awaiter(void 0, void 0, void 0
                     approvedQty: new client_1.Prisma.Decimal(appQty),
                     buyingPrice: new client_1.Prisma.Decimal(buyPrice),
                     totalCost: new client_1.Prisma.Decimal(totalCost),
-                    addedByManager: Boolean(i.addedByManager || i.isExtra)
+                    addedByManager: Boolean(i.addedByManager || i.isExtra),
+                    itemStatus: itemStatus
                 };
             });
             yield tx.purchaseOrderItem.createMany({ data: updatedItems });
