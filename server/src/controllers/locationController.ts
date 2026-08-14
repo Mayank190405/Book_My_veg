@@ -30,30 +30,68 @@ export const getLocationById = async (req: Request, res: Response) => {
     }
 };
 
+let locationSchemaEnsured = false;
+const ensureLocationSchema = async () => {
+    if (locationSchemaEnsured) return;
+    try {
+        await prisma.$executeRawUnsafe(`
+            ALTER TABLE "Location" ADD COLUMN IF NOT EXISTS "purchaseManagerId" TEXT;
+        `);
+        locationSchemaEnsured = true;
+    } catch (e) {
+        console.error("[LOCATION SCHEMA WARNING]", e);
+    }
+};
+
 export const getLocations = async (_req: Request, res: Response) => {
     try {
-        const locations = await prisma.location.findMany({
-            orderBy: { name: "asc" },
-            select: {
-                id: true,
-                slug: true,
-                name: true,
-                address: true,
-                contactNumber: true,
-                gstNumber: true,
-                receiptHeader: true,
-                receiptFooter: true,
-                latitude: true,
-                longitude: true,
-                deliveryRadius: true,
-                isOpen: true,
-                upiId: true,
-                purchaseManagerId: true,
-                purchaseManager: { select: { id: true, name: true, phone: true, email: true } }
-            }
-        });
-        res.status(200).json(locations);
+        await ensureLocationSchema();
+        try {
+            const locations = await prisma.location.findMany({
+                orderBy: { name: "asc" },
+                select: {
+                    id: true,
+                    slug: true,
+                    name: true,
+                    address: true,
+                    contactNumber: true,
+                    gstNumber: true,
+                    receiptHeader: true,
+                    receiptFooter: true,
+                    latitude: true,
+                    longitude: true,
+                    deliveryRadius: true,
+                    isOpen: true,
+                    upiId: true,
+                    purchaseManagerId: true,
+                    purchaseManager: { select: { id: true, name: true, phone: true, email: true } }
+                }
+            });
+            return res.status(200).json(locations);
+        } catch (queryErr) {
+            console.warn("[getLocations fallback]:", queryErr);
+            const fallbackLocations = await prisma.location.findMany({
+                orderBy: { name: "asc" },
+                select: {
+                    id: true,
+                    slug: true,
+                    name: true,
+                    address: true,
+                    contactNumber: true,
+                    gstNumber: true,
+                    receiptHeader: true,
+                    receiptFooter: true,
+                    latitude: true,
+                    longitude: true,
+                    deliveryRadius: true,
+                    isOpen: true,
+                    upiId: true
+                }
+            });
+            return res.status(200).json(fallbackLocations);
+        }
     } catch (error: any) {
+        console.error("[getLocations Critical Error]:", error);
         res.status(500).json({ error: error.message });
     }
 };

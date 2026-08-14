@@ -56,31 +56,71 @@ const getLocationById = (req, res) => __awaiter(void 0, void 0, void 0, function
     }
 });
 exports.getLocationById = getLocationById;
+let locationSchemaEnsured = false;
+const ensureLocationSchema = () => __awaiter(void 0, void 0, void 0, function* () {
+    if (locationSchemaEnsured)
+        return;
+    try {
+        yield prisma_1.default.$executeRawUnsafe(`
+            ALTER TABLE "Location" ADD COLUMN IF NOT EXISTS "purchaseManagerId" TEXT;
+        `);
+        locationSchemaEnsured = true;
+    }
+    catch (e) {
+        console.error("[LOCATION SCHEMA WARNING]", e);
+    }
+});
 const getLocations = (_req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const locations = yield prisma_1.default.location.findMany({
-            orderBy: { name: "asc" },
-            select: {
-                id: true,
-                slug: true,
-                name: true,
-                address: true,
-                contactNumber: true,
-                gstNumber: true,
-                receiptHeader: true,
-                receiptFooter: true,
-                latitude: true,
-                longitude: true,
-                deliveryRadius: true,
-                isOpen: true,
-                upiId: true,
-                purchaseManagerId: true,
-                purchaseManager: { select: { id: true, name: true, phone: true, email: true } }
-            }
-        });
-        res.status(200).json(locations);
+        yield ensureLocationSchema();
+        try {
+            const locations = yield prisma_1.default.location.findMany({
+                orderBy: { name: "asc" },
+                select: {
+                    id: true,
+                    slug: true,
+                    name: true,
+                    address: true,
+                    contactNumber: true,
+                    gstNumber: true,
+                    receiptHeader: true,
+                    receiptFooter: true,
+                    latitude: true,
+                    longitude: true,
+                    deliveryRadius: true,
+                    isOpen: true,
+                    upiId: true,
+                    purchaseManagerId: true,
+                    purchaseManager: { select: { id: true, name: true, phone: true, email: true } }
+                }
+            });
+            return res.status(200).json(locations);
+        }
+        catch (queryErr) {
+            console.warn("[getLocations fallback]:", queryErr);
+            const fallbackLocations = yield prisma_1.default.location.findMany({
+                orderBy: { name: "asc" },
+                select: {
+                    id: true,
+                    slug: true,
+                    name: true,
+                    address: true,
+                    contactNumber: true,
+                    gstNumber: true,
+                    receiptHeader: true,
+                    receiptFooter: true,
+                    latitude: true,
+                    longitude: true,
+                    deliveryRadius: true,
+                    isOpen: true,
+                    upiId: true
+                }
+            });
+            return res.status(200).json(fallbackLocations);
+        }
     }
     catch (error) {
+        console.error("[getLocations Critical Error]:", error);
         res.status(500).json({ error: error.message });
     }
 });
