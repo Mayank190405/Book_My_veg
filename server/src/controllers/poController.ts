@@ -53,81 +53,6 @@ const getAccessibleLocationIds = async (user?: { userId?: string; id?: string; r
     return locId ? [locId] : [];
 };
 
-// ─── 1. Create Purchase Order (Store Creation) ────────────────────────────────
-
-export const createPurchaseOrder = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
-    const { items, notes, supplierName, supplierPhone, locationId: reqLocId } = req.body;
-    const caller = req.user;
-
-    let targetLocationId = reqLocId || caller?.locationId;
-    if (caller?.userId.startsWith("STORE_")) {
-        targetLocationId = caller.userId.replace("STORE_", "");
-    }
-
-    if (!targetLocationId) {
-        return res.status(400).json({ message: "Store location is required to create a Purchase Order." });
-    }
-
-    if (!Array.isArray(items) || items.length === 0) {
-        return res.status(400).json({ message: "At least one product item is required for the Purchase Order." });
-    }
-
-    try {
-        const poNumber = await generatePONumber();
-
-        const po = await prisma.$transaction(async (tx) => {
-            let totalEst = 0;
-            const itemCreates = items.map((i: any) => {
-                const qty = Number(i.requestedQty || i.quantity || 1);
-                const estPrice = Number(i.buyingPrice || i.estimatedPrice || 0);
-                totalEst += qty * estPrice;
-                return {
-                    productId: String(i.productId),
-                    variantId: i.variantId ? String(i.variantId) : null,
-                    requestedQty: new Prisma.Decimal(qty),
-                    approvedQty: new Prisma.Decimal(qty),
-                    buyingPrice: new Prisma.Decimal(estPrice),
-                    totalCost: new Prisma.Decimal(qty * estPrice),
-                    addedByManager: false
-                };
-            });
-
-            // Find valid user ID for creator (fallback to root admin if virtual store user)
-            let creatorId = caller?.userId;
-            if (creatorId?.startsWith("STORE_")) {
-                const adminUser = await tx.user.findFirst({ where: { role: { in: ["ADMIN", "STORE_ADMIN"] } } });
-                creatorId = adminUser?.id || creatorId;
-            }
-
-            return await tx.purchaseOrder.create({
-                data: {
-                    poNumber,
-                    locationId: String(targetLocationId),
-                    createdById: String(creatorId),
-                    notes: notes || null,
-                    supplierName: supplierName || null,
-                    supplierPhone: supplierPhone || null,
-                    status: POStatus.SUBMITTED,
-                    totalEstimatedCost: new Prisma.Decimal(totalEst),
-                    items: { create: itemCreates }
-                },
-                include: {
-                    location: { select: { id: true, name: true, slug: true } },
-                    createdBy: { select: { id: true, name: true, role: true } },
-                    items: {
-                        include: {
-                            product: { select: { id: true, name: true, sku: true, images: true, basePrice: true } },
-                            variant: { select: { id: true, name: true, price: true } }
-                        }
-                    }
-                }
-            });
-        });
-
-        res.status(201).json({ message: "Purchase Order submitted successfully for manager review.", purchaseOrder: po });
-    } catch (error) { next(error); }
-};
-
 let schemaEnsured = false;
 const ensurePOSchema = async () => {
     if (schemaEnsured) return;
@@ -168,10 +93,16 @@ const ensurePOSchema = async () => {
                 "buyingPrice" DECIMAL(10,2) NOT NULL DEFAULT 0,
                 "totalCost" DECIMAL(12,2) NOT NULL DEFAULT 0,
                 "addedByManager" BOOLEAN NOT NULL DEFAULT false,
+                "itemStatus" TEXT NOT NULL DEFAULT 'APPROVED',
                 "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 CONSTRAINT "PurchaseOrderItem_pkey" PRIMARY KEY ("id")
             );
+            ALTER TABLE "PurchaseOrderItem" ADD COLUMN IF NOT EXISTS "itemStatus" TEXT DEFAULT 'APPROVED';
+            ALTER TABLE "PurchaseOrderItem" ADD COLUMN IF NOT EXISTS "buyingPrice" DECIMAL(10,2) DEFAULT 0;
+            ALTER TABLE "PurchaseOrderItem" ADD COLUMN IF NOT EXISTS "totalCost" DECIMAL(12,2) DEFAULT 0;
+            ALTER TABLE "PurchaseOrderItem" ADD COLUMN IF NOT EXISTS "addedByManager" BOOLEAN DEFAULT false;
+            ALTER TABLE "Location" ADD COLUMN IF NOT EXISTS "purchaseManagerId" TEXT;
             CREATE TABLE IF NOT EXISTS "PurchaseManagerLocation" (
                 "id" TEXT NOT NULL,
                 "userId" TEXT NOT NULL,
@@ -185,6 +116,84 @@ const ensurePOSchema = async () => {
     } catch (e) {
         console.error("[PO SCHEMA SETUP WARNING]", e);
     }
+};
+
+// ─── 1. Create Purchase Order (Store Creation) ────────────────────────────────
+
+export const createPurchaseOrder = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    const { items, notes, supplierName, supplierPhone, locationId: reqLocId } = req.body;
+    const caller = req.user;
+
+    try {
+        await ensurePOSchema();
+
+        let targetLocationId = reqLocId || caller?.locationId;
+        if (caller?.userId && caller.userId.startsWith("STORE_")) {
+            targetLocationId = caller.userId.replace("STORE_", "");
+        }
+
+        if (!targetLocationId) {
+            return res.status(400).json({ message: "Store location is required to create a Purchase Order." });
+        }
+
+        if (!Array.isArray(items) || items.length === 0) {
+            return res.status(400).json({ message: "At least one product item is required for the Purchase Order." });
+        }
+
+        const poNumber = await generatePONumber();
+
+        const po = await prisma.$transaction(async (tx) => {
+            let totalEst = 0;
+            const itemCreates = items.map((i: any) => {
+                const qty = Number(i.requestedQty || i.quantity || 1);
+                const estPrice = Number(i.buyingPrice || i.estimatedPrice || 0);
+                totalEst += qty * estPrice;
+                return {
+                    productId: String(i.productId),
+                    variantId: i.variantId ? String(i.variantId) : null,
+                    requestedQty: new Prisma.Decimal(qty),
+                    approvedQty: new Prisma.Decimal(qty),
+                    buyingPrice: new Prisma.Decimal(estPrice),
+                    totalCost: new Prisma.Decimal(qty * estPrice),
+                    addedByManager: false,
+                    itemStatus: "APPROVED"
+                };
+            });
+
+            // Find valid user ID for creator (fallback to root admin if virtual store user)
+            let creatorId = caller?.userId;
+            if (!creatorId || creatorId.startsWith("STORE_")) {
+                const adminUser = await tx.user.findFirst({ where: { role: { in: ["ADMIN", "STORE_ADMIN"] } } });
+                creatorId = adminUser?.id || creatorId || "SYSTEM";
+            }
+
+            return await tx.purchaseOrder.create({
+                data: {
+                    poNumber,
+                    locationId: String(targetLocationId),
+                    createdById: String(creatorId),
+                    notes: notes || null,
+                    supplierName: supplierName || null,
+                    supplierPhone: supplierPhone || null,
+                    status: POStatus.SUBMITTED,
+                    totalEstimatedCost: new Prisma.Decimal(totalEst),
+                    items: { create: itemCreates }
+                },
+                include: {
+                    location: { select: { id: true, name: true, slug: true } },
+                    createdBy: { select: { id: true, name: true, role: true } },
+                    items: {
+                        include: {
+                            product: { select: { id: true, name: true, sku: true, images: true, basePrice: true } },
+                            variant: { select: { id: true, name: true, price: true } }
+                        }
+                    }
+                }
+            });
+        });
+
+        res.status(201).json({ message: "Purchase Order submitted successfully for manager review.", purchaseOrder: po });
+    } catch (error) { next(error); }
 };
 
 // ─── 2. List Purchase Orders ──────────────────────────────────────────────────

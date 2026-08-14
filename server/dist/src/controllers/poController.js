@@ -62,75 +62,6 @@ const getAccessibleLocationIds = (user) => __awaiter(void 0, void 0, void 0, fun
     }
     return locId ? [locId] : [];
 });
-// ─── 1. Create Purchase Order (Store Creation) ────────────────────────────────
-const createPurchaseOrder = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
-    const { items, notes, supplierName, supplierPhone, locationId: reqLocId } = req.body;
-    const caller = req.user;
-    let targetLocationId = reqLocId || (caller === null || caller === void 0 ? void 0 : caller.locationId);
-    if (caller === null || caller === void 0 ? void 0 : caller.userId.startsWith("STORE_")) {
-        targetLocationId = caller.userId.replace("STORE_", "");
-    }
-    if (!targetLocationId) {
-        return res.status(400).json({ message: "Store location is required to create a Purchase Order." });
-    }
-    if (!Array.isArray(items) || items.length === 0) {
-        return res.status(400).json({ message: "At least one product item is required for the Purchase Order." });
-    }
-    try {
-        const poNumber = yield generatePONumber();
-        const po = yield prisma_1.default.$transaction((tx) => __awaiter(void 0, void 0, void 0, function* () {
-            let totalEst = 0;
-            const itemCreates = items.map((i) => {
-                const qty = Number(i.requestedQty || i.quantity || 1);
-                const estPrice = Number(i.buyingPrice || i.estimatedPrice || 0);
-                totalEst += qty * estPrice;
-                return {
-                    productId: String(i.productId),
-                    variantId: i.variantId ? String(i.variantId) : null,
-                    requestedQty: new client_1.Prisma.Decimal(qty),
-                    approvedQty: new client_1.Prisma.Decimal(qty),
-                    buyingPrice: new client_1.Prisma.Decimal(estPrice),
-                    totalCost: new client_1.Prisma.Decimal(qty * estPrice),
-                    addedByManager: false
-                };
-            });
-            // Find valid user ID for creator (fallback to root admin if virtual store user)
-            let creatorId = caller === null || caller === void 0 ? void 0 : caller.userId;
-            if (creatorId === null || creatorId === void 0 ? void 0 : creatorId.startsWith("STORE_")) {
-                const adminUser = yield tx.user.findFirst({ where: { role: { in: ["ADMIN", "STORE_ADMIN"] } } });
-                creatorId = (adminUser === null || adminUser === void 0 ? void 0 : adminUser.id) || creatorId;
-            }
-            return yield tx.purchaseOrder.create({
-                data: {
-                    poNumber,
-                    locationId: String(targetLocationId),
-                    createdById: String(creatorId),
-                    notes: notes || null,
-                    supplierName: supplierName || null,
-                    supplierPhone: supplierPhone || null,
-                    status: client_1.POStatus.SUBMITTED,
-                    totalEstimatedCost: new client_1.Prisma.Decimal(totalEst),
-                    items: { create: itemCreates }
-                },
-                include: {
-                    location: { select: { id: true, name: true, slug: true } },
-                    createdBy: { select: { id: true, name: true, role: true } },
-                    items: {
-                        include: {
-                            product: { select: { id: true, name: true, sku: true, images: true, basePrice: true } },
-                            variant: { select: { id: true, name: true, price: true } }
-                        }
-                    }
-                }
-            });
-        }));
-        res.status(201).json({ message: "Purchase Order submitted successfully for manager review.", purchaseOrder: po });
-    }
-    catch (error) {
-        next(error);
-    }
-});
-exports.createPurchaseOrder = createPurchaseOrder;
 let schemaEnsured = false;
 const ensurePOSchema = () => __awaiter(void 0, void 0, void 0, function* () {
     if (schemaEnsured)
@@ -172,10 +103,16 @@ const ensurePOSchema = () => __awaiter(void 0, void 0, void 0, function* () {
                 "buyingPrice" DECIMAL(10,2) NOT NULL DEFAULT 0,
                 "totalCost" DECIMAL(12,2) NOT NULL DEFAULT 0,
                 "addedByManager" BOOLEAN NOT NULL DEFAULT false,
+                "itemStatus" TEXT NOT NULL DEFAULT 'APPROVED',
                 "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 CONSTRAINT "PurchaseOrderItem_pkey" PRIMARY KEY ("id")
             );
+            ALTER TABLE "PurchaseOrderItem" ADD COLUMN IF NOT EXISTS "itemStatus" TEXT DEFAULT 'APPROVED';
+            ALTER TABLE "PurchaseOrderItem" ADD COLUMN IF NOT EXISTS "buyingPrice" DECIMAL(10,2) DEFAULT 0;
+            ALTER TABLE "PurchaseOrderItem" ADD COLUMN IF NOT EXISTS "totalCost" DECIMAL(12,2) DEFAULT 0;
+            ALTER TABLE "PurchaseOrderItem" ADD COLUMN IF NOT EXISTS "addedByManager" BOOLEAN DEFAULT false;
+            ALTER TABLE "Location" ADD COLUMN IF NOT EXISTS "purchaseManagerId" TEXT;
             CREATE TABLE IF NOT EXISTS "PurchaseManagerLocation" (
                 "id" TEXT NOT NULL,
                 "userId" TEXT NOT NULL,
@@ -191,6 +128,77 @@ const ensurePOSchema = () => __awaiter(void 0, void 0, void 0, function* () {
         console.error("[PO SCHEMA SETUP WARNING]", e);
     }
 });
+// ─── 1. Create Purchase Order (Store Creation) ────────────────────────────────
+const createPurchaseOrder = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    const { items, notes, supplierName, supplierPhone, locationId: reqLocId } = req.body;
+    const caller = req.user;
+    try {
+        yield ensurePOSchema();
+        let targetLocationId = reqLocId || (caller === null || caller === void 0 ? void 0 : caller.locationId);
+        if ((caller === null || caller === void 0 ? void 0 : caller.userId) && caller.userId.startsWith("STORE_")) {
+            targetLocationId = caller.userId.replace("STORE_", "");
+        }
+        if (!targetLocationId) {
+            return res.status(400).json({ message: "Store location is required to create a Purchase Order." });
+        }
+        if (!Array.isArray(items) || items.length === 0) {
+            return res.status(400).json({ message: "At least one product item is required for the Purchase Order." });
+        }
+        const poNumber = yield generatePONumber();
+        const po = yield prisma_1.default.$transaction((tx) => __awaiter(void 0, void 0, void 0, function* () {
+            let totalEst = 0;
+            const itemCreates = items.map((i) => {
+                const qty = Number(i.requestedQty || i.quantity || 1);
+                const estPrice = Number(i.buyingPrice || i.estimatedPrice || 0);
+                totalEst += qty * estPrice;
+                return {
+                    productId: String(i.productId),
+                    variantId: i.variantId ? String(i.variantId) : null,
+                    requestedQty: new client_1.Prisma.Decimal(qty),
+                    approvedQty: new client_1.Prisma.Decimal(qty),
+                    buyingPrice: new client_1.Prisma.Decimal(estPrice),
+                    totalCost: new client_1.Prisma.Decimal(qty * estPrice),
+                    addedByManager: false,
+                    itemStatus: "APPROVED"
+                };
+            });
+            // Find valid user ID for creator (fallback to root admin if virtual store user)
+            let creatorId = caller === null || caller === void 0 ? void 0 : caller.userId;
+            if (!creatorId || creatorId.startsWith("STORE_")) {
+                const adminUser = yield tx.user.findFirst({ where: { role: { in: ["ADMIN", "STORE_ADMIN"] } } });
+                creatorId = (adminUser === null || adminUser === void 0 ? void 0 : adminUser.id) || creatorId || "SYSTEM";
+            }
+            return yield tx.purchaseOrder.create({
+                data: {
+                    poNumber,
+                    locationId: String(targetLocationId),
+                    createdById: String(creatorId),
+                    notes: notes || null,
+                    supplierName: supplierName || null,
+                    supplierPhone: supplierPhone || null,
+                    status: client_1.POStatus.SUBMITTED,
+                    totalEstimatedCost: new client_1.Prisma.Decimal(totalEst),
+                    items: { create: itemCreates }
+                },
+                include: {
+                    location: { select: { id: true, name: true, slug: true } },
+                    createdBy: { select: { id: true, name: true, role: true } },
+                    items: {
+                        include: {
+                            product: { select: { id: true, name: true, sku: true, images: true, basePrice: true } },
+                            variant: { select: { id: true, name: true, price: true } }
+                        }
+                    }
+                }
+            });
+        }));
+        res.status(201).json({ message: "Purchase Order submitted successfully for manager review.", purchaseOrder: po });
+    }
+    catch (error) {
+        next(error);
+    }
+});
+exports.createPurchaseOrder = createPurchaseOrder;
 // ─── 2. List Purchase Orders ──────────────────────────────────────────────────
 const getPurchaseOrders = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     const { status, locationId } = req.query;
