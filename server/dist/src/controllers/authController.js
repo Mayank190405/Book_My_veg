@@ -285,6 +285,32 @@ const refreshToken = (req, res) => __awaiter(void 0, void 0, void 0, function* (
     }
     try {
         const decoded = (0, jwt_1.verifyRefreshToken)(token);
+        if (decoded.userId && decoded.userId.startsWith("STORE_")) {
+            const locId = decoded.userId.replace("STORE_", "");
+            const location = yield (0, prisma_1.withRetry)(() => prisma_1.default.location.findUnique({ where: { id: locId } }));
+            if (!location) {
+                return res.status(401).json({ message: "Store location not found" });
+            }
+            const tokens = (0, jwt_1.generateTokens)(`STORE_${location.id}`, "STORE_ADMIN", location.id);
+            res.cookie("refreshToken", tokens.refreshToken, {
+                httpOnly: true,
+                secure: process.env.NODE_ENV === "production",
+                sameSite: "lax",
+                maxAge: 30 * 24 * 60 * 60 * 1000,
+            });
+            return res.status(200).json({
+                accessToken: tokens.accessToken,
+                refreshToken: tokens.refreshToken,
+                user: {
+                    id: `STORE_${location.id}`,
+                    phone: location.contactNumber,
+                    role: "STORE_ADMIN",
+                    name: location.name,
+                    locationId: location.id,
+                    slug: location.slug
+                }
+            });
+        }
         const user = yield (0, prisma_1.withRetry)(() => prisma_1.default.user.findUnique({ where: { id: decoded.userId } }));
         if (!user) {
             return res.status(401).json({ message: "User not found" });

@@ -684,6 +684,7 @@ enum Role {
   DELIVERY_PARTNER
   CENTER_HEAD
   STORE_ADMIN
+  PURCHASE_MANAGER
 }
 
 enum AddressType {

@@ -325,6 +325,7 @@ export default function AdminUsers() {
                                 </>
                             )}
                             <option value="MANAGER">HUB SUPERVISOR</option>
+                            <option value="PURCHASE_MANAGER">PURCHASE MANAGER</option>
                             <option value="POS_OPERATOR">POS OPERATOR</option>
                             <option value="PACKING">PACKER</option>
                             <option value="DELIVERY_PARTNER">DELIVERY DRIVER</option>
@@ -396,6 +397,7 @@ export default function AdminUsers() {
                                                 "px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider border text-center inline-block whitespace-nowrap",
                                                 user.role === "ADMIN" && "bg-emerald-50 text-emerald-600 border-emerald-100",
                                                 user.role === "STORE_ADMIN" && "bg-blue-50 text-blue-600 border-blue-100",
+                                                user.role === "PURCHASE_MANAGER" && "bg-teal-50 text-teal-700 border-teal-200",
                                                 user.role === "POS_OPERATOR" && "bg-amber-50 text-amber-600 border-amber-100",
                                                 user.role === "PACKING" && "bg-purple-50 text-purple-600 border-purple-100",
                                                 user.role === "DELIVERY_PARTNER" && "bg-indigo-50 text-indigo-600 border-indigo-100",
@@ -485,6 +487,7 @@ export default function AdminUsers() {
                                             </>
                                         )}
                                         <option value="MANAGER">Hub Supervisor</option>
+                                        <option value="PURCHASE_MANAGER">Purchase Manager (P&L / Procurement)</option>
                                         <option value="POS_OPERATOR">POS Operator</option>
                                         <option value="PACKING">Packer / Fulfillment</option>
                                         <option value="DELIVERY_PARTNER">Delivery Partner</option>
@@ -619,6 +622,7 @@ export default function AdminUsers() {
                                             </>
                                         )}
                                         <option value="MANAGER">Hub Supervisor</option>
+                                        <option value="PURCHASE_MANAGER">Purchase Manager (P&L / Procurement)</option>
                                         <option value="POS_OPERATOR">POS Operator</option>
                                         <option value="PACKING">Packer / Fulfillment</option>
                                         <option value="DELIVERY_PARTNER">Delivery Partner</option>

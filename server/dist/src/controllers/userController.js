@@ -107,7 +107,7 @@ const createUserAdmin = (req, res) => __awaiter(void 0, void 0, void 0, function
                 targetLocationId = admin === null || admin === void 0 ? void 0 : admin.locationId;
             }
             // Restrict roles a Hub Manager can grant
-            const allowedRoles = ["PACKING", "DELIVERY_PARTNER", "POS_OPERATOR", "USER", "MANAGER"];
+            const allowedRoles = ["PACKING", "DELIVERY_PARTNER", "POS_OPERATOR", "USER", "MANAGER", "PURCHASE_MANAGER"];
             if (!allowedRoles.includes(role)) {
                 return res.status(403).json({ message: "Hub Managers can only onboard Operators, Packers, and Drivers." });
             }
