@@ -2653,7 +2653,7 @@ export default function POSOperator() {
 
             {/* ── WHATSAPP DUE REMINDERS DIALOG ── */}
             <Dialog open={showWhatsappRemindersDialog} onOpenChange={setShowWhatsappRemindersDialog}>
-                <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col p-6 rounded-3xl bg-white border border-slate-200 shadow-2xl">
+                <DialogContent className="w-[95vw] max-w-5xl max-h-[85vh] flex flex-col p-6 sm:p-7 rounded-3xl bg-white border border-slate-200 shadow-2xl">
                     <DialogHeader className="border-b pb-4 flex flex-row items-center justify-between">
                         <div>
                             <DialogTitle className="text-xl font-black text-slate-900 flex items-center gap-2">
@@ -2670,16 +2670,16 @@ export default function POSOperator() {
                     </DialogHeader>
 
                     {/* Top Summary & Actions */}
-                    <div className="flex items-center justify-between gap-3 mt-4 bg-emerald-50/60 p-3.5 rounded-2xl border border-emerald-200/60">
+                    <div className="flex items-center justify-between gap-4 mt-4 bg-emerald-50/70 p-4 sm:p-5 rounded-2xl border border-emerald-200/60">
                         <div>
                             <p className="text-xs font-black uppercase text-emerald-800 tracking-wider">
                                 Total Due Customers: {dueCustomersList.length}
                             </p>
-                            <p className="text-sm font-bold text-emerald-700 mt-0.5">
+                            <p className="text-base font-black text-emerald-700 mt-1 tabular-nums">
                                 Combined Dues: ₹{dueCustomersList.reduce((acc, c) => acc + c.totalDue, 0).toLocaleString()}
                             </p>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-3">
                             <Button
                                 onClick={() => {
                                     if (selectedDueCustomerIds.length === dueCustomersList.length) {
@@ -2690,48 +2690,48 @@ export default function POSOperator() {
                                 }}
                                 variant="outline"
                                 size="sm"
-                                className="rounded-xl border-slate-300 text-xs font-bold"
+                                className="rounded-xl border-slate-300 text-xs font-bold px-4"
                             >
                                 {selectedDueCustomerIds.length === dueCustomersList.length ? "Deselect All" : "Select All"}
                             </Button>
                             <Button
                                 onClick={() => sendWhatsappReminders(selectedDueCustomerIds)}
                                 disabled={isSendingReminders || dueCustomersList.length === 0}
-                                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-md"
+                                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs flex items-center gap-2 px-5 py-2 shadow-md"
                             >
-                                <Send className={cn("h-3.5 w-3.5", isSendingReminders && "animate-spin")} />
+                                <Send className={cn("h-4 w-4", isSendingReminders && "animate-spin")} />
                                 {selectedDueCustomerIds.length > 0 ? `Send to Selected (${selectedDueCustomerIds.length})` : `Send to All (${dueCustomersList.length})`}
                             </Button>
                         </div>
                     </div>
 
                     {/* Search */}
-                    <div className="mt-3 relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                    <div className="mt-4 relative">
+                        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                         <input
                             type="text"
                             value={dueCustomersSearch}
                             onChange={(e) => setDueCustomersSearch(e.target.value)}
                             placeholder="Search due customer by name or phone..."
-                            className="w-full h-9 pl-9 pr-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 ring-emerald-500/20"
+                            className="w-full h-10 pl-10 pr-4 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 ring-emerald-500/20"
                         />
                     </div>
 
                     {/* Customer List */}
-                    <div className="flex-1 overflow-y-auto mt-3 border border-slate-200/60 rounded-2xl">
+                    <div className="flex-1 overflow-y-auto mt-4 border border-slate-200/60 rounded-2xl">
                         {isLoadingDueCustomers ? (
-                            <div className="p-10 text-center text-slate-400 font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2">
-                                <RefreshCw className="h-4 w-4 animate-spin text-emerald-600" /> Loading due records...
+                            <div className="p-12 text-center text-slate-400 font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2">
+                                <RefreshCw className="h-5 w-5 animate-spin text-emerald-600" /> Loading due records...
                             </div>
                         ) : filteredDueCustomers.length === 0 ? (
-                            <div className="p-10 text-center text-slate-400 font-bold text-xs uppercase tracking-wider">
+                            <div className="p-12 text-center text-slate-400 font-bold text-xs uppercase tracking-wider">
                                 No customers found with outstanding dues.
                             </div>
                         ) : (
                             <table className="w-full text-left text-xs">
-                                <thead className="bg-slate-100 text-slate-500 font-black uppercase text-[10px] tracking-wider sticky top-0 border-b border-slate-200">
+                                <thead className="bg-slate-100 text-slate-500 font-black uppercase text-[11px] tracking-wider sticky top-0 border-b border-slate-200">
                                     <tr>
-                                        <th className="py-3 px-4 w-10 text-center">
+                                        <th className="py-3.5 px-5 w-12 text-center">
                                             <input
                                                 type="checkbox"
                                                 checked={selectedDueCustomerIds.length === filteredDueCustomers.length && filteredDueCustomers.length > 0}
@@ -2742,14 +2742,14 @@ export default function POSOperator() {
                                                         setSelectedDueCustomerIds([]);
                                                     }
                                                 }}
-                                                className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                                                className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 h-4 w-4"
                                             />
                                         </th>
-                                        <th className="py-3 px-4">Customer</th>
-                                        <th className="py-3 px-4">Phone</th>
-                                        <th className="py-3 px-4 text-center">Unpaid Bills</th>
-                                        <th className="py-3 px-4 text-right">Total Due Amount</th>
-                                        <th className="py-3 px-4 text-center">Action</th>
+                                        <th className="py-3.5 px-5 whitespace-nowrap">Customer</th>
+                                        <th className="py-3.5 px-5 whitespace-nowrap">Phone</th>
+                                        <th className="py-3.5 px-5 text-center whitespace-nowrap">Unpaid Bills</th>
+                                        <th className="py-3.5 px-5 text-right whitespace-nowrap">Total Due Amount</th>
+                                        <th className="py-3.5 px-5 text-center whitespace-nowrap">Action</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100 font-medium text-slate-800">
@@ -2757,7 +2757,7 @@ export default function POSOperator() {
                                         const isSelected = selectedDueCustomerIds.includes(cust.id);
                                         return (
                                             <tr key={cust.id} className={cn("hover:bg-slate-50 transition-colors", isSelected && "bg-emerald-50/40")}>
-                                                <td className="py-3 px-4 text-center">
+                                                <td className="py-3.5 px-5 text-center">
                                                     <input
                                                         type="checkbox"
                                                         checked={isSelected}
@@ -2768,27 +2768,27 @@ export default function POSOperator() {
                                                                 setSelectedDueCustomerIds(selectedDueCustomerIds.filter(id => id !== cust.id));
                                                             }
                                                         }}
-                                                        className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                                                        className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 h-4 w-4"
                                                     />
                                                 </td>
-                                                <td className="py-3 px-4 font-black text-slate-900">{cust.name}</td>
-                                                <td className="py-3 px-4 text-slate-600 font-mono font-bold">{cust.phone}</td>
-                                                <td className="py-3 px-4 text-center">
-                                                    <span className="bg-amber-100 text-amber-800 text-[10px] font-black px-2 py-0.5 rounded-full border border-amber-200">
+                                                <td className="py-3.5 px-5 font-black text-slate-900 whitespace-nowrap">{cust.name}</td>
+                                                <td className="py-3.5 px-5 text-slate-600 font-mono font-bold whitespace-nowrap">{cust.phone}</td>
+                                                <td className="py-3.5 px-5 text-center whitespace-nowrap">
+                                                    <span className="bg-amber-100 text-amber-800 text-[10px] font-black px-3 py-1 rounded-full border border-amber-200">
                                                         {cust.dueOrdersCount} {cust.dueOrdersCount === 1 ? "Bill" : "Bills"}
                                                     </span>
                                                 </td>
-                                                <td className="py-3 px-4 text-right font-black text-rose-600 tabular-nums text-sm">
+                                                <td className="py-3.5 px-5 text-right font-black text-rose-600 tabular-nums text-sm whitespace-nowrap">
                                                     ₹{cust.totalDue.toFixed(2)}
                                                 </td>
-                                                <td className="py-3 px-4 text-center">
+                                                <td className="py-3.5 px-5 text-center whitespace-nowrap">
                                                     <Button
                                                         onClick={() => sendWhatsappReminders([cust.id])}
                                                         disabled={isSendingReminders}
                                                         size="sm"
-                                                        className="bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold rounded-lg h-7 px-2.5 flex items-center gap-1 shadow-sm"
+                                                        className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl h-8 px-3.5 flex items-center gap-1.5 shadow-sm"
                                                     >
-                                                        <MessageCircle className="h-3 w-3" /> Remind
+                                                        <MessageCircle className="h-3.5 w-3.5" /> Remind
                                                     </Button>
                                                 </td>
                                             </tr>
