@@ -95,14 +95,17 @@ const syncEasebuzzTransactions = (customStartDate, customEndDate) => __awaiter(v
         return { success: false, message: "Easebuzz credentials missing" };
     }
     const today = new Date();
-    const threeDaysAgo = new Date(today);
-    threeDaysAgo.setDate(today.getDate() - 3);
-    const startDate = customStartDate || formatDate(threeDaysAgo);
+    const earliestOrder = yield prisma_1.default.order.findFirst({
+        orderBy: { createdAt: "asc" },
+        select: { createdAt: true }
+    });
+    const defaultStartDate = (earliestOrder === null || earliestOrder === void 0 ? void 0 : earliestOrder.createdAt) ? earliestOrder.createdAt : new Date(2024, 0, 1);
+    const startDate = customStartDate || formatDate(defaultStartDate);
     const endDate = customEndDate || formatDate(today);
     const baseUrl = env === "prod" || env === "production"
         ? "https://dashboard.easebuzz.in"
         : "https://testdashboard.easebuzz.in";
-    // 1. Fetch all currently UNPAID order IDs from the database to target pending transactions specifically
+    // 1. Fetch all currently UNPAID order IDs from the database till date to target pending transactions specifically
     const unpaidOrders = yield prisma_1.default.order.findMany({
         where: {
             isPaid: false,
@@ -113,22 +116,21 @@ const syncEasebuzzTransactions = (customStartDate, customEndDate) => __awaiter(v
             id: true,
             totalAmount: true,
             user: { select: { phone: true, email: true } }
-        },
-        take: 100
+        }
     });
     const unpaidTxnIds = new Set(unpaidOrders.map(o => o.id));
-    logger_1.default.info(`[Easebuzz Sync] Target unpaid database orders count: ${unpaidTxnIds.size}`);
+    logger_1.default.info(`[Easebuzz Sync] Target unpaid database orders count till date: ${unpaidTxnIds.size}`);
     // Reverse Hash sequence for retrieve/date API: key|merchant_email|start_date|end_date|salt
     const hashSequence = `${key}|${merchantEmail}|${startDate}|${endDate}|${salt}`;
     const hash = generateSha512(hashSequence);
-    logger_1.default.info(`[Easebuzz Sync] Starting transaction sync from ${startDate} to ${endDate}...`);
+    logger_1.default.info(`[Easebuzz Sync] Starting transaction sync till date (from ${startDate} to ${endDate})...`);
     let totalFetched = 0;
     let totalSettled = 0;
     let nextToken = null;
     let hasMore = true;
     let pageCount = 0;
     try {
-        while (hasMore && pageCount < 20) {
+        while (hasMore && pageCount < 100) {
             pageCount++;
             const payload = {
                 key,
