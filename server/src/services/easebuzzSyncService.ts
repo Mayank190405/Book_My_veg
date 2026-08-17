@@ -32,12 +32,44 @@ export const verifySingleEasebuzzTx = async (txnid: string, amount?: number, ema
     const phoneStr = phone || "";
     const merchantEmail = process.env.EASEBUZZ_MERCHANT_EMAIL || process.env.MERCHANT_EMAIL || "";
 
+    // Test hash sequences for v2.1 and v2 retrieve API:
+    // Format 1: key|txnid|salt (v2.1 standard)
+    // Format 2: key|txnid|amount|email|phone|salt
     const hashSequences = [
         `${key}|${txnid}|${salt}`,
         `${key}|${txnid}|${amountStr}|${emailStr}|${phoneStr}|${salt}`,
         `${key}|${merchantEmail}|${txnid}|${salt}`
     ];
 
+    // First try Easebuzz v2.1 API Endpoint: /transaction/v2.1/retrieve
+    for (const seq of hashSequences) {
+        const hash = generateSha512(seq);
+        try {
+            const response = await axios.post(
+                `${baseUrl}/transaction/v2.1/retrieve`,
+                new URLSearchParams({
+                    key,
+                    txnid,
+                    hash
+                }).toString(),
+                {
+                    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                    timeout: 5000
+                }
+            );
+
+            if (response.data && response.data.status === true) {
+                const txData = Array.isArray(response.data.msg) ? response.data.msg[0] : response.data.msg;
+                if (txData) {
+                    return { status: true, msg: txData };
+                }
+            }
+        } catch (e: any) {
+            // Fallthrough to v2 if v2.1 error
+        }
+    }
+
+    // Secondary fallback: Easebuzz v2 API Endpoint: /transaction/v2/retrieve
     for (const seq of hashSequences) {
         const hash = generateSha512(seq);
         try {
@@ -53,15 +85,18 @@ export const verifySingleEasebuzzTx = async (txnid: string, amount?: number, ema
                 }).toString(),
                 {
                     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-                    timeout: 4000
+                    timeout: 5000
                 }
             );
 
             if (response.data && (response.data.status === true || response.data.status === "success")) {
-                return response.data;
+                const txData = Array.isArray(response.data.msg) ? response.data.msg[0] : (response.data.msg || response.data);
+                if (txData) {
+                    return { status: true, msg: txData };
+                }
             }
         } catch (e: any) {
-            // Silence expected 400 for non-existent transaction IDs
+            // Ignore expected 400 for non-existent IDs
         }
     }
 
@@ -104,7 +139,6 @@ export const syncEasebuzzTransactions = async (customStartDate?: string, customE
     const unpaidOrders = await prisma.order.findMany({
         where: {
             isPaid: false,
-            paymentStatus: { in: ["PENDING", "PARTIAL"] },
             status: { notIn: ["CANCELLED", "FAILED"] }
         },
         select: {
@@ -230,10 +264,10 @@ export const syncEasebuzzTransactions = async (customStartDate?: string, customE
             }
         }
 
-        // 2. Query remaining unpaid database orders via Single Retrieve API concurrently (max 50 orders per sync cycle)
+        // 2. Query remaining unpaid database orders via Easebuzz v2.1 Single Retrieve API concurrently
         const remainingUnpaid = unpaidOrders.filter(o => unpaidTxnIds.has(o.id)).slice(0, 50);
         if (remainingUnpaid.length > 0) {
-            logger.info(`[Easebuzz Sync] Parallel checking ${remainingUnpaid.length} remaining unpaid orders...`);
+            logger.info(`[Easebuzz Sync] Parallel checking ${remainingUnpaid.length} remaining unpaid orders via Easebuzz v2.1 retrieve API...`);
             
             const batchSize = 10;
             for (let i = 0; i < remainingUnpaid.length; i += batchSize) {
@@ -246,12 +280,12 @@ export const syncEasebuzzTransactions = async (customStartDate?: string, customE
                         order.user?.phone || undefined
                     );
 
-                    if (singleRes && (singleRes.status === true || singleRes.status === "success")) {
-                        const txData = singleRes.msg || singleRes.data || singleRes;
+                    if (singleRes && singleRes.status === true && singleRes.msg) {
+                        const txData = Array.isArray(singleRes.msg) ? singleRes.msg[0] : singleRes.msg;
                         const statusStr = (txData.status || "").toLowerCase();
                         if (statusStr === "success" || statusStr === "charged") {
                             const easepayid = txData.easepayid || txData.easebuzz_id || order.id;
-                            const amount = Number(txData.amount || txData.net_debit_amount || order.totalAmount);
+                            const amount = Number(txData.amount || txData.net_amount_debit || order.totalAmount);
                             const result = await completeOrderPayment(order.id, {
                                 status: "CHARGED",
                                 txn_id: easepayid,
