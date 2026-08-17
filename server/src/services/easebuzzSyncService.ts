@@ -2,6 +2,7 @@ import cron from "node-cron";
 import axios from "axios";
 import crypto from "crypto";
 import logger from "../utils/logger";
+import prisma from "../config/prisma";
 import { completeOrderPayment } from "../controllers/paymentController";
 
 const generateSha512 = (str: string) => {
@@ -13,6 +14,46 @@ const formatDate = (date: Date): string => {
     const month = String(date.getMonth() + 1).padStart(2, "0");
     const year = date.getFullYear();
     return `${day}-${month}-${year}`;
+};
+
+export const verifySingleEasebuzzTx = async (txnid: string, amount?: number, email?: string, phone?: string) => {
+    const key = process.env.EASEBUZZ_KEY || process.env.EASEBUZZ_MERCHANT_KEY;
+    const salt = process.env.EASEBUZZ_SALT;
+    const env = process.env.EASEBUZZ_ENV || process.env.ENV || "test";
+
+    if (!key || !salt) return null;
+
+    const baseUrl = env === "prod" || env === "production"
+        ? "https://dashboard.easebuzz.in"
+        : "https://testdashboard.easebuzz.in";
+
+    const amountStr = amount ? amount.toFixed(2) : "";
+    const emailStr = email || "";
+    const phoneStr = phone || "";
+    const hashSequence = `${key}|${txnid}|${amountStr}|${emailStr}|${phoneStr}|${salt}`;
+    const hash = generateSha512(hashSequence);
+
+    try {
+        const response = await axios.post(
+            `${baseUrl}/transaction/v2/retrieve`,
+            new URLSearchParams({
+                key,
+                txnid,
+                amount: amountStr,
+                email: emailStr,
+                phone: phoneStr,
+                hash
+            }).toString(),
+            {
+                headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                timeout: 10000
+            }
+        );
+
+        return response.data;
+    } catch (e: any) {
+        return null;
+    }
 };
 
 export const syncEasebuzzTransactions = async (customStartDate?: string, customEndDate?: string) => {
@@ -36,6 +77,24 @@ export const syncEasebuzzTransactions = async (customStartDate?: string, customE
     const baseUrl = env === "prod" || env === "production"
         ? "https://dashboard.easebuzz.in"
         : "https://testdashboard.easebuzz.in";
+
+    // 1. Fetch all currently UNPAID order IDs from the database to target pending transactions specifically
+    const unpaidOrders = await prisma.order.findMany({
+        where: {
+            isPaid: false,
+            paymentStatus: { in: ["PENDING", "PARTIAL"] },
+            status: { notIn: ["CANCELLED", "FAILED"] }
+        },
+        select: {
+            id: true,
+            totalAmount: true,
+            user: { select: { phone: true, email: true } }
+        },
+        take: 100
+    });
+
+    const unpaidTxnIds = new Set(unpaidOrders.map(o => o.id));
+    logger.info(`[Easebuzz Sync] Target unpaid database orders count: ${unpaidTxnIds.size}`);
 
     // Reverse Hash sequence for retrieve/date API: key|merchant_email|start_date|end_date|salt
     const hashSequence = `${key}|${merchantEmail}|${startDate}|${endDate}|${salt}`;
@@ -115,6 +174,7 @@ export const syncEasebuzzTransactions = async (customStartDate?: string, customE
 
                         if (result?.status === "SUCCESS") {
                             totalSettled++;
+                            unpaidTxnIds.delete(resolvedOrderId);
                         }
                     } catch (txErr: any) {
                         logger.error(`[Easebuzz Sync] Error settling txnid ${tx.txnid}: ${txErr.message}`);
@@ -129,11 +189,45 @@ export const syncEasebuzzTransactions = async (customStartDate?: string, customE
             }
         }
 
-        logger.info(`[Easebuzz Sync] Sync complete! Fetched: ${totalFetched}, Settled: ${totalSettled}.`);
+        // 2. Target specific unpaid transaction IDs via single retrieve API if still unpaid
+        for (const order of unpaidOrders) {
+            if (unpaidTxnIds.has(order.id)) {
+                const singleRes = await verifySingleEasebuzzTx(
+                    order.id,
+                    Number(order.totalAmount),
+                    order.user?.email || undefined,
+                    order.user?.phone || undefined
+                );
+                if (singleRes && singleRes.status === true && singleRes.msg) {
+                    const txData = singleRes.msg;
+                    const statusStr = (txData.status || "").toLowerCase();
+                    if (statusStr === "success" || statusStr === "charged") {
+                        const easepayid = txData.easepayid || txData.easebuzz_id || order.id;
+                        const amount = Number(txData.amount || order.totalAmount);
+                        const result = await completeOrderPayment(order.id, {
+                            status: "CHARGED",
+                            txn_id: easepayid,
+                            amount,
+                            payment_method_type: "ONLINE",
+                            phone: txData.phone || order.user?.phone,
+                            email: txData.email || order.user?.email,
+                            firstname: txData.firstname,
+                            metadata: txData
+                        });
+                        if (result?.status === "SUCCESS") {
+                            totalSettled++;
+                        }
+                    }
+                }
+            }
+        }
+
+        logger.info(`[Easebuzz Sync] Sync complete! Total Fetched: ${totalFetched}, Total Settled: ${totalSettled}.`);
         return {
             success: true,
             totalFetched,
             totalSettled,
+            unpaidOrdersChecked: unpaidOrders.length,
             startDate,
             endDate
         };
@@ -146,11 +240,11 @@ export const syncEasebuzzTransactions = async (customStartDate?: string, customE
 export const startEasebuzzSyncCron = () => {
     // Schedule cron every 6 hours: 00:00, 06:00, 12:00, 18:00
     cron.schedule("0 */6 * * *", async () => {
-        logger.info("[Cron] Running 6-hour Easebuzz transaction sync job...");
+        logger.info("[Cron] Running 6-hour Easebuzz transaction sync job targeting unpaid transactions...");
         await syncEasebuzzTransactions();
     });
 
-    logger.info("⏰ Easebuzz Transaction Sync Cron initialized (Runs every 6 hours)");
+    logger.info("⏰ Easebuzz Transaction Sync Cron initialized (Targeting unpaid transactions every 6 hours)");
 
     // Initial sync 30 seconds after server startup
     setTimeout(() => {
