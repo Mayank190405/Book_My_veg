@@ -460,8 +460,8 @@ export const settleDuesForCustomer = async (userId: string, amount: number, tran
         const unpaid = await tx.order.findMany({
             where: {
                 userId: targetUserId,
-                paymentStatus: { in: ["PENDING", "PARTIAL"] },
-                status: { notIn: ["CANCELLED", "FAILED", "PAYMENT_PENDING"] }
+                isPaid: false,
+                status: { notIn: ["CANCELLED", "FAILED"] }
             },
             orderBy: { createdAt: "asc" },
             include: { payments: true }
@@ -538,7 +538,7 @@ export const completeOrderPayment = async (orderId: string, paymentDetails: any)
 
         existing = await prisma.order.findFirst({
             where: {
-                id: { in: uniqueCandidates }
+                OR: uniqueCandidates.map(cId => ({ id: { equals: cId, mode: "insensitive" } }))
             },
             include: { items: true, user: true }
         });

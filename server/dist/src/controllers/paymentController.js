@@ -434,8 +434,8 @@ const settleDuesForCustomer = (userId, amount, transactionId, metadata) => __awa
         const unpaid = yield tx.order.findMany({
             where: {
                 userId: targetUserId,
-                paymentStatus: { in: ["PENDING", "PARTIAL"] },
-                status: { notIn: ["CANCELLED", "FAILED", "PAYMENT_PENDING"] }
+                isPaid: false,
+                status: { notIn: ["CANCELLED", "FAILED"] }
             },
             orderBy: { createdAt: "asc" },
             include: { payments: true }
@@ -506,7 +506,7 @@ const completeOrderPayment = (orderId, paymentDetails) => __awaiter(void 0, void
         const uniqueCandidates = Array.from(new Set(candidates)).filter(Boolean);
         existing = yield prisma_1.default.order.findFirst({
             where: {
-                id: { in: uniqueCandidates }
+                OR: uniqueCandidates.map(cId => ({ id: { equals: cId, mode: "insensitive" } }))
             },
             include: { items: true, user: true }
         });
