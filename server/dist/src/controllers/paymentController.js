@@ -504,20 +504,21 @@ const completeOrderPayment = (orderId, paymentDetails) => __awaiter(void 0, void
             }
         }
         const uniqueCandidates = Array.from(new Set(candidates)).filter(Boolean);
+        const orConditions = [];
+        uniqueCandidates.forEach(c => {
+            orConditions.push({ id: c });
+            orConditions.push({ id: { equals: c, mode: "insensitive" } });
+            orConditions.push({ id: { contains: c, mode: "insensitive" } });
+            if (c.length >= 8) {
+                const prefix8 = c.slice(0, 8);
+                orConditions.push({ id: prefix8 });
+                orConditions.push({ id: { equals: prefix8, mode: "insensitive" } });
+            }
+        });
         existing = yield prisma_1.default.order.findFirst({
-            where: {
-                OR: uniqueCandidates.map(cId => ({ id: { equals: cId, mode: "insensitive" } }))
-            },
+            where: { OR: orConditions },
             include: { items: true, user: true }
         });
-        if (!existing) {
-            existing = yield prisma_1.default.order.findFirst({
-                where: {
-                    OR: uniqueCandidates.map(cId => ({ id: { contains: cId, mode: "insensitive" } }))
-                },
-                include: { items: true, user: true }
-            });
-        }
         if (existing) {
             resolvedOrderId = existing.id;
         }
@@ -549,8 +550,8 @@ const completeOrderPayment = (orderId, paymentDetails) => __awaiter(void 0, void
         }
         // Fallback 2: Customer Phone / Email matching for automatic account settlement
         if (!existing && (paymentDetails.status === "CHARGED" || paymentDetails.status === "SUCCESS")) {
-            const custPhone = paymentDetails.phone || paymentDetails.customerPhone || paymentDetails.firstname;
-            const custEmail = paymentDetails.email || paymentDetails.customerEmail;
+            const custPhone = paymentDetails.phone || paymentDetails.customerPhone || paymentDetails.customer_phone || paymentDetails.phone_number || paymentDetails.mobile || paymentDetails.user_phone;
+            const custEmail = paymentDetails.email || paymentDetails.customerEmail || paymentDetails.customer_email || paymentDetails.user_email;
             let cleanPhone = custPhone ? String(custPhone).replace(/\D/g, "") : "";
             if (cleanPhone.length > 10)
                 cleanPhone = cleanPhone.slice(-10);
@@ -568,7 +569,7 @@ const completeOrderPayment = (orderId, paymentDetails) => __awaiter(void 0, void
                     }
                 });
                 if (customer) {
-                    logger_1.default.info(`[Payment] Order ${resolvedOrderId} not found, auto-settling customer ${customer.id} (${customer.name}) via phone/email fallback`);
+                    logger_1.default.info(`[Payment] Auto-settling customer ${customer.id} (${customer.name}) via phone/email fallback for amount ${paymentDetails.amount}`);
                     yield (0, exports.settleDuesForCustomer)(customer.id, Number(paymentDetails.amount), paymentDetails.txn_id || orderId, paymentDetails);
                     return { status: "SUCCESS" };
                 }
