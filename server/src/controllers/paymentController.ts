@@ -1580,8 +1580,16 @@ export const triggerEasebuzzSync = async (req: AuthenticatedRequest, res: Respon
     const { startDate, endDate } = req.body || {};
     try {
         const { syncEasebuzzTransactions } = await import("../services/easebuzzSyncService");
-        const result = await syncEasebuzzTransactions(startDate, endDate);
-        return res.json(result);
+        
+        // Launch transaction sync asynchronously in background to prevent HTTP 502 gateway timeouts
+        syncEasebuzzTransactions(startDate, endDate).catch((err: any) => {
+            logger.error(`[Easebuzz Sync Worker Error] ${err.message}`);
+        });
+
+        return res.json({
+            success: true,
+            message: "Easebuzz transaction sync initiated in background! Reconciling dues..."
+        });
     } catch (error: any) {
         return res.status(500).json({ message: error.message || "Failed to trigger Easebuzz sync" });
     }

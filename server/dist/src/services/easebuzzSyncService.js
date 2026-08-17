@@ -130,12 +130,14 @@ const syncEasebuzzTransactions = (customStartDate_1, customEndDate_1, ...args_1)
         logger_1.default.warn("[Easebuzz Sync] Skipping sync — EASEBUZZ_KEY or EASEBUZZ_SALT not configured.");
         return { success: false, message: "Easebuzz credentials missing" };
     }
-    // 1. PRIMARY QUERY ENGINE: Easebuzz v2.1 Retrieve API for all unpaid database orders
+    // 1. PRIMARY QUERY ENGINE: Easebuzz v2.1 Retrieve API for recent unpaid database orders (max 30 per cycle)
     const unpaidOrders = yield prisma_1.default.order.findMany({
         where: {
             isPaid: false,
             status: { notIn: ["CANCELLED", "FAILED"] }
         },
+        orderBy: { createdAt: "desc" },
+        take: 30,
         select: {
             id: true,
             totalAmount: true,

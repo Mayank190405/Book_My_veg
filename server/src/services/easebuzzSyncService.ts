@@ -112,12 +112,14 @@ export const syncEasebuzzTransactions = async (customStartDate?: string, customE
         return { success: false, message: "Easebuzz credentials missing" };
     }
 
-    // 1. PRIMARY QUERY ENGINE: Easebuzz v2.1 Retrieve API for all unpaid database orders
+    // 1. PRIMARY QUERY ENGINE: Easebuzz v2.1 Retrieve API for recent unpaid database orders (max 30 per cycle)
     const unpaidOrders = await prisma.order.findMany({
         where: {
             isPaid: false,
             status: { notIn: ["CANCELLED", "FAILED"] }
         },
+        orderBy: { createdAt: "desc" },
+        take: 30,
         select: {
             id: true,
             totalAmount: true,
