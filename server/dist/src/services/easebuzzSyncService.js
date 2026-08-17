@@ -89,7 +89,6 @@ const verifySingleEasebuzzTx = (txnid, amount, email, phone) => __awaiter(void 0
 });
 exports.verifySingleEasebuzzTx = verifySingleEasebuzzTx;
 const syncEasebuzzTransactions = (customStartDate_1, customEndDate_1, ...args_1) => __awaiter(void 0, [customStartDate_1, customEndDate_1, ...args_1], void 0, function* (customStartDate, customEndDate, forceFullHistory = true) {
-    var _a, _b, _c, _d;
     const key = process.env.EASEBUZZ_KEY || process.env.EASEBUZZ_MERCHANT_KEY;
     const salt = process.env.EASEBUZZ_SALT;
     const env = process.env.EASEBUZZ_ENV || process.env.ENV || "test";
@@ -216,34 +215,39 @@ const syncEasebuzzTransactions = (customStartDate_1, customEndDate_1, ...args_1)
                 hasMore = false;
             }
         }
-        // 2. Query remaining unpaid database orders via Single Retrieve API
-        const remainingUnpaid = unpaidOrders.filter(o => unpaidTxnIds.has(o.id));
+        // 2. Query remaining unpaid database orders via Single Retrieve API concurrently (max 50 orders per sync cycle)
+        const remainingUnpaid = unpaidOrders.filter(o => unpaidTxnIds.has(o.id)).slice(0, 50);
         if (remainingUnpaid.length > 0) {
-            logger_1.default.info(`[Easebuzz Sync] Checking ${remainingUnpaid.length} remaining unpaid orders via single retrieve API...`);
-            for (const order of remainingUnpaid) {
-                const singleRes = yield (0, exports.verifySingleEasebuzzTx)(order.id, Number(order.totalAmount), ((_a = order.user) === null || _a === void 0 ? void 0 : _a.email) || undefined, ((_b = order.user) === null || _b === void 0 ? void 0 : _b.phone) || undefined);
-                if (singleRes && (singleRes.status === true || singleRes.status === "success")) {
-                    const txData = singleRes.msg || singleRes.data || singleRes;
-                    const statusStr = (txData.status || "").toLowerCase();
-                    if (statusStr === "success" || statusStr === "charged") {
-                        const easepayid = txData.easepayid || txData.easebuzz_id || order.id;
-                        const amount = Number(txData.amount || txData.net_debit_amount || order.totalAmount);
-                        const result = yield (0, paymentController_1.completeOrderPayment)(order.id, {
-                            status: "CHARGED",
-                            txn_id: easepayid,
-                            amount,
-                            payment_method_type: "ONLINE",
-                            phone: txData.phone || ((_c = order.user) === null || _c === void 0 ? void 0 : _c.phone),
-                            email: txData.email || ((_d = order.user) === null || _d === void 0 ? void 0 : _d.email),
-                            firstname: txData.firstname,
-                            productinfo: txData.productinfo,
-                            metadata: txData
-                        });
-                        if ((result === null || result === void 0 ? void 0 : result.status) === "SUCCESS") {
-                            totalSettled++;
+            logger_1.default.info(`[Easebuzz Sync] Parallel checking ${remainingUnpaid.length} remaining unpaid orders...`);
+            const batchSize = 10;
+            for (let i = 0; i < remainingUnpaid.length; i += batchSize) {
+                const batch = remainingUnpaid.slice(i, i + batchSize);
+                yield Promise.all(batch.map((order) => __awaiter(void 0, void 0, void 0, function* () {
+                    var _a, _b, _c, _d;
+                    const singleRes = yield (0, exports.verifySingleEasebuzzTx)(order.id, Number(order.totalAmount), ((_a = order.user) === null || _a === void 0 ? void 0 : _a.email) || undefined, ((_b = order.user) === null || _b === void 0 ? void 0 : _b.phone) || undefined);
+                    if (singleRes && (singleRes.status === true || singleRes.status === "success")) {
+                        const txData = singleRes.msg || singleRes.data || singleRes;
+                        const statusStr = (txData.status || "").toLowerCase();
+                        if (statusStr === "success" || statusStr === "charged") {
+                            const easepayid = txData.easepayid || txData.easebuzz_id || order.id;
+                            const amount = Number(txData.amount || txData.net_debit_amount || order.totalAmount);
+                            const result = yield (0, paymentController_1.completeOrderPayment)(order.id, {
+                                status: "CHARGED",
+                                txn_id: easepayid,
+                                amount,
+                                payment_method_type: "ONLINE",
+                                phone: txData.phone || ((_c = order.user) === null || _c === void 0 ? void 0 : _c.phone),
+                                email: txData.email || ((_d = order.user) === null || _d === void 0 ? void 0 : _d.email),
+                                firstname: txData.firstname,
+                                productinfo: txData.productinfo,
+                                metadata: txData
+                            });
+                            if ((result === null || result === void 0 ? void 0 : result.status) === "SUCCESS") {
+                                totalSettled++;
+                            }
                         }
                     }
-                }
+                })));
             }
         }
         // 3. Clean up any existing duplicate payment entries across orders

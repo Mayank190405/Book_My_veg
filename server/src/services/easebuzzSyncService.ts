@@ -230,40 +230,45 @@ export const syncEasebuzzTransactions = async (customStartDate?: string, customE
             }
         }
 
-        // 2. Query remaining unpaid database orders via Single Retrieve API
-        const remainingUnpaid = unpaidOrders.filter(o => unpaidTxnIds.has(o.id));
+        // 2. Query remaining unpaid database orders via Single Retrieve API concurrently (max 50 orders per sync cycle)
+        const remainingUnpaid = unpaidOrders.filter(o => unpaidTxnIds.has(o.id)).slice(0, 50);
         if (remainingUnpaid.length > 0) {
-            logger.info(`[Easebuzz Sync] Checking ${remainingUnpaid.length} remaining unpaid orders via single retrieve API...`);
-            for (const order of remainingUnpaid) {
-                const singleRes = await verifySingleEasebuzzTx(
-                    order.id,
-                    Number(order.totalAmount),
-                    order.user?.email || undefined,
-                    order.user?.phone || undefined
-                );
+            logger.info(`[Easebuzz Sync] Parallel checking ${remainingUnpaid.length} remaining unpaid orders...`);
+            
+            const batchSize = 10;
+            for (let i = 0; i < remainingUnpaid.length; i += batchSize) {
+                const batch = remainingUnpaid.slice(i, i + batchSize);
+                await Promise.all(batch.map(async (order) => {
+                    const singleRes = await verifySingleEasebuzzTx(
+                        order.id,
+                        Number(order.totalAmount),
+                        order.user?.email || undefined,
+                        order.user?.phone || undefined
+                    );
 
-                if (singleRes && (singleRes.status === true || singleRes.status === "success")) {
-                    const txData = singleRes.msg || singleRes.data || singleRes;
-                    const statusStr = (txData.status || "").toLowerCase();
-                    if (statusStr === "success" || statusStr === "charged") {
-                        const easepayid = txData.easepayid || txData.easebuzz_id || order.id;
-                        const amount = Number(txData.amount || txData.net_debit_amount || order.totalAmount);
-                        const result = await completeOrderPayment(order.id, {
-                            status: "CHARGED",
-                            txn_id: easepayid,
-                            amount,
-                            payment_method_type: "ONLINE",
-                            phone: txData.phone || order.user?.phone,
-                            email: txData.email || order.user?.email,
-                            firstname: txData.firstname,
-                            productinfo: txData.productinfo,
-                            metadata: txData
-                        });
-                        if (result?.status === "SUCCESS") {
-                            totalSettled++;
+                    if (singleRes && (singleRes.status === true || singleRes.status === "success")) {
+                        const txData = singleRes.msg || singleRes.data || singleRes;
+                        const statusStr = (txData.status || "").toLowerCase();
+                        if (statusStr === "success" || statusStr === "charged") {
+                            const easepayid = txData.easepayid || txData.easebuzz_id || order.id;
+                            const amount = Number(txData.amount || txData.net_debit_amount || order.totalAmount);
+                            const result = await completeOrderPayment(order.id, {
+                                status: "CHARGED",
+                                txn_id: easepayid,
+                                amount,
+                                payment_method_type: "ONLINE",
+                                phone: txData.phone || order.user?.phone,
+                                email: txData.email || order.user?.email,
+                                firstname: txData.firstname,
+                                productinfo: txData.productinfo,
+                                metadata: txData
+                            });
+                            if (result?.status === "SUCCESS") {
+                                totalSettled++;
+                            }
                         }
                     }
-                }
+                }));
             }
         }
 
