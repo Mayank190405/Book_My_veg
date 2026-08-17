@@ -641,6 +641,10 @@ const completeOrderPayment = (orderId, paymentDetails) => __awaiter(void 0, void
             const totalPaid = allPayments.reduce((sum, p) => sum + Number(p.amount), 0);
             const orderTotal = Number(existing.totalAmount);
             const isFull = totalPaid >= orderTotal;
+            // Purge any leftover PENDING payment records for this order so it never displays as pending
+            yield tx.payment.deleteMany({
+                where: { orderId: resolvedOrderId, status: "PENDING" }
+            });
             // Determine payment status
             const newPaymentStatus = isFull ? "COMPLETED" : "PARTIAL";
             // Only update status to CONFIRMED if order is still in a pre-confirmed state
@@ -1537,6 +1541,22 @@ const cleanUpDuplicatePayments = () => __awaiter(void 0, void 0, void 0, functio
                     isPaid: isFull,
                     paymentStatus: isFull ? "COMPLETED" : (newTotalPaid > 0 ? "PARTIAL" : "PENDING")
                 }
+            });
+            if (isFull) {
+                yield prisma_1.default.payment.deleteMany({
+                    where: { orderId, status: "PENDING" }
+                });
+            }
+        }
+        // 3. Purge all orphan/stale PENDING payment records for fully paid orders across the system
+        const fullyPaidOrders = yield prisma_1.default.order.findMany({
+            where: { OR: [{ isPaid: true }, { paymentStatus: "COMPLETED" }] },
+            select: { id: true }
+        });
+        const paidOrderIds = fullyPaidOrders.map(o => o.id);
+        if (paidOrderIds.length > 0) {
+            yield prisma_1.default.payment.deleteMany({
+                where: { orderId: { in: paidOrderIds }, status: "PENDING" }
             });
         }
     }

@@ -681,6 +681,11 @@ export const completeOrderPayment = async (orderId: string, paymentDetails: any)
             const orderTotal = Number(existing.totalAmount);
             const isFull = totalPaid >= orderTotal;
 
+            // Purge any leftover PENDING payment records for this order so it never displays as pending
+            await tx.payment.deleteMany({
+                where: { orderId: resolvedOrderId, status: "PENDING" }
+            });
+
             // Determine payment status
             const newPaymentStatus = isFull ? "COMPLETED" : "PARTIAL";
 
@@ -1694,6 +1699,24 @@ export const cleanUpDuplicatePayments = async () => {
                     isPaid: isFull,
                     paymentStatus: isFull ? "COMPLETED" : (newTotalPaid > 0 ? "PARTIAL" : "PENDING")
                 }
+            });
+
+            if (isFull) {
+                await prisma.payment.deleteMany({
+                    where: { orderId, status: "PENDING" }
+                });
+            }
+        }
+
+        // 3. Purge all orphan/stale PENDING payment records for fully paid orders across the system
+        const fullyPaidOrders = await prisma.order.findMany({
+            where: { OR: [{ isPaid: true }, { paymentStatus: "COMPLETED" }] },
+            select: { id: true }
+        });
+        const paidOrderIds = fullyPaidOrders.map(o => o.id);
+        if (paidOrderIds.length > 0) {
+            await prisma.payment.deleteMany({
+                where: { orderId: { in: paidOrderIds }, status: "PENDING" }
             });
         }
     } catch (e: any) {
