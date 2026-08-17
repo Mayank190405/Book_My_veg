@@ -658,7 +658,7 @@ const getCustomerDetailedReport = (req, res, next) => __awaiter(void 0, void 0, 
         }
         // Fetch all orders and payments chronologically
         const orders = yield prisma_1.default.order.findMany({
-            where: Object.assign(Object.assign(Object.assign({ userId: custId, status: { notIn: ["CANCELLED", "FAILED", "PAYMENT_PENDING"] } }, (channelStr ? { channel: channelStr } : {})), (targetLocationId ? { locationId: targetLocationId } : {})), (startStr || endStr ? {
+            where: Object.assign(Object.assign(Object.assign({ userId: custId, status: { notIn: ["CANCELLED", "FAILED"] } }, (channelStr ? { channel: channelStr } : {})), (targetLocationId ? { locationId: targetLocationId } : {})), (startStr || endStr ? {
                 createdAt: Object.assign(Object.assign({}, (startStr ? { gte: new Date(startStr) } : {})), (endStr ? { lte: new Date(endStr) } : {}))
             } : {})),
             include: {
@@ -670,7 +670,19 @@ const getCustomerDetailedReport = (req, res, next) => __awaiter(void 0, void 0, 
             },
             orderBy: { createdAt: "asc" }
         });
+        // Fetch all successful customer payments (including direct account settlements)
+        const allCustomerPayments = yield prisma_1.default.payment.findMany({
+            where: {
+                status: "SUCCESS",
+                OR: [
+                    { orderId: { in: orders.map((o) => o.id) } },
+                    { order: { userId: custId } }
+                ]
+            },
+            orderBy: { createdAt: "asc" }
+        });
         const events = [];
+        const processedPaymentIds = new Set();
         orders.forEach((order) => {
             var _a, _b;
             // Charge Event for the Order itself
@@ -689,6 +701,7 @@ const getCustomerDetailedReport = (req, res, next) => __awaiter(void 0, void 0, 
             });
             // Payment Events for successful payments associated with this order (excluding CREDIT records)
             order.payments.filter((p) => p.method !== "CREDIT").forEach((payment) => {
+                processedPaymentIds.add(payment.id);
                 events.push({
                     type: "PAYMENT",
                     date: payment.createdAt,
@@ -702,6 +715,24 @@ const getCustomerDetailedReport = (req, res, next) => __awaiter(void 0, void 0, 
                     }
                 });
             });
+        });
+        // Add any account settlement payments that were not attached directly to orders
+        allCustomerPayments.forEach((p) => {
+            if (!processedPaymentIds.has(p.id)) {
+                processedPaymentIds.add(p.id);
+                events.push({
+                    type: "PAYMENT",
+                    date: p.createdAt,
+                    id: `payment_${p.id}`,
+                    referenceId: p.orderId || custId,
+                    description: `Account Settlement via ${p.method || "ONLINE"}`,
+                    amount: Number(p.amount),
+                    details: {
+                        method: p.method,
+                        transactionId: p.transactionId
+                    }
+                });
+            }
         });
         // Sort events chronologically (ascending)
         events.sort((a, b) => a.date.getTime() - b.date.getTime());
@@ -717,7 +748,7 @@ const getCustomerDetailedReport = (req, res, next) => __awaiter(void 0, void 0, 
             return Object.assign(Object.assign({}, event), { runningBalance: Number(runningBalance.toFixed(2)) });
         });
         // Construct detailed bill-wise due list
-        const unpaidBills = orders.filter((o) => o.paymentStatus !== "COMPLETED");
+        const unpaidBills = orders.filter((o) => !o.isPaid && o.paymentStatus !== "COMPLETED" && o.paymentStatus !== "PAID" && o.paymentStatus !== "SETTLED");
         const billWiseDues = unpaidBills.map((o) => {
             var _a, _b;
             const paidAmount = o.payments.reduce((pSum, p) => pSum + Number(p.amount), 0);

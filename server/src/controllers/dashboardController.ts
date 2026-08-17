@@ -755,7 +755,7 @@ export const getCustomerDetailedReport = async (req: AuthenticatedRequest, res: 
         const orders = await prisma.order.findMany({
             where: {
                 userId: custId,
-                status: { notIn: ["CANCELLED", "FAILED", "PAYMENT_PENDING"] },
+                status: { notIn: ["CANCELLED", "FAILED"] },
                 ...(channelStr ? { channel: channelStr as Channel } : {}),
                 ...(targetLocationId ? { locationId: targetLocationId } : {}),
                 ...(startStr || endStr ? {
@@ -775,6 +775,18 @@ export const getCustomerDetailedReport = async (req: AuthenticatedRequest, res: 
             orderBy: { createdAt: "asc" }
         }) as any[];
 
+        // Fetch all successful customer payments (including direct account settlements)
+        const allCustomerPayments = await prisma.payment.findMany({
+            where: {
+                status: "SUCCESS",
+                OR: [
+                    { orderId: { in: orders.map((o: any) => o.id) } },
+                    { order: { userId: custId } }
+                ]
+            },
+            orderBy: { createdAt: "asc" }
+        });
+
         // Construct Ledger events
         interface LedgerEvent {
             type: "CHARGE" | "PAYMENT";
@@ -788,6 +800,7 @@ export const getCustomerDetailedReport = async (req: AuthenticatedRequest, res: 
         }
 
         const events: LedgerEvent[] = [];
+        const processedPaymentIds = new Set<string>();
 
         orders.forEach((order: any) => {
             // Charge Event for the Order itself
@@ -807,6 +820,7 @@ export const getCustomerDetailedReport = async (req: AuthenticatedRequest, res: 
 
             // Payment Events for successful payments associated with this order (excluding CREDIT records)
             order.payments.filter((p: any) => p.method !== "CREDIT").forEach((payment: any) => {
+                processedPaymentIds.add(payment.id);
                 events.push({
                     type: "PAYMENT",
                     date: payment.createdAt,
@@ -820,6 +834,25 @@ export const getCustomerDetailedReport = async (req: AuthenticatedRequest, res: 
                     }
                 });
             });
+        });
+
+        // Add any account settlement payments that were not attached directly to orders
+        allCustomerPayments.forEach((p: any) => {
+            if (!processedPaymentIds.has(p.id)) {
+                processedPaymentIds.add(p.id);
+                events.push({
+                    type: "PAYMENT",
+                    date: p.createdAt,
+                    id: `payment_${p.id}`,
+                    referenceId: p.orderId || custId,
+                    description: `Account Settlement via ${p.method || "ONLINE"}`,
+                    amount: Number(p.amount),
+                    details: {
+                        method: p.method,
+                        transactionId: p.transactionId
+                    }
+                });
+            }
         });
 
         // Sort events chronologically (ascending)
@@ -840,7 +873,7 @@ export const getCustomerDetailedReport = async (req: AuthenticatedRequest, res: 
         });
 
         // Construct detailed bill-wise due list
-        const unpaidBills = orders.filter((o: any) => o.paymentStatus !== "COMPLETED");
+        const unpaidBills = orders.filter((o: any) => !o.isPaid && o.paymentStatus !== "COMPLETED" && o.paymentStatus !== "PAID" && o.paymentStatus !== "SETTLED");
         const billWiseDues = unpaidBills.map((o: any) => {
             const paidAmount = (o.payments as any[]).reduce((pSum: number, p: any) => pSum + Number(p.amount), 0);
             const remainingDue = Number(o.totalAmount) - paidAmount;
