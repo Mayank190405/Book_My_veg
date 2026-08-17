@@ -60,28 +60,36 @@ const verifySingleEasebuzzTx = (txnid, amount, email, phone) => __awaiter(void 0
     const baseUrl = env === "prod" || env === "production"
         ? "https://dashboard.easebuzz.in"
         : "https://testdashboard.easebuzz.in";
-    const amountStr = amount ? amount.toFixed(2) : "";
+    const amountStr = amount ? Number(amount).toFixed(2) : "";
     const emailStr = email || "";
     const phoneStr = phone || "";
-    const hashSequence = `${key}|${txnid}|${amountStr}|${emailStr}|${phoneStr}|${salt}`;
-    const hash = generateSha512(hashSequence);
-    try {
-        const response = yield axios_1.default.post(`${baseUrl}/transaction/v2/retrieve`, new URLSearchParams({
-            key,
-            txnid,
-            amount: amountStr,
-            email: emailStr,
-            phone: phoneStr,
-            hash
-        }).toString(), {
-            headers: { "Content-Type": "application/x-www-form-urlencoded" },
-            timeout: 10000
-        });
-        return response.data;
+    // Test multiple standard Easebuzz single-retrieve hash formats:
+    // Format 1: key|txnid|salt
+    // Format 2: key|txnid|amount|email|phone|salt
+    // Format 3: key|merchant_email|txnid|salt
+    const merchantEmail = process.env.EASEBUZZ_MERCHANT_EMAIL || process.env.MERCHANT_EMAIL || "";
+    const hashSequences = [
+        `${key}|${txnid}|${salt}`,
+        `${key}|${txnid}|${amountStr}|${emailStr}|${phoneStr}|${salt}`,
+        `${key}|${merchantEmail}|${txnid}|${salt}`
+    ];
+    for (const seq of hashSequences) {
+        const hash = generateSha512(seq);
+        try {
+            const response = yield axios_1.default.post(`${baseUrl}/transaction/v2/retrieve`, new URLSearchParams(Object.assign(Object.assign(Object.assign(Object.assign({ key,
+                txnid }, (amountStr ? { amount: amountStr } : {})), (emailStr ? { email: emailStr } : {})), (phoneStr ? { phone: phoneStr } : {})), { hash })).toString(), {
+                headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                timeout: 10000
+            });
+            if (response.data && (response.data.status === true || response.data.status === "success")) {
+                return response.data;
+            }
+        }
+        catch (e) {
+            logger_1.default.warn(`[Easebuzz Single Tx Fail] txnid=${txnid}: ${e.message}`);
+        }
     }
-    catch (e) {
-        return null;
-    }
+    return null;
 });
 exports.verifySingleEasebuzzTx = verifySingleEasebuzzTx;
 const syncEasebuzzTransactions = (customStartDate, customEndDate) => __awaiter(void 0, void 0, void 0, function* () {
@@ -120,9 +128,11 @@ const syncEasebuzzTransactions = (customStartDate, customEndDate) => __awaiter(v
     });
     const unpaidTxnIds = new Set(unpaidOrders.map(o => o.id));
     logger_1.default.info(`[Easebuzz Sync] Target unpaid database orders count till date: ${unpaidTxnIds.size}`);
-    // Reverse Hash sequence for retrieve/date API: key|merchant_email|start_date|end_date|salt
-    const hashSequence = `${key}|${merchantEmail}|${startDate}|${endDate}|${salt}`;
-    const hash = generateSha512(hashSequence);
+    // Try both hash sequences (with merchant_email and without) for Date Range Retrieve API
+    const hashSeq1 = `${key}|${merchantEmail}|${startDate}|${endDate}|${salt}`;
+    const hashSeq2 = `${key}|${startDate}|${endDate}|${salt}`;
+    let activeHash = generateSha512(hashSeq1);
+    let activeEmail = merchantEmail;
     logger_1.default.info(`[Easebuzz Sync] Starting transaction sync till date (from ${startDate} to ${endDate})...`);
     let totalFetched = 0;
     let totalSettled = 0;
@@ -132,28 +142,36 @@ const syncEasebuzzTransactions = (customStartDate, customEndDate) => __awaiter(v
     try {
         while (hasMore && pageCount < 100) {
             pageCount++;
-            const payload = {
-                key,
-                hash,
-                merchant_email: merchantEmail,
-                date_range: {
+            const payload = Object.assign(Object.assign({ key, hash: activeHash }, (activeEmail ? { merchant_email: activeEmail } : {})), { date_range: {
                     start_date: startDate,
                     end_date: endDate
-                }
-            };
+                } });
             if (nextToken) {
                 payload.next = nextToken;
             }
-            const response = yield axios_1.default.post(`${baseUrl}/transaction/v2/retrieve/date`, payload, {
+            let response = yield axios_1.default.post(`${baseUrl}/transaction/v2/retrieve/date`, payload, {
                 headers: {
                     "Accept": "application/json",
                     "Content-Type": "application/json"
                 },
                 timeout: 15000
-            });
-            const resData = response.data;
+            }).catch(() => null);
+            // Retry with secondary hash format if first attempt failed
+            if (!response || !response.data || response.data.status !== true) {
+                activeHash = generateSha512(hashSeq2);
+                payload.hash = activeHash;
+                delete payload.merchant_email;
+                response = yield axios_1.default.post(`${baseUrl}/transaction/v2/retrieve/date`, payload, {
+                    headers: {
+                        "Accept": "application/json",
+                        "Content-Type": "application/json"
+                    },
+                    timeout: 15000
+                }).catch(() => null);
+            }
+            const resData = response === null || response === void 0 ? void 0 : response.data;
             if (!resData || resData.status !== true || !Array.isArray(resData.data)) {
-                logger_1.default.warn(`[Easebuzz Sync] Retrieve API returned unexpected format: ${JSON.stringify(resData)}`);
+                logger_1.default.warn(`[Easebuzz Sync] Date Retrieve API response: ${JSON.stringify(resData || {})}`);
                 break;
             }
             const txList = resData.data;
@@ -178,6 +196,7 @@ const syncEasebuzzTransactions = (customStartDate, customEndDate) => __awaiter(v
                             phone: tx.phone,
                             email: tx.email,
                             firstname: tx.firstname,
+                            productinfo: tx.productinfo,
                             metadata: tx
                         });
                         if ((result === null || result === void 0 ? void 0 : result.status) === "SUCCESS") {
@@ -197,28 +216,39 @@ const syncEasebuzzTransactions = (customStartDate, customEndDate) => __awaiter(v
                 hasMore = false;
             }
         }
-        // 2. Target specific unpaid transaction IDs via single retrieve API if still unpaid
+        // 2. Target specific unpaid database orders via single retrieve API with txnid variations
         for (const order of unpaidOrders) {
             if (unpaidTxnIds.has(order.id)) {
-                const singleRes = yield (0, exports.verifySingleEasebuzzTx)(order.id, Number(order.totalAmount), ((_a = order.user) === null || _a === void 0 ? void 0 : _a.email) || undefined, ((_b = order.user) === null || _b === void 0 ? void 0 : _b.phone) || undefined);
-                if (singleRes && singleRes.status === true && singleRes.msg) {
-                    const txData = singleRes.msg;
-                    const statusStr = (txData.status || "").toLowerCase();
-                    if (statusStr === "success" || statusStr === "charged") {
-                        const easepayid = txData.easepayid || txData.easebuzz_id || order.id;
-                        const amount = Number(txData.amount || order.totalAmount);
-                        const result = yield (0, paymentController_1.completeOrderPayment)(order.id, {
-                            status: "CHARGED",
-                            txn_id: easepayid,
-                            amount,
-                            payment_method_type: "ONLINE",
-                            phone: txData.phone || ((_c = order.user) === null || _c === void 0 ? void 0 : _c.phone),
-                            email: txData.email || ((_d = order.user) === null || _d === void 0 ? void 0 : _d.email),
-                            firstname: txData.firstname,
-                            metadata: txData
-                        });
-                        if ((result === null || result === void 0 ? void 0 : result.status) === "SUCCESS") {
-                            totalSettled++;
+                // Try txnid candidates: order.id, order.id + "OKBBJYE", etc.
+                const txCandidates = [
+                    order.id,
+                    `${order.id}OKBBJYE`,
+                    `${order.id}_`
+                ];
+                for (const candidateTxnId of txCandidates) {
+                    const singleRes = yield (0, exports.verifySingleEasebuzzTx)(candidateTxnId, Number(order.totalAmount), ((_a = order.user) === null || _a === void 0 ? void 0 : _a.email) || undefined, ((_b = order.user) === null || _b === void 0 ? void 0 : _b.phone) || undefined);
+                    if (singleRes && (singleRes.status === true || singleRes.status === "success")) {
+                        const txData = singleRes.msg || singleRes.data || singleRes;
+                        const statusStr = (txData.status || "").toLowerCase();
+                        if (statusStr === "success" || statusStr === "charged") {
+                            const easepayid = txData.easepayid || txData.easebuzz_id || candidateTxnId;
+                            const amount = Number(txData.amount || txData.net_debit_amount || order.totalAmount);
+                            const result = yield (0, paymentController_1.completeOrderPayment)(order.id, {
+                                status: "CHARGED",
+                                txn_id: easepayid,
+                                amount,
+                                payment_method_type: "ONLINE",
+                                phone: txData.phone || ((_c = order.user) === null || _c === void 0 ? void 0 : _c.phone),
+                                email: txData.email || ((_d = order.user) === null || _d === void 0 ? void 0 : _d.email),
+                                firstname: txData.firstname,
+                                productinfo: txData.productinfo,
+                                metadata: txData
+                            });
+                            if ((result === null || result === void 0 ? void 0 : result.status) === "SUCCESS") {
+                                totalSettled++;
+                                unpaidTxnIds.delete(order.id);
+                                break;
+                            }
                         }
                     }
                 }

@@ -27,33 +27,50 @@ export const verifySingleEasebuzzTx = async (txnid: string, amount?: number, ema
         ? "https://dashboard.easebuzz.in"
         : "https://testdashboard.easebuzz.in";
 
-    const amountStr = amount ? amount.toFixed(2) : "";
+    const amountStr = amount ? Number(amount).toFixed(2) : "";
     const emailStr = email || "";
     const phoneStr = phone || "";
-    const hashSequence = `${key}|${txnid}|${amountStr}|${emailStr}|${phoneStr}|${salt}`;
-    const hash = generateSha512(hashSequence);
 
-    try {
-        const response = await axios.post(
-            `${baseUrl}/transaction/v2/retrieve`,
-            new URLSearchParams({
-                key,
-                txnid,
-                amount: amountStr,
-                email: emailStr,
-                phone: phoneStr,
-                hash
-            }).toString(),
-            {
-                headers: { "Content-Type": "application/x-www-form-urlencoded" },
-                timeout: 10000
+    // Test multiple standard Easebuzz single-retrieve hash formats:
+    // Format 1: key|txnid|salt
+    // Format 2: key|txnid|amount|email|phone|salt
+    // Format 3: key|merchant_email|txnid|salt
+    const merchantEmail = process.env.EASEBUZZ_MERCHANT_EMAIL || process.env.MERCHANT_EMAIL || "";
+
+    const hashSequences = [
+        `${key}|${txnid}|${salt}`,
+        `${key}|${txnid}|${amountStr}|${emailStr}|${phoneStr}|${salt}`,
+        `${key}|${merchantEmail}|${txnid}|${salt}`
+    ];
+
+    for (const seq of hashSequences) {
+        const hash = generateSha512(seq);
+        try {
+            const response = await axios.post(
+                `${baseUrl}/transaction/v2/retrieve`,
+                new URLSearchParams({
+                    key,
+                    txnid,
+                    ...(amountStr ? { amount: amountStr } : {}),
+                    ...(emailStr ? { email: emailStr } : {}),
+                    ...(phoneStr ? { phone: phoneStr } : {}),
+                    hash
+                }).toString(),
+                {
+                    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                    timeout: 10000
+                }
+            );
+
+            if (response.data && (response.data.status === true || response.data.status === "success")) {
+                return response.data;
             }
-        );
-
-        return response.data;
-    } catch (e: any) {
-        return null;
+        } catch (e: any) {
+            logger.warn(`[Easebuzz Single Tx Fail] txnid=${txnid}: ${e.message}`);
+        }
     }
+
+    return null;
 };
 
 export const syncEasebuzzTransactions = async (customStartDate?: string, customEndDate?: string) => {
@@ -98,9 +115,12 @@ export const syncEasebuzzTransactions = async (customStartDate?: string, customE
     const unpaidTxnIds = new Set(unpaidOrders.map(o => o.id));
     logger.info(`[Easebuzz Sync] Target unpaid database orders count till date: ${unpaidTxnIds.size}`);
 
-    // Reverse Hash sequence for retrieve/date API: key|merchant_email|start_date|end_date|salt
-    const hashSequence = `${key}|${merchantEmail}|${startDate}|${endDate}|${salt}`;
-    const hash = generateSha512(hashSequence);
+    // Try both hash sequences (with merchant_email and without) for Date Range Retrieve API
+    const hashSeq1 = `${key}|${merchantEmail}|${startDate}|${endDate}|${salt}`;
+    const hashSeq2 = `${key}|${startDate}|${endDate}|${salt}`;
+    
+    let activeHash = generateSha512(hashSeq1);
+    let activeEmail = merchantEmail;
 
     logger.info(`[Easebuzz Sync] Starting transaction sync till date (from ${startDate} to ${endDate})...`);
 
@@ -115,8 +135,8 @@ export const syncEasebuzzTransactions = async (customStartDate?: string, customE
             pageCount++;
             const payload: any = {
                 key,
-                hash,
-                merchant_email: merchantEmail,
+                hash: activeHash,
+                ...(activeEmail ? { merchant_email: activeEmail } : {}),
                 date_range: {
                     start_date: startDate,
                     end_date: endDate
@@ -127,7 +147,7 @@ export const syncEasebuzzTransactions = async (customStartDate?: string, customE
                 payload.next = nextToken;
             }
 
-            const response = await axios.post(
+            let response = await axios.post(
                 `${baseUrl}/transaction/v2/retrieve/date`,
                 payload,
                 {
@@ -137,11 +157,30 @@ export const syncEasebuzzTransactions = async (customStartDate?: string, customE
                     },
                     timeout: 15000
                 }
-            );
+            ).catch(() => null);
 
-            const resData = response.data;
+            // Retry with secondary hash format if first attempt failed
+            if (!response || !response.data || response.data.status !== true) {
+                activeHash = generateSha512(hashSeq2);
+                payload.hash = activeHash;
+                delete payload.merchant_email;
+
+                response = await axios.post(
+                    `${baseUrl}/transaction/v2/retrieve/date`,
+                    payload,
+                    {
+                        headers: {
+                            "Accept": "application/json",
+                            "Content-Type": "application/json"
+                        },
+                        timeout: 15000
+                    }
+                ).catch(() => null);
+            }
+
+            const resData = response?.data;
             if (!resData || resData.status !== true || !Array.isArray(resData.data)) {
-                logger.warn(`[Easebuzz Sync] Retrieve API returned unexpected format: ${JSON.stringify(resData)}`);
+                logger.warn(`[Easebuzz Sync] Date Retrieve API response: ${JSON.stringify(resData || {})}`);
                 break;
             }
 
@@ -171,6 +210,7 @@ export const syncEasebuzzTransactions = async (customStartDate?: string, customE
                             phone: tx.phone,
                             email: tx.email,
                             firstname: tx.firstname,
+                            productinfo: tx.productinfo,
                             metadata: tx
                         });
 
@@ -191,33 +231,46 @@ export const syncEasebuzzTransactions = async (customStartDate?: string, customE
             }
         }
 
-        // 2. Target specific unpaid transaction IDs via single retrieve API if still unpaid
+        // 2. Target specific unpaid database orders via single retrieve API with txnid variations
         for (const order of unpaidOrders) {
             if (unpaidTxnIds.has(order.id)) {
-                const singleRes = await verifySingleEasebuzzTx(
+                // Try txnid candidates: order.id, order.id + "OKBBJYE", etc.
+                const txCandidates = [
                     order.id,
-                    Number(order.totalAmount),
-                    order.user?.email || undefined,
-                    order.user?.phone || undefined
-                );
-                if (singleRes && singleRes.status === true && singleRes.msg) {
-                    const txData = singleRes.msg;
-                    const statusStr = (txData.status || "").toLowerCase();
-                    if (statusStr === "success" || statusStr === "charged") {
-                        const easepayid = txData.easepayid || txData.easebuzz_id || order.id;
-                        const amount = Number(txData.amount || order.totalAmount);
-                        const result = await completeOrderPayment(order.id, {
-                            status: "CHARGED",
-                            txn_id: easepayid,
-                            amount,
-                            payment_method_type: "ONLINE",
-                            phone: txData.phone || order.user?.phone,
-                            email: txData.email || order.user?.email,
-                            firstname: txData.firstname,
-                            metadata: txData
-                        });
-                        if (result?.status === "SUCCESS") {
-                            totalSettled++;
+                    `${order.id}OKBBJYE`,
+                    `${order.id}_`
+                ];
+
+                for (const candidateTxnId of txCandidates) {
+                    const singleRes = await verifySingleEasebuzzTx(
+                        candidateTxnId,
+                        Number(order.totalAmount),
+                        order.user?.email || undefined,
+                        order.user?.phone || undefined
+                    );
+
+                    if (singleRes && (singleRes.status === true || singleRes.status === "success")) {
+                        const txData = singleRes.msg || singleRes.data || singleRes;
+                        const statusStr = (txData.status || "").toLowerCase();
+                        if (statusStr === "success" || statusStr === "charged") {
+                            const easepayid = txData.easepayid || txData.easebuzz_id || candidateTxnId;
+                            const amount = Number(txData.amount || txData.net_debit_amount || order.totalAmount);
+                            const result = await completeOrderPayment(order.id, {
+                                status: "CHARGED",
+                                txn_id: easepayid,
+                                amount,
+                                payment_method_type: "ONLINE",
+                                phone: txData.phone || order.user?.phone,
+                                email: txData.email || order.user?.email,
+                                firstname: txData.firstname,
+                                productinfo: txData.productinfo,
+                                metadata: txData
+                            });
+                            if (result?.status === "SUCCESS") {
+                                totalSettled++;
+                                unpaidTxnIds.delete(order.id);
+                                break;
+                            }
                         }
                     }
                 }
