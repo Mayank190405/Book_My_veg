@@ -160,6 +160,14 @@ server.listen(PORT, () => __awaiter(void 0, void 0, void 0, function* () {
     (0, metricsFlushWorker_1.startMetricsFlushWorker)();
     // Start background unpaid invoice reminders and feedback dispatch
     (0, paymentReminderWorker_1.startPaymentReminderWorker)();
+    // Start background 6-hour Easebuzz transaction sync cron
+    try {
+        const { startEasebuzzSyncCron } = require("./services/easebuzzSyncService");
+        startEasebuzzSyncCron();
+    }
+    catch (e) {
+        logger_1.default.error("Easebuzz transaction sync cron init failed", e);
+    }
     // Initialize Search Index Settings
     try {
         yield searchService_1.SearchService.getInstance().init();

@@ -15,4 +15,5 @@ router.post("/verify", paymentController_1.verifyPayment);
 router.get("/order-status/:orderId", paymentController_1.getOrderStatus);
 // Admin
 router.post("/refund", (0, auth_1.authorize)(["ADMIN", "STORE_ADMIN"]), paymentController_1.refundPayment);
+router.post("/easebuzz/sync", (0, auth_1.authorize)(["ADMIN", "SUPER_ADMIN"]), paymentController_1.triggerEasebuzzSync);
 exports.default = router;

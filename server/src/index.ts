@@ -169,6 +169,14 @@ server.listen(PORT, async () => {
     
     // Start background unpaid invoice reminders and feedback dispatch
     startPaymentReminderWorker();
+
+    // Start background 6-hour Easebuzz transaction sync cron
+    try {
+        const { startEasebuzzSyncCron } = require("./services/easebuzzSyncService");
+        startEasebuzzSyncCron();
+    } catch (e) {
+        logger.error("Easebuzz transaction sync cron init failed", e);
+    }
     
     // Initialize Search Index Settings
     try {

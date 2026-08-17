@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { authenticate, authorize } from "../middleware/auth";
-import { initiatePayment, verifyPayment, refundPayment, handleWebhook, getOrderStatus, generatePaymentLink, handleEasebuzzCallback, checkPaymentEligibility } from "../controllers/paymentController";
+import { initiatePayment, verifyPayment, refundPayment, handleWebhook, getOrderStatus, generatePaymentLink, handleEasebuzzCallback, checkPaymentEligibility, triggerEasebuzzSync } from "../controllers/paymentController";
 
 const router = Router();
 
@@ -18,5 +18,6 @@ router.get("/order-status/:orderId", getOrderStatus);
 
 // Admin
 router.post("/refund", authorize(["ADMIN", "STORE_ADMIN"]), refundPayment);
+router.post("/easebuzz/sync", authorize(["ADMIN", "SUPER_ADMIN"]), triggerEasebuzzSync);
 
 export default router;

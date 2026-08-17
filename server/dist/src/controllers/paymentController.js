@@ -1,4 +1,27 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || function (mod) {
+    if (mod && mod.__esModule) return mod;
+    var result = {};
+    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
+    __setModuleDefault(result, mod);
+    return result;
+};
 var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
     function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
     return new (P || (P = Promise))(function (resolve, reject) {
@@ -12,7 +35,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.sendPaymentReminderController = exports.saveOrderFeedback = exports.publicCustomerOnboard = exports.initiatePayDue = exports.getPayInfo = exports.checkPaymentEligibility = exports.refundPayment = exports.handleEasebuzzCallback = exports.handleWebhook = exports.verifyPayment = exports.getOrderStatus = exports.settleDuesForCustomer = exports.generatePaymentLink = exports.initiatePayment = void 0;
+exports.sendPaymentReminderController = exports.triggerEasebuzzSync = exports.saveOrderFeedback = exports.publicCustomerOnboard = exports.initiatePayDue = exports.getPayInfo = exports.checkPaymentEligibility = exports.refundPayment = exports.handleEasebuzzCallback = exports.handleWebhook = exports.verifyPayment = exports.getOrderStatus = exports.completeOrderPayment = exports.settleDuesForCustomer = exports.generatePaymentLink = exports.initiatePayment = void 0;
 const prisma_1 = __importDefault(require("../config/prisma"));
 const juspayService_1 = require("../services/juspayService");
 const productController_1 = require("./productController");
@@ -650,6 +673,7 @@ const completeOrderPayment = (orderId, paymentDetails) => __awaiter(void 0, void
         return { status: "FAILED" };
     }
 });
+exports.completeOrderPayment = completeOrderPayment;
 // ─── getOrderStatus (DB-level, no Juspay call) ───────────────────────────────
 const getOrderStatus = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
@@ -688,7 +712,7 @@ const verifyPayment = (req, res) => __awaiter(void 0, void 0, void 0, function* 
                     message: "Settlement payment was cancelled or failed"
                 });
             }
-            yield completeOrderPayment(resolvedOrderId, {
+            yield (0, exports.completeOrderPayment)(resolvedOrderId, {
                 status: "CHARGED",
                 txn_id: txn_id || `TXN_${Date.now()}`,
                 amount: Number(bodyAmount || 0),
@@ -746,7 +770,7 @@ const verifyPayment = (req, res) => __awaiter(void 0, void 0, void 0, function* 
                 });
             }
             logger_1.default.info(`[Payment] Running payment verification for order ${resolvedOrderId} (status: ${rawStatus})`);
-            yield completeOrderPayment(resolvedOrderId, {
+            yield (0, exports.completeOrderPayment)(resolvedOrderId, {
                 status: "CHARGED",
                 txn_id: txn_id || `TXN_${Date.now()}`,
                 amount: Number(bodyAmount || existing.totalAmount),
@@ -776,7 +800,7 @@ const verifyPayment = (req, res) => __awaiter(void 0, void 0, void 0, function* 
                 const status = ((_a = detail.status) !== null && _a !== void 0 ? _a : "").toUpperCase();
                 const SUCCESS_STATUSES = ["SUCCESS", "CHARGED", "PAYMENT_SUCCESS"];
                 if (SUCCESS_STATUSES.includes(status)) {
-                    yield completeOrderPayment(order_id, {
+                    yield (0, exports.completeOrderPayment)(order_id, {
                         status: "CHARGED",
                         txn_id: detail.easepayid || detail.txnid || order_id,
                         amount: Number(detail.amount || existing.totalAmount),
@@ -785,7 +809,7 @@ const verifyPayment = (req, res) => __awaiter(void 0, void 0, void 0, function* 
                     return res.json({ status: "SUCCESS", message: "Payment verified via Easebuzz" });
                 }
                 if (["FAILED", "FAILURE", "BOUNCED", "ERROR"].includes(status)) {
-                    yield completeOrderPayment(order_id, {
+                    yield (0, exports.completeOrderPayment)(order_id, {
                         status: "FAILED",
                         txn_id: detail.easepayid || detail.txnid || order_id,
                         amount: Number(detail.amount || existing.totalAmount),
@@ -797,7 +821,7 @@ const verifyPayment = (req, res) => __awaiter(void 0, void 0, void 0, function* 
             }
             catch (easebuzzError) {
                 logger_1.default.warn(`[Payment] Easebuzz status fetch failed for ${order_id}, falling back to mock verification...`);
-                yield completeOrderPayment(order_id, {
+                yield (0, exports.completeOrderPayment)(order_id, {
                     status: "CHARGED",
                     txn_id: `MOCK_TXN_${Date.now()}`,
                     amount: existing.totalAmount,
@@ -821,7 +845,7 @@ const verifyPayment = (req, res) => __awaiter(void 0, void 0, void 0, function* 
             const rawStatus = req.body.status || "CHARGED";
             const SUCCESS_STATUSES = ["CHARGED", "SUCCESS", "PAYMENT_SUCCESS", "AUTHORIZED"];
             const isSuccess = SUCCESS_STATUSES.includes(rawStatus.toUpperCase());
-            const result = yield completeOrderPayment(order_id, {
+            const result = yield (0, exports.completeOrderPayment)(order_id, {
                 status: isSuccess ? "CHARGED" : "FAILED",
                 txn_id: `MOCK_TXN_${Date.now()}`,
                 amount: existing.totalAmount,
@@ -836,14 +860,14 @@ const verifyPayment = (req, res) => __awaiter(void 0, void 0, void 0, function* 
         const SUCCESS_STATUSES = ["CHARGED", "SUCCESS", "PAYMENT_SUCCESS", "AUTHORIZED"];
         if (SUCCESS_STATUSES.includes(status)) {
             // 3. Complete order logic (updates DB, tracks trending, etc.)
-            const result = yield completeOrderPayment(order_id, juspayOrder);
+            const result = yield (0, exports.completeOrderPayment)(order_id, juspayOrder);
             if (result.status === "SUCCESS" || result.status === "ALREADY_COMPLETED") {
                 return res.json({ status: "SUCCESS", message: "Payment verified via Gateway" });
             }
         }
         if (["FAILED", "JUSPAY_DECLINED", "AUTHORIZATION_FAILED", "AUTHENTICATION_FAILED"].includes(status)) {
             // Handle Failure (restores stock)
-            yield completeOrderPayment(order_id, juspayOrder);
+            yield (0, exports.completeOrderPayment)(order_id, juspayOrder);
             return res.status(400).json({ status: "FAILED", message: "Payment declined/failed" });
         }
         // 4. Case: Still Pending at Gateway
@@ -877,7 +901,7 @@ const handleWebhook = (req, res) => __awaiter(void 0, void 0, void 0, function* 
             resolvedOrderId = txnid.replace(/_\d{3,}$/, "");
         }
         try {
-            yield completeOrderPayment(resolvedOrderId, {
+            yield (0, exports.completeOrderPayment)(resolvedOrderId, {
                 status: isSuccess ? "CHARGED" : "FAILED",
                 txn_id: easebuzz_id || txnid,
                 amount: Number(amount),
@@ -908,7 +932,7 @@ const handleWebhook = (req, res) => __awaiter(void 0, void 0, void 0, function* 
     try {
         // Trust the webhook body directly — this is a server-to-server call from Juspay
         // No need to re-fetch from Juspay API (which fails on sandbox anyway)
-        yield completeOrderPayment(order_id, { status, txn_id, amount, payment_method_type });
+        yield (0, exports.completeOrderPayment)(order_id, { status, txn_id, amount, payment_method_type });
         res.json({ status: "OK" });
     }
     catch (error) {
@@ -940,7 +964,7 @@ const handleEasebuzzCallback = (req, res) => __awaiter(void 0, void 0, void 0, f
         resolvedOrderId = txnid.replace(/_\d{3,}$/, "");
     }
     try {
-        yield completeOrderPayment(resolvedOrderId, {
+        yield (0, exports.completeOrderPayment)(resolvedOrderId, {
             status: isSuccess ? "CHARGED" : "FAILED",
             txn_id: easebuzz_id || txnid,
             amount: Number(amount),
@@ -1345,6 +1369,22 @@ const saveOrderFeedback = (req, res, next) => __awaiter(void 0, void 0, void 0, 
     }
 });
 exports.saveOrderFeedback = saveOrderFeedback;
+const triggerEasebuzzSync = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a, _b;
+    if (((_a = req.user) === null || _a === void 0 ? void 0 : _a.role) !== "ADMIN" && ((_b = req.user) === null || _b === void 0 ? void 0 : _b.role) !== "SUPER_ADMIN") {
+        return res.status(403).json({ message: "Forbidden" });
+    }
+    const { startDate, endDate } = req.body || {};
+    try {
+        const { syncEasebuzzTransactions } = yield Promise.resolve().then(() => __importStar(require("../services/easebuzzSyncService")));
+        const result = yield syncEasebuzzTransactions(startDate, endDate);
+        return res.json(result);
+    }
+    catch (error) {
+        return res.status(500).json({ message: error.message || "Failed to trigger Easebuzz sync" });
+    }
+});
+exports.triggerEasebuzzSync = triggerEasebuzzSync;
 const sendPaymentReminderController = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     const { orderId } = req.body;
     if (!orderId) {

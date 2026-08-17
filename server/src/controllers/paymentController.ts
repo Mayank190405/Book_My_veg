@@ -502,7 +502,7 @@ export const settleDuesForCustomer = async (userId: string, amount: number, tran
     });
 };
 
-const completeOrderPayment = async (orderId: string, paymentDetails: any) => {
+export const completeOrderPayment = async (orderId: string, paymentDetails: any) => {
     let resolvedOrderId = orderId;
     if (orderId && !orderId.startsWith("DUE_") && !orderId.startsWith("SETTLE_")) {
         resolvedOrderId = orderId.replace(/_\d{3,}$/, "");
@@ -1505,6 +1505,20 @@ export const saveOrderFeedback = async (req: Request, res: Response, next: NextF
         return res.json({ message: "Feedback submitted successfully", order: updatedOrder });
     } catch (error) {
         next(error);
+    }
+};
+
+export const triggerEasebuzzSync = async (req: AuthenticatedRequest, res: Response) => {
+    if (req.user?.role !== "ADMIN" && req.user?.role !== "SUPER_ADMIN") {
+        return res.status(403).json({ message: "Forbidden" });
+    }
+    const { startDate, endDate } = req.body || {};
+    try {
+        const { syncEasebuzzTransactions } = await import("../services/easebuzzSyncService");
+        const result = await syncEasebuzzTransactions(startDate, endDate);
+        return res.json(result);
+    } catch (error: any) {
+        return res.status(500).json({ message: error.message || "Failed to trigger Easebuzz sync" });
     }
 };
 
