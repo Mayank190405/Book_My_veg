@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import prisma from "../config/prisma";
 import bcrypt from "bcryptjs";
+import logger from "../utils/logger";
 
 interface AuthenticatedRequest extends Request {
     user?: { userId: string; role: string };
@@ -165,29 +166,52 @@ export const updateUserAdmin = async (req: AuthenticatedRequest, res: Response) 
         }
 
         let hashedPassword = undefined;
-        if (password) {
-            hashedPassword = await bcrypt.hash(password, 10);
+        if (password && String(password).trim().length > 0) {
+            hashedPassword = await bcrypt.hash(String(password).trim(), 10);
         }
+
+        // Clean email value (convert empty strings to null or omit to avoid P2002 unique error)
+        const cleanEmail = (email !== undefined && String(email).trim().length > 0) ? String(email).trim() : (email === "" ? null : undefined);
+
+        // Clean joiningDate (check for valid date string)
+        let parsedJoiningDate: Date | null | undefined = undefined;
+        if (joiningDate !== undefined) {
+            if (!joiningDate) {
+                parsedJoiningDate = null;
+            } else {
+                const d = new Date(joiningDate);
+                if (!isNaN(d.getTime())) {
+                    parsedJoiningDate = d;
+                }
+            }
+        }
+
+        const updateData: any = {};
+        if (role) updateData.role = role;
+        if (caller?.role !== "STORE_ADMIN" && locationId !== undefined) {
+            updateData.locationId = locationId ? String(locationId) : null;
+        }
+        if (isActive !== undefined) updateData.isActive = Boolean(isActive);
+        if (name !== undefined && String(name).trim().length > 0) updateData.name = String(name).trim();
+        if (cleanEmail !== undefined) updateData.email = cleanEmail;
+        if (parsedJoiningDate !== undefined) updateData.joiningDate = parsedJoiningDate;
+        if (baseSalary !== undefined) updateData.baseSalary = baseSalary ? parseFloat(String(baseSalary)) : null;
+        if (hashedPassword) updateData.password = hashedPassword;
 
         const user = await prisma.user.update({
             where: { id: id as string },
-            data: {
-                ...(role && { role }),
-                locationId: (caller?.role === "STORE_ADMIN") ? targetUser.locationId : (locationId || null),
-                isActive,
-                name,
-                email,
-                joiningDate: joiningDate ? new Date(joiningDate) : undefined,
-                baseSalary: baseSalary !== undefined ? (baseSalary ? parseFloat(baseSalary) : null) : undefined,
-                ...(hashedPassword && { password: hashedPassword })
-            },
+            data: updateData,
             include: {
                 location: { select: { id: true, name: true } }
             }
         });
         res.json(user);
     } catch (error: any) {
-        res.status(500).json({ error: error.message });
+        logger.error(`[updateUserAdmin Error] User ID: ${id} -> ${error.message}`);
+        if (error.code === 'P2002') {
+            return res.status(409).json({ message: "Email or phone number already in use by another account." });
+        }
+        res.status(500).json({ error: error.message || "Failed to update user profile" });
     }
 };
 

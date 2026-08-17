@@ -15,6 +15,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.bulkIngestUsers = exports.getDeliveryPartners = exports.updateUserAdmin = exports.createUserAdmin = exports.getUsersAdmin = exports.updateProfile = void 0;
 const prisma_1 = __importDefault(require("../config/prisma"));
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
+const logger_1 = __importDefault(require("../utils/logger"));
 const updateProfile = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
     const userId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.userId;
@@ -167,14 +168,45 @@ const updateUserAdmin = (req, res) => __awaiter(void 0, void 0, void 0, function
             }
         }
         let hashedPassword = undefined;
-        if (password) {
-            hashedPassword = yield bcryptjs_1.default.hash(password, 10);
+        if (password && String(password).trim().length > 0) {
+            hashedPassword = yield bcryptjs_1.default.hash(String(password).trim(), 10);
         }
+        // Clean email value (convert empty strings to null or omit to avoid P2002 unique error)
+        const cleanEmail = (email !== undefined && String(email).trim().length > 0) ? String(email).trim() : (email === "" ? null : undefined);
+        // Clean joiningDate (check for valid date string)
+        let parsedJoiningDate = undefined;
+        if (joiningDate !== undefined) {
+            if (!joiningDate) {
+                parsedJoiningDate = null;
+            }
+            else {
+                const d = new Date(joiningDate);
+                if (!isNaN(d.getTime())) {
+                    parsedJoiningDate = d;
+                }
+            }
+        }
+        const updateData = {};
+        if (role)
+            updateData.role = role;
+        if ((caller === null || caller === void 0 ? void 0 : caller.role) !== "STORE_ADMIN" && locationId !== undefined) {
+            updateData.locationId = locationId ? String(locationId) : null;
+        }
+        if (isActive !== undefined)
+            updateData.isActive = Boolean(isActive);
+        if (name !== undefined && String(name).trim().length > 0)
+            updateData.name = String(name).trim();
+        if (cleanEmail !== undefined)
+            updateData.email = cleanEmail;
+        if (parsedJoiningDate !== undefined)
+            updateData.joiningDate = parsedJoiningDate;
+        if (baseSalary !== undefined)
+            updateData.baseSalary = baseSalary ? parseFloat(String(baseSalary)) : null;
+        if (hashedPassword)
+            updateData.password = hashedPassword;
         const user = yield prisma_1.default.user.update({
             where: { id: id },
-            data: Object.assign(Object.assign(Object.assign({}, (role && { role })), { locationId: ((caller === null || caller === void 0 ? void 0 : caller.role) === "STORE_ADMIN") ? targetUser.locationId : (locationId || null), isActive,
-                name,
-                email, joiningDate: joiningDate ? new Date(joiningDate) : undefined, baseSalary: baseSalary !== undefined ? (baseSalary ? parseFloat(baseSalary) : null) : undefined }), (hashedPassword && { password: hashedPassword })),
+            data: updateData,
             include: {
                 location: { select: { id: true, name: true } }
             }
@@ -182,7 +214,11 @@ const updateUserAdmin = (req, res) => __awaiter(void 0, void 0, void 0, function
         res.json(user);
     }
     catch (error) {
-        res.status(500).json({ error: error.message });
+        logger_1.default.error(`[updateUserAdmin Error] User ID: ${id} -> ${error.message}`);
+        if (error.code === 'P2002') {
+            return res.status(409).json({ message: "Email or phone number already in use by another account." });
+        }
+        res.status(500).json({ error: error.message || "Failed to update user profile" });
     }
 });
 exports.updateUserAdmin = updateUserAdmin;
