@@ -52,7 +52,7 @@ const formatDate = (date) => {
     return `${day}-${month}-${year}`;
 };
 /**
- * Main Easebuzz v2.1 Single Retrieve API Query
+ * Easebuzz v2.1 Single Retrieve API Query
  * Endpoint: POST /transaction/v2.1/retrieve
  * Body: key, txnid, hash (sha512(key|txnid|salt))
  */
@@ -89,9 +89,8 @@ const verifySingleEasebuzzTx = (txnid, amount, email, phone) => __awaiter(void 0
         }
     }
     catch (e) {
-        // Fallthrough to alternative hash sequence if primary hash sequence differs
+        // Fallthrough to secondary hash sequences if needed
     }
-    // Secondary hash fallback
     const hashSequences = [
         `${key}|${txnid}|${amountStr}|${emailStr}|${phoneStr}|${salt}`,
         `${key}|${merchantEmail}|${txnid}|${salt}`
@@ -130,25 +129,28 @@ const syncEasebuzzTransactions = (customStartDate_1, customEndDate_1, ...args_1)
         logger_1.default.warn("[Easebuzz Sync] Skipping sync — EASEBUZZ_KEY or EASEBUZZ_SALT not configured.");
         return { success: false, message: "Easebuzz credentials missing" };
     }
-    // 1. PRIMARY QUERY ENGINE: Easebuzz v2.1 Retrieve API for recent unpaid database orders (max 30 per cycle)
+    // 1. PRIMARY QUERY ENGINE: Query all database orders with PENDING, PAYMENT_PENDING, PARTIAL, or isPaid: false
     const unpaidOrders = yield prisma_1.default.order.findMany({
         where: {
-            isPaid: false,
+            OR: [
+                { isPaid: false },
+                { paymentStatus: { in: ["PENDING", "PARTIAL", "UNPAID", "PAYMENT_PENDING"] } },
+                { status: "PAYMENT_PENDING" }
+            ],
             status: { notIn: ["CANCELLED", "FAILED"] }
         },
         orderBy: { createdAt: "desc" },
-        take: 30,
         select: {
             id: true,
             totalAmount: true,
             user: { select: { phone: true, email: true } }
         }
     });
-    logger_1.default.info(`[Easebuzz Sync] PRIMARY QUERY: Reconciling ${unpaidOrders.length} unpaid database orders via Easebuzz v2.1 API...`);
+    logger_1.default.info(`[Easebuzz Sync] PRIMARY QUERY: Reconciling ${unpaidOrders.length} pending/unpaid database orders via Easebuzz v2.1 API...`);
     let totalSettled = 0;
     let totalFetched = 0;
     const unpaidTxnIds = new Set(unpaidOrders.map(o => o.id));
-    // Process unpaid orders concurrently via Easebuzz v2.1 retrieve API (batch size 10)
+    // Process pending/unpaid orders concurrently via Easebuzz v2.1 retrieve API (batch size 10)
     const batchSize = 10;
     for (let i = 0; i < unpaidOrders.length; i += batchSize) {
         const batch = unpaidOrders.slice(i, i + batchSize);
@@ -164,7 +166,9 @@ const syncEasebuzzTransactions = (customStartDate_1, customEndDate_1, ...args_1)
                     const txData = Array.isArray(singleRes.msg) ? singleRes.msg[0] : singleRes.msg;
                     totalFetched++;
                     const statusStr = (txData.status || "").toLowerCase();
-                    if (statusStr === "success" || statusStr === "charged") {
+                    const isSuccess = statusStr === "success" || statusStr === "charged";
+                    const isFailed = statusStr === "failed" || statusStr === "usercancelled" || statusStr === "dropped" || statusStr === "user_cancelled";
+                    if (isSuccess) {
                         const easepayid = txData.easepayid || txData.easebuzz_id || candidateTxnId;
                         const amount = Number(txData.amount || txData.net_amount_debit || order.totalAmount);
                         const result = yield (0, paymentController_1.completeOrderPayment)(order.id, {
@@ -183,6 +187,12 @@ const syncEasebuzzTransactions = (customStartDate_1, customEndDate_1, ...args_1)
                             unpaidTxnIds.delete(order.id);
                             break;
                         }
+                    }
+                    else if (isFailed) {
+                        yield prisma_1.default.payment.updateMany({
+                            where: { orderId: order.id, status: "PENDING" },
+                            data: { status: "FAILED", metadata: txData }
+                        });
                     }
                 }
             }
@@ -250,7 +260,8 @@ const syncEasebuzzTransactions = (customStartDate_1, customEndDate_1, ...args_1)
             for (const tx of txList) {
                 const statusStr = (tx.status || "").toLowerCase();
                 const isSuccess = statusStr === "success" || statusStr === "charged";
-                if (isSuccess && tx.txnid) {
+                const isFailed = statusStr === "failed" || statusStr === "usercancelled" || statusStr === "dropped" || statusStr === "user_cancelled";
+                if (tx.txnid) {
                     const easepayid = tx.easepayid || tx.easebuzz_id || tx.txnid;
                     const amount = Number(tx.net_debit_amount || tx.total_debit_amount || tx.amount || 0);
                     let resolvedOrderId = tx.txnid;
@@ -258,20 +269,28 @@ const syncEasebuzzTransactions = (customStartDate_1, customEndDate_1, ...args_1)
                         resolvedOrderId = tx.txnid.replace(/_\d{3,}$/, "");
                     }
                     try {
-                        const result = yield (0, paymentController_1.completeOrderPayment)(resolvedOrderId, {
-                            status: "CHARGED",
-                            txn_id: easepayid,
-                            amount,
-                            payment_method_type: "ONLINE",
-                            phone: tx.phone,
-                            email: tx.email,
-                            firstname: tx.firstname,
-                            productinfo: tx.productinfo,
-                            metadata: tx
-                        });
-                        if ((result === null || result === void 0 ? void 0 : result.status) === "SUCCESS") {
-                            totalSettled++;
-                            unpaidTxnIds.delete(resolvedOrderId);
+                        if (isSuccess) {
+                            const result = yield (0, paymentController_1.completeOrderPayment)(resolvedOrderId, {
+                                status: "CHARGED",
+                                txn_id: easepayid,
+                                amount,
+                                payment_method_type: "ONLINE",
+                                phone: tx.phone,
+                                email: tx.email,
+                                firstname: tx.firstname,
+                                productinfo: tx.productinfo,
+                                metadata: tx
+                            });
+                            if ((result === null || result === void 0 ? void 0 : result.status) === "SUCCESS") {
+                                totalSettled++;
+                                unpaidTxnIds.delete(resolvedOrderId);
+                            }
+                        }
+                        else if (isFailed) {
+                            yield prisma_1.default.payment.updateMany({
+                                where: { orderId: resolvedOrderId, status: "PENDING" },
+                                data: { status: "FAILED", metadata: tx }
+                            });
                         }
                     }
                     catch (txErr) {

@@ -17,7 +17,7 @@ const formatDate = (date: Date): string => {
 };
 
 /**
- * Main Easebuzz v2.1 Single Retrieve API Query
+ * Easebuzz v2.1 Single Retrieve API Query
  * Endpoint: POST /transaction/v2.1/retrieve
  * Body: key, txnid, hash (sha512(key|txnid|salt))
  */
@@ -62,10 +62,9 @@ export const verifySingleEasebuzzTx = async (txnid: string, amount?: number, ema
             }
         }
     } catch (e: any) {
-        // Fallthrough to alternative hash sequence if primary hash sequence differs
+        // Fallthrough to secondary hash sequences if needed
     }
 
-    // Secondary hash fallback
     const hashSequences = [
         `${key}|${txnid}|${amountStr}|${emailStr}|${phoneStr}|${salt}`,
         `${key}|${merchantEmail}|${txnid}|${salt}`
@@ -112,14 +111,17 @@ export const syncEasebuzzTransactions = async (customStartDate?: string, customE
         return { success: false, message: "Easebuzz credentials missing" };
     }
 
-    // 1. PRIMARY QUERY ENGINE: Easebuzz v2.1 Retrieve API for recent unpaid database orders (max 30 per cycle)
+    // 1. PRIMARY QUERY ENGINE: Query all database orders with PENDING, PAYMENT_PENDING, PARTIAL, or isPaid: false
     const unpaidOrders = await prisma.order.findMany({
         where: {
-            isPaid: false,
+            OR: [
+                { isPaid: false },
+                { paymentStatus: { in: ["PENDING", "PARTIAL", "UNPAID", "PAYMENT_PENDING"] } },
+                { status: "PAYMENT_PENDING" }
+            ],
             status: { notIn: ["CANCELLED", "FAILED"] }
         },
         orderBy: { createdAt: "desc" },
-        take: 30,
         select: {
             id: true,
             totalAmount: true,
@@ -127,13 +129,13 @@ export const syncEasebuzzTransactions = async (customStartDate?: string, customE
         }
     });
 
-    logger.info(`[Easebuzz Sync] PRIMARY QUERY: Reconciling ${unpaidOrders.length} unpaid database orders via Easebuzz v2.1 API...`);
+    logger.info(`[Easebuzz Sync] PRIMARY QUERY: Reconciling ${unpaidOrders.length} pending/unpaid database orders via Easebuzz v2.1 API...`);
 
     let totalSettled = 0;
     let totalFetched = 0;
     const unpaidTxnIds = new Set(unpaidOrders.map(o => o.id));
 
-    // Process unpaid orders concurrently via Easebuzz v2.1 retrieve API (batch size 10)
+    // Process pending/unpaid orders concurrently via Easebuzz v2.1 retrieve API (batch size 10)
     const batchSize = 10;
     for (let i = 0; i < unpaidOrders.length; i += batchSize) {
         const batch = unpaidOrders.slice(i, i + batchSize);
@@ -156,7 +158,10 @@ export const syncEasebuzzTransactions = async (customStartDate?: string, customE
                     totalFetched++;
 
                     const statusStr = (txData.status || "").toLowerCase();
-                    if (statusStr === "success" || statusStr === "charged") {
+                    const isSuccess = statusStr === "success" || statusStr === "charged";
+                    const isFailed = statusStr === "failed" || statusStr === "usercancelled" || statusStr === "dropped" || statusStr === "user_cancelled";
+
+                    if (isSuccess) {
                         const easepayid = txData.easepayid || txData.easebuzz_id || candidateTxnId;
                         const amount = Number(txData.amount || txData.net_amount_debit || order.totalAmount);
                         const result = await completeOrderPayment(order.id, {
@@ -175,6 +180,11 @@ export const syncEasebuzzTransactions = async (customStartDate?: string, customE
                             unpaidTxnIds.delete(order.id);
                             break;
                         }
+                    } else if (isFailed) {
+                        await prisma.payment.updateMany({
+                            where: { orderId: order.id, status: "PENDING" },
+                            data: { status: "FAILED", metadata: txData }
+                        });
                     }
                 }
             }
@@ -269,8 +279,9 @@ export const syncEasebuzzTransactions = async (customStartDate?: string, customE
             for (const tx of txList) {
                 const statusStr = (tx.status || "").toLowerCase();
                 const isSuccess = statusStr === "success" || statusStr === "charged";
+                const isFailed = statusStr === "failed" || statusStr === "usercancelled" || statusStr === "dropped" || statusStr === "user_cancelled";
 
-                if (isSuccess && tx.txnid) {
+                if (tx.txnid) {
                     const easepayid = tx.easepayid || tx.easebuzz_id || tx.txnid;
                     const amount = Number(tx.net_debit_amount || tx.total_debit_amount || tx.amount || 0);
 
@@ -280,21 +291,28 @@ export const syncEasebuzzTransactions = async (customStartDate?: string, customE
                     }
 
                     try {
-                        const result = await completeOrderPayment(resolvedOrderId, {
-                            status: "CHARGED",
-                            txn_id: easepayid,
-                            amount,
-                            payment_method_type: "ONLINE",
-                            phone: tx.phone,
-                            email: tx.email,
-                            firstname: tx.firstname,
-                            productinfo: tx.productinfo,
-                            metadata: tx
-                        });
+                        if (isSuccess) {
+                            const result = await completeOrderPayment(resolvedOrderId, {
+                                status: "CHARGED",
+                                txn_id: easepayid,
+                                amount,
+                                payment_method_type: "ONLINE",
+                                phone: tx.phone,
+                                email: tx.email,
+                                firstname: tx.firstname,
+                                productinfo: tx.productinfo,
+                                metadata: tx
+                            });
 
-                        if (result?.status === "SUCCESS") {
-                            totalSettled++;
-                            unpaidTxnIds.delete(resolvedOrderId);
+                            if (result?.status === "SUCCESS") {
+                                totalSettled++;
+                                unpaidTxnIds.delete(resolvedOrderId);
+                            }
+                        } else if (isFailed) {
+                            await prisma.payment.updateMany({
+                                where: { orderId: resolvedOrderId, status: "PENDING" },
+                                data: { status: "FAILED", metadata: tx }
+                            });
                         }
                     } catch (txErr: any) {
                         logger.error(`[Easebuzz Sync] Error settling txnid ${tx.txnid}: ${txErr.message}`);
