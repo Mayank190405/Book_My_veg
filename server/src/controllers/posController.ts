@@ -1097,7 +1097,6 @@ export const settleAccountBalance = async (req: AuthenticatedRequest, res: Respo
             const unpaid = await (tx as any).order.findMany({
                 where: { 
                     userId: customerId, 
-                    channel: Channel.POS,
                     paymentStatus: { in: ["PENDING", "PARTIAL"] }, 
                     status: { notIn: ["CANCELLED", "FAILED", "PAYMENT_PENDING"] } 
                 },

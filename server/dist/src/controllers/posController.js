@@ -1039,7 +1039,6 @@ const settleAccountBalance = (req, res, next) => __awaiter(void 0, void 0, void 
             const unpaid = yield tx.order.findMany({
                 where: {
                     userId: customerId,
-                    channel: client_1.Channel.POS,
                     paymentStatus: { in: ["PENDING", "PARTIAL"] },
                     status: { notIn: ["CANCELLED", "FAILED", "PAYMENT_PENDING"] }
                 },
