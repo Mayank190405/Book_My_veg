@@ -20,7 +20,8 @@ import {
     HelpCircle,
     Store,
     X,
-    Briefcase
+    Briefcase,
+    RefreshCw
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
@@ -245,8 +246,8 @@ export default function CustomerStatement() {
                 }
             `}} />
 
-            <div className="space-y-8 animate-in fade-in duration-500 print:hidden">
-            {/* Navigation Header */}
+            <div className="space-y-8 animate-in fade-in duration-500 max-w-[1600px] mx-auto print:space-y-4">
+            {/* Top Navigation & Actions Bar */}
             <div className="flex items-center gap-4 print:hidden">
                 <Link 
                     href="/admin/reports/customers"
@@ -323,6 +324,15 @@ export default function CustomerStatement() {
                         >
                             <Printer className="h-4 w-4" />
                             Print Statement
+                        </button>
+                        <button 
+                            onClick={handleCleanDuplicates}
+                            disabled={cleaningDuplicates}
+                            className="h-11 px-5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold text-xs uppercase tracking-widest transition-all flex items-center gap-2 active:scale-95 shadow-sm disabled:opacity-50"
+                            title="Clean duplicate payment entries and recalculate ledger"
+                        >
+                            <RefreshCw className={cn("h-4 w-4", cleaningDuplicates && "animate-spin")} />
+                            <span>{cleaningDuplicates ? "Cleaning..." : "Remove Duplicates"}</span>
                         </button>
                         {summary.outstandingDue > 0 && (
                             <button 

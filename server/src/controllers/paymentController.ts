@@ -1632,3 +1632,13 @@ export const cleanUpDuplicatePayments = async () => {
     }
 };
 
+export const cleanupDuplicatePaymentsController = async (req: AuthenticatedRequest, res: Response) => {
+    if (!req.user) return res.status(401).json({ message: "Unauthorized" });
+    try {
+        await cleanUpDuplicatePayments();
+        return res.json({ success: true, message: "Duplicate payments cleaned up successfully" });
+    } catch (e: any) {
+        return res.status(500).json({ message: e.message || "Failed to cleanup duplicate payments" });
+    }
+};
+

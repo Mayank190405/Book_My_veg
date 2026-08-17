@@ -35,7 +35,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.cleanUpDuplicatePayments = exports.sendPaymentReminderController = exports.triggerEasebuzzSync = exports.saveOrderFeedback = exports.publicCustomerOnboard = exports.initiatePayDue = exports.getPayInfo = exports.checkPaymentEligibility = exports.refundPayment = exports.handleEasebuzzCallback = exports.handleWebhook = exports.verifyPayment = exports.getOrderStatus = exports.completeOrderPayment = exports.settleDuesForCustomer = exports.generatePaymentLink = exports.initiatePayment = void 0;
+exports.cleanupDuplicatePaymentsController = exports.cleanUpDuplicatePayments = exports.sendPaymentReminderController = exports.triggerEasebuzzSync = exports.saveOrderFeedback = exports.publicCustomerOnboard = exports.initiatePayDue = exports.getPayInfo = exports.checkPaymentEligibility = exports.refundPayment = exports.handleEasebuzzCallback = exports.handleWebhook = exports.verifyPayment = exports.getOrderStatus = exports.completeOrderPayment = exports.settleDuesForCustomer = exports.generatePaymentLink = exports.initiatePayment = void 0;
 const prisma_1 = __importDefault(require("../config/prisma"));
 const juspayService_1 = require("../services/juspayService");
 const productController_1 = require("./productController");
@@ -1482,3 +1482,15 @@ const cleanUpDuplicatePayments = () => __awaiter(void 0, void 0, void 0, functio
     }
 });
 exports.cleanUpDuplicatePayments = cleanUpDuplicatePayments;
+const cleanupDuplicatePaymentsController = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    if (!req.user)
+        return res.status(401).json({ message: "Unauthorized" });
+    try {
+        yield (0, exports.cleanUpDuplicatePayments)();
+        return res.json({ success: true, message: "Duplicate payments cleaned up successfully" });
+    }
+    catch (e) {
+        return res.status(500).json({ message: e.message || "Failed to cleanup duplicate payments" });
+    }
+});
+exports.cleanupDuplicatePaymentsController = cleanupDuplicatePaymentsController;

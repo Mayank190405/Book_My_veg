@@ -16,4 +16,5 @@ router.get("/order-status/:orderId", paymentController_1.getOrderStatus);
 // Admin & Operational Sync
 router.post("/refund", (0, auth_1.authorize)(["ADMIN", "STORE_ADMIN"]), paymentController_1.refundPayment);
 router.post("/easebuzz/sync", (0, auth_1.authorize)(["ADMIN", "SUPER_ADMIN", "STORE_ADMIN", "MANAGER", "POS_OPERATOR"]), paymentController_1.triggerEasebuzzSync);
+router.post("/cleanup-duplicates", (0, auth_1.authorize)(["ADMIN", "SUPER_ADMIN", "STORE_ADMIN", "MANAGER", "POS_OPERATOR"]), paymentController_1.cleanupDuplicatePaymentsController);
 exports.default = router;
