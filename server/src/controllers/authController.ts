@@ -356,37 +356,50 @@ export const logout = (req: Request, res: Response) => {
 };
 
 export const loginWithPassword = async (req: Request, res: Response) => {
-    const { phone, password } = req.body;
+    const { phone, password, email, identifier } = req.body;
+    const loginId = (identifier || phone || email || "").toString().trim();
 
-    if (!phone || !password) {
-        return res.status(400).json({ message: "Phone and password are required" });
+    if (!loginId || !password) {
+        return res.status(400).json({ message: "Phone/Email and password are required" });
     }
 
     try {
-        logger.info(`[AUTH] Login attempt for identifier: ${phone}`);
+        logger.info(`[AUTH] Login attempt for identifier: ${loginId}`);
         
-        let user: any = await withRetry(() => prisma.user.findUnique({ where: { phone } }));
+        let user: any = await withRetry(() => prisma.user.findFirst({
+            where: {
+                OR: [
+                    { phone: loginId },
+                    { email: { equals: loginId, mode: "insensitive" } }
+                ]
+            }
+        }));
         let locationMatch: any = null;
 
         if (user) {
-            logger.info(`[AUTH] User found for identifier: ${phone}, checking password...`);
+            logger.info(`[AUTH] User found for identifier: ${loginId}, checking password...`);
         }
 
         if (!user || !user.password) {
-            logger.info(`[AUTH] Triggering fallback identification for identifier: ${phone}...`);
+            logger.info(`[AUTH] Triggering fallback identification for identifier: ${loginId}...`);
             // Fallback: Check if this is a Store/Location login using contactNumber & store password
             locationMatch = await withRetry(() => prisma.location.findFirst({
-                where: { contactNumber: phone }
+                where: {
+                    OR: [
+                        { contactNumber: loginId },
+                        { slug: loginId }
+                    ]
+                }
             }));
 
             if (!locationMatch || !locationMatch.password) {
-                logger.warn(`[AUTH] Access identifier not recognized: ${phone}`);
+                logger.warn(`[AUTH] Access identifier not recognized: ${loginId}`);
                 return res.status(401).json({ message: "Invalid credentials or no password set for this account" });
             }
 
             const isStoreMatch = await bcrypt.compare(password, locationMatch.password);
             if (!isStoreMatch) {
-                logger.warn(`[AUTH] Store password mismatch for identifier: ${phone}`);
+                logger.warn(`[AUTH] Store password mismatch for identifier: ${loginId}`);
                 return res.status(401).json({ message: "Invalid credentials" });
             }
 
