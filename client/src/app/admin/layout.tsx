@@ -84,6 +84,21 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
     // Institutional Navigation Orchestration (Role-based filtering)
     const filteredNavItems = NAV_ITEMS.filter(item => {
+        if (user?.role === "PURCHASE_MANAGER") {
+            // Dedicated UI for Purchase Managers: Procurement & Inventory operations only
+            const allowed = [
+                "/admin/purchase-orders",
+                "/admin/inventory",
+                "/admin/inventory/inward",
+                "/admin/inventory/transfer",
+                "/admin/inventory/mortality",
+                "/admin/products",
+                "/admin/categories",
+                "/admin/units",
+                "/admin/variants"
+            ];
+            return allowed.includes(item.href);
+        }
         if (user?.role === "STORE_ADMIN") {
             // Store Hub Operators focus on fulfillment, localization, and local team management
             const restricted = ["/admin/banners", "/admin/stores", "/admin/units", "/admin/categories", "/admin/policies"];
@@ -100,16 +115,21 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     });
 
     // Auth Guard: Ensure user is logged in before accessing admin
+    const isAuthorized = user && ["ADMIN", "SUPER_ADMIN", "STORE_ADMIN", "PURCHASE_MANAGER"].includes(user.role);
+
     useEffect(() => {
         if (_hasHydrated) {
             if (!user && !isAdminLogin) {
                 router.push(`/admin/login?redirect=${pathname}`);
-            } else if (user && (user.role !== "ADMIN" && user.role !== "SUPER_ADMIN" && user.role !== "STORE_ADMIN") && !isAdminLogin) {
-                // If not an admin of any kind, redirect to home
+            } else if (!isAuthorized && !isAdminLogin) {
+                // If not an admin/manager of any kind, redirect to home
                 router.push("/");
+            } else if (user?.role === "PURCHASE_MANAGER" && (pathname === "/admin/dashboard" || pathname === "/admin")) {
+                // Auto-redirect Purchase Manager to their dedicated Purchase Orders workspace
+                router.push("/admin/purchase-orders");
             }
         }
-    }, [user, _hasHydrated, pathname, router, isAdminLogin]);
+    }, [user, _hasHydrated, pathname, router, isAdminLogin, isAuthorized]);
 
     if (!_hasHydrated) {
         return (
@@ -128,7 +148,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     }
 
     // Safety: Don't render content if user is definitely not authorized
-    if (!user || (user.role !== "ADMIN" && user.role !== "SUPER_ADMIN" && user.role !== "STORE_ADMIN")) {
+    if (!isAuthorized) {
         return null;
     }
 
