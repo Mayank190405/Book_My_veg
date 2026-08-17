@@ -164,6 +164,17 @@ server.keepAliveTimeout = 5000;  // 5s keep-alive window
 server.listen(PORT, async () => {
     logger.info(`Server started on port ${PORT}`, { env: process.env.NODE_ENV });
     
+    // Auto-sync PostgreSQL Role enum values on database
+    try {
+        const roles = ["USER", "ADMIN", "MANAGER", "POS_OPERATOR", "PACKING", "DELIVERY_PARTNER", "CENTER_HEAD", "STORE_ADMIN", "PURCHASE_MANAGER"];
+        for (const r of roles) {
+            await prisma.$executeRawUnsafe(`ALTER TYPE "Role" ADD VALUE IF NOT EXISTS '${r}';`).catch(() => null);
+        }
+        logger.info("✅ PostgreSQL 'Role' enum synchronized with all roles including PURCHASE_MANAGER");
+    } catch (e: any) {
+        // Ignore if DB type is non-enum or already synced
+    }
+
     // Start background metrics flush daemon
     startMetricsFlushWorker();
     

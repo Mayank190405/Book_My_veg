@@ -55,6 +55,7 @@ const pageContentRoutes_1 = __importDefault(require("./routes/pageContentRoutes"
 const auth_1 = require("./middleware/auth");
 const socketHandler_1 = require("./sockets/socketHandler");
 const logger_1 = __importDefault(require("./utils/logger"));
+const prisma_1 = __importDefault(require("./config/prisma"));
 const searchService_1 = require("./services/searchService");
 const metricsFlushWorker_1 = require("./services/metricsFlushWorker");
 const paymentReminderWorker_1 = require("./services/paymentReminderWorker");
@@ -156,6 +157,17 @@ server.headersTimeout = 8000; // 8s headers receive timeout
 server.keepAliveTimeout = 5000; // 5s keep-alive window
 server.listen(PORT, () => __awaiter(void 0, void 0, void 0, function* () {
     logger_1.default.info(`Server started on port ${PORT}`, { env: process.env.NODE_ENV });
+    // Auto-sync PostgreSQL Role enum values on database
+    try {
+        const roles = ["USER", "ADMIN", "MANAGER", "POS_OPERATOR", "PACKING", "DELIVERY_PARTNER", "CENTER_HEAD", "STORE_ADMIN", "PURCHASE_MANAGER"];
+        for (const r of roles) {
+            yield prisma_1.default.$executeRawUnsafe(`ALTER TYPE "Role" ADD VALUE IF NOT EXISTS '${r}';`).catch(() => null);
+        }
+        logger_1.default.info("✅ PostgreSQL 'Role' enum synchronized with all roles including PURCHASE_MANAGER");
+    }
+    catch (e) {
+        // Ignore if DB type is non-enum or already synced
+    }
     // Start background metrics flush daemon
     (0, metricsFlushWorker_1.startMetricsFlushWorker)();
     // Start background unpaid invoice reminders and feedback dispatch
