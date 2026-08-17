@@ -1622,6 +1622,28 @@ export const sendPaymentReminderController = async (req: Request, res: Response,
 
 export const cleanUpDuplicatePayments = async () => {
     try {
+        // 1. Delete duplicate transactionId records across system
+        const duplicateTxns = await prisma.payment.groupBy({
+            by: ["transactionId"],
+            where: { status: "SUCCESS", transactionId: { not: null } },
+            _count: { id: true },
+            having: { id: { _count: { gt: 1 } } }
+        });
+
+        for (const item of duplicateTxns) {
+            if (!item.transactionId) continue;
+            const txns = await prisma.payment.findMany({
+                where: { transactionId: item.transactionId, status: "SUCCESS" },
+                orderBy: { createdAt: "asc" }
+            });
+            const toDelete = txns.slice(1).map(t => t.id);
+            if (toDelete.length > 0) {
+                await prisma.payment.deleteMany({ where: { id: { in: toDelete } } });
+                logger.info(`[Payment Cleanup] Deleted ${toDelete.length} duplicate payments for transactionId ${item.transactionId}`);
+            }
+        }
+
+        // 2. Delete excess payment records where total paid exceeds order total amount
         const duplicateOrders = await prisma.payment.groupBy({
             by: ["orderId"],
             where: { status: "SUCCESS" },
@@ -1658,6 +1680,21 @@ export const cleanUpDuplicatePayments = async () => {
                 });
                 logger.info(`[Payment Cleanup] Deleted ${duplicateIds.length} duplicate payment records for order ${orderId}`);
             }
+
+            // Recalculate order status
+            const remainingPayments = await prisma.payment.findMany({
+                where: { orderId, status: "SUCCESS" }
+            });
+            const newTotalPaid = remainingPayments.reduce((acc, p) => acc + Number(p.amount), 0);
+            const isFull = newTotalPaid >= orderTotal;
+
+            await prisma.order.update({
+                where: { id: orderId },
+                data: {
+                    isPaid: isFull,
+                    paymentStatus: isFull ? "COMPLETED" : (newTotalPaid > 0 ? "PARTIAL" : "PENDING")
+                }
+            });
         }
     } catch (e: any) {
         logger.error(`[Payment Cleanup Error] ${e.message}`);

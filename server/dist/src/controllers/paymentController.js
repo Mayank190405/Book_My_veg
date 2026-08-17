@@ -1471,6 +1471,27 @@ const sendPaymentReminderController = (req, res, next) => __awaiter(void 0, void
 exports.sendPaymentReminderController = sendPaymentReminderController;
 const cleanUpDuplicatePayments = () => __awaiter(void 0, void 0, void 0, function* () {
     try {
+        // 1. Delete duplicate transactionId records across system
+        const duplicateTxns = yield prisma_1.default.payment.groupBy({
+            by: ["transactionId"],
+            where: { status: "SUCCESS", transactionId: { not: null } },
+            _count: { id: true },
+            having: { id: { _count: { gt: 1 } } }
+        });
+        for (const item of duplicateTxns) {
+            if (!item.transactionId)
+                continue;
+            const txns = yield prisma_1.default.payment.findMany({
+                where: { transactionId: item.transactionId, status: "SUCCESS" },
+                orderBy: { createdAt: "asc" }
+            });
+            const toDelete = txns.slice(1).map(t => t.id);
+            if (toDelete.length > 0) {
+                yield prisma_1.default.payment.deleteMany({ where: { id: { in: toDelete } } });
+                logger_1.default.info(`[Payment Cleanup] Deleted ${toDelete.length} duplicate payments for transactionId ${item.transactionId}`);
+            }
+        }
+        // 2. Delete excess payment records where total paid exceeds order total amount
         const duplicateOrders = yield prisma_1.default.payment.groupBy({
             by: ["orderId"],
             where: { status: "SUCCESS" },
@@ -1504,6 +1525,19 @@ const cleanUpDuplicatePayments = () => __awaiter(void 0, void 0, void 0, functio
                 });
                 logger_1.default.info(`[Payment Cleanup] Deleted ${duplicateIds.length} duplicate payment records for order ${orderId}`);
             }
+            // Recalculate order status
+            const remainingPayments = yield prisma_1.default.payment.findMany({
+                where: { orderId, status: "SUCCESS" }
+            });
+            const newTotalPaid = remainingPayments.reduce((acc, p) => acc + Number(p.amount), 0);
+            const isFull = newTotalPaid >= orderTotal;
+            yield prisma_1.default.order.update({
+                where: { id: orderId },
+                data: {
+                    isPaid: isFull,
+                    paymentStatus: isFull ? "COMPLETED" : (newTotalPaid > 0 ? "PARTIAL" : "PENDING")
+                }
+            });
         }
     }
     catch (e) {
