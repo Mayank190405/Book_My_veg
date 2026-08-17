@@ -16,26 +16,32 @@ const formatDate = (date: Date): string => {
     return `${day}-${month}-${year}`;
 };
 
+export interface EasebuzzVerifyResult {
+    success: boolean;
+    txnid: string;
+    gatewayStatus: string | null;
+    error: string | null;
+    txData: any | null;
+}
+
 /**
  * Easebuzz v2.1 Single Retrieve API Query
  * Endpoint: POST /transaction/v2.1/retrieve
  * Body: key, txnid, hash (sha512(key|txnid|salt))
  */
-export const verifySingleEasebuzzTx = async (txnid: string, amount?: number, email?: string, phone?: string) => {
+export const verifySingleEasebuzzTx = async (txnid: string): Promise<EasebuzzVerifyResult> => {
     const key = process.env.EASEBUZZ_KEY || process.env.EASEBUZZ_MERCHANT_KEY;
     const salt = process.env.EASEBUZZ_SALT;
     const env = process.env.EASEBUZZ_ENV || process.env.ENV || "test";
 
-    if (!key || !salt) return null;
+    if (!key || !salt) {
+        logger.error(`[Easebuzz Sync Error] Missing EASEBUZZ_KEY or EASEBUZZ_SALT credentials for txnid: ${txnid}`);
+        return { success: false, txnid, gatewayStatus: null, error: "Credentials missing", txData: null };
+    }
 
     const baseUrl = env === "prod" || env === "production"
         ? "https://dashboard.easebuzz.in"
         : "https://testdashboard.easebuzz.in";
-
-    const amountStr = amount ? Number(amount).toFixed(2) : "";
-    const emailStr = email || "";
-    const phoneStr = phone || "";
-    const merchantEmail = process.env.EASEBUZZ_MERCHANT_EMAIL || process.env.MERCHANT_EMAIL || "";
 
     // Primary Hash sequence per Easebuzz v2.1 Spec: sha512(key|txnid|salt)
     const primaryHashSeq = `${key}|${txnid}|${salt}`;
@@ -51,53 +57,43 @@ export const verifySingleEasebuzzTx = async (txnid: string, amount?: number, ema
             }).toString(),
             {
                 headers: { "Content-Type": "application/x-www-form-urlencoded" },
-                timeout: 5000
+                timeout: 8000
             }
         );
 
-        if (response.data && response.data.status === true) {
-            const txData = Array.isArray(response.data.msg) ? response.data.msg[0] : response.data.msg;
-            if (txData) {
-                return { status: true, msg: txData };
-            }
+        const resData = response.data;
+        if (resData && resData.status === true) {
+            const txData = Array.isArray(resData.msg) ? resData.msg[0] : resData.msg;
+            const gatewayStatus = (txData?.status || "unknown").toLowerCase();
+            return {
+                success: true,
+                txnid,
+                gatewayStatus,
+                error: null,
+                txData
+            };
+        } else {
+            const errorMsg = resData?.reason || resData?.error_desc || resData?.msg || "Transaction not found on gateway";
+            logger.warn(`[Easebuzz Single Tx API Warning] Txn ID: ${txnid} -> Response: ${JSON.stringify(resData)}`);
+            return {
+                success: false,
+                txnid,
+                gatewayStatus: null,
+                error: String(errorMsg),
+                txData: null
+            };
         }
-    } catch (e: any) {
-        // Fallthrough to secondary hash sequences if needed
+    } catch (apiError: any) {
+        const errorDetail = apiError.response?.data || apiError.message;
+        logger.error(`[Easebuzz Single Tx API Error] Txn ID: ${txnid} -> HTTP Error: ${JSON.stringify(errorDetail)}`);
+        return {
+            success: false,
+            txnid,
+            gatewayStatus: null,
+            error: String(apiError.message || errorDetail),
+            txData: null
+        };
     }
-
-    const hashSequences = [
-        `${key}|${txnid}|${amountStr}|${emailStr}|${phoneStr}|${salt}`,
-        `${key}|${merchantEmail}|${txnid}|${salt}`
-    ];
-
-    for (const seq of hashSequences) {
-        const hash = generateSha512(seq);
-        try {
-            const response = await axios.post(
-                `${baseUrl}/transaction/v2.1/retrieve`,
-                new URLSearchParams({
-                    key,
-                    txnid,
-                    hash
-                }).toString(),
-                {
-                    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-                    timeout: 5000
-                }
-            );
-
-            if (response.data && response.data.status === true) {
-                const txData = Array.isArray(response.data.msg) ? response.data.msg[0] : response.data.msg;
-                if (txData) {
-                    return { status: true, msg: txData };
-                }
-            }
-        } catch (e: any) {
-            // Ignore non-existent txnid errors
-        }
-    }
-
-    return null;
 };
 
 export const syncEasebuzzTransactions = async (customStartDate?: string, customEndDate?: string, forceFullHistory: boolean = true) => {
@@ -107,11 +103,18 @@ export const syncEasebuzzTransactions = async (customStartDate?: string, customE
     const merchantEmail = process.env.EASEBUZZ_MERCHANT_EMAIL || process.env.MERCHANT_EMAIL || "";
 
     if (!key || !salt) {
-        logger.warn("[Easebuzz Sync] Skipping sync — EASEBUZZ_KEY or EASEBUZZ_SALT not configured.");
+        logger.error("[Easebuzz Sync] Skipping sync — EASEBUZZ_KEY or EASEBUZZ_SALT not configured.");
         return { success: false, message: "Easebuzz credentials missing" };
     }
 
-    // 1. PRIMARY QUERY ENGINE: Query all database orders with PENDING, PAYMENT_PENDING, PARTIAL, or isPaid: false
+    logger.info("[Easebuzz Sync] Starting payment reconciliation...");
+
+    let totalFetched = 0;
+    let totalSettled = 0;
+    let totalFailed = 0;
+    let totalKeptPending = 0;
+
+    // 1. Fetch all pending/unpaid orders from database
     const unpaidOrders = await prisma.order.findMany({
         where: {
             OR: [
@@ -121,77 +124,83 @@ export const syncEasebuzzTransactions = async (customStartDate?: string, customE
             ],
             status: { notIn: ["CANCELLED", "FAILED"] }
         },
-        orderBy: { createdAt: "desc" },
-        select: {
-            id: true,
-            totalAmount: true,
+        include: {
+            payments: true,
             user: { select: { phone: true, email: true } }
-        }
+        },
+        orderBy: { createdAt: "desc" }
     });
 
-    logger.info(`[Easebuzz Sync] PRIMARY QUERY: Reconciling ${unpaidOrders.length} pending/unpaid database orders via Easebuzz v2.1 API...`);
+    logger.info(`[Easebuzz Sync] Found ${unpaidOrders.length} pending/unpaid orders to verify.`);
 
-    let totalSettled = 0;
-    let totalFetched = 0;
-    const unpaidTxnIds = new Set(unpaidOrders.map(o => o.id));
+    const resolvedOrderIds = new Set<string>();
 
-    // Process pending/unpaid orders concurrently via Easebuzz v2.1 retrieve API (batch size 10)
+    // 2. Verify each pending order against exact Easebuzz txnid
     const batchSize = 10;
     for (let i = 0; i < unpaidOrders.length; i += batchSize) {
         const batch = unpaidOrders.slice(i, i + batchSize);
         await Promise.all(batch.map(async (order) => {
-            const txCandidates = [
-                order.id,
-                `${order.id}OKBBJYE`
-            ];
+            // Determine exact transaction IDs associated with this order
+            const exactTxnIds: string[] = [order.id];
+            
+            // Check payments table for any exact transaction IDs stored during payment creation
+            order.payments.forEach((p: any) => {
+                if (p.transactionId && !p.transactionId.startsWith("PENDING_") && !p.transactionId.startsWith("DUE_COLLECT_") && !p.transactionId.startsWith("SETTLE_")) {
+                    exactTxnIds.push(p.transactionId);
+                }
+            });
 
-            for (const candidateTxnId of txCandidates) {
-                const singleRes = await verifySingleEasebuzzTx(
-                    candidateTxnId,
-                    Number(order.totalAmount),
-                    order.user?.email || undefined,
-                    order.user?.phone || undefined
-                );
+            const uniqueTxnIds = Array.from(new Set(exactTxnIds));
 
-                if (singleRes && singleRes.status === true && singleRes.msg) {
-                    const txData = Array.isArray(singleRes.msg) ? singleRes.msg[0] : singleRes.msg;
-                    totalFetched++;
+            for (const txnid of uniqueTxnIds) {
+                const verifyResult = await verifySingleEasebuzzTx(txnid);
 
-                    const statusStr = (txData.status || "").toLowerCase();
-                    const isSuccess = statusStr === "success" || statusStr === "charged";
-                    const isFailed = statusStr === "failed" || statusStr === "usercancelled" || statusStr === "dropped" || statusStr === "user_cancelled";
+                if (verifyResult.success && verifyResult.gatewayStatus) {
+                    const status = verifyResult.gatewayStatus;
+                    const txData = verifyResult.txData;
 
-                    if (isSuccess) {
-                        const easepayid = txData.easepayid || txData.easebuzz_id || candidateTxnId;
-                        const amount = Number(txData.amount || txData.net_amount_debit || order.totalAmount);
-                        const result = await completeOrderPayment(order.id, {
+                    if (status === "success" || status === "charged") {
+                        const easepayid = txData?.easepayid || txData?.easebuzz_id || txnid;
+                        const amount = Number(txData?.amount || txData?.net_amount_debit || order.totalAmount);
+                        
+                        const updateResult = await completeOrderPayment(order.id, {
                             status: "CHARGED",
                             txn_id: easepayid,
                             amount,
                             payment_method_type: "ONLINE",
-                            phone: txData.phone || order.user?.phone,
-                            email: txData.email || order.user?.email,
-                            firstname: txData.firstname,
-                            productinfo: txData.productinfo,
+                            phone: txData?.phone || order.user?.phone,
+                            email: txData?.email || order.user?.email,
+                            firstname: txData?.firstname,
+                            productinfo: txData?.productinfo,
                             metadata: txData
                         });
-                        if (result?.status === "SUCCESS") {
-                            totalSettled++;
-                            unpaidTxnIds.delete(order.id);
-                            break;
-                        }
-                    } else if (isFailed) {
+
+                        totalSettled++;
+                        resolvedOrderIds.add(order.id);
+                        logger.info(`[Easebuzz Sync] Order ID: ${order.id} -> Easebuzz txnid: ${txnid} -> Gateway Status: SUCCESS/CHARGED -> DB Result: PAID/CHARGED`);
+                        break;
+
+                    } else if (status === "failed" || status === "dropped" || status === "usercancelled" || status === "user_cancelled") {
+                        totalFailed++;
                         await prisma.payment.updateMany({
                             where: { orderId: order.id, status: "PENDING" },
-                            data: { status: "FAILED", metadata: txData }
+                            data: { status: "FAILED", metadata: txData || {} }
                         });
+                        logger.info(`[Easebuzz Sync] Order ID: ${order.id} -> Easebuzz txnid: ${txnid} -> Gateway Status: ${status.toUpperCase()} -> DB Result: FAILED`);
+                        break;
+
+                    } else {
+                        totalKeptPending++;
+                        logger.info(`[Easebuzz Sync] Order ID: ${order.id} -> Easebuzz txnid: ${txnid} -> Gateway Status: ${status.toUpperCase()} -> DB Result: Kept PENDING per gateway status`);
                     }
+                } else {
+                    logger.info(`[Easebuzz Sync] Order ID: ${order.id} -> Easebuzz txnid: ${txnid} -> Gateway Response: ${verifyResult.error || "Not found on gateway"} -> DB Result: Kept PENDING`);
                 }
             }
         }));
     }
 
-    // 2. SECONDARY QUERY: Date Range Retrieve API for bulk historical transaction reconciliation
+    // 3. Date-Range Retrieve API (/transaction/v2/retrieve/date) for bulk historical pagination
     const today = new Date();
     let defaultStartDate = new Date(2024, 0, 1);
     if (forceFullHistory) {
@@ -221,8 +230,10 @@ export const syncEasebuzzTransactions = async (customStartDate?: string, customE
     let hasMore = true;
     let pageCount = 0;
 
+    logger.info(`[Easebuzz Sync] Running bulk date-range pagination sync from ${startDate} to ${endDate}...`);
+
     try {
-        while (hasMore && pageCount < 30) {
+        while (hasMore && pageCount < 50) {
             pageCount++;
             const payload: any = {
                 key,
@@ -246,9 +257,12 @@ export const syncEasebuzzTransactions = async (customStartDate?: string, customE
                         "Accept": "application/json",
                         "Content-Type": "application/json"
                     },
-                    timeout: 10000
+                    timeout: 12000
                 }
-            ).catch(() => null);
+            ).catch((err: any) => {
+                logger.error(`[Easebuzz Date Retrieve Error] Page ${pageCount}: ${err.message}`);
+                return null;
+            });
 
             if (!response || !response.data || response.data.status !== true) {
                 activeHash = generateSha512(hashSeq2);
@@ -263,9 +277,12 @@ export const syncEasebuzzTransactions = async (customStartDate?: string, customE
                             "Accept": "application/json",
                             "Content-Type": "application/json"
                         },
-                        timeout: 10000
+                        timeout: 12000
                     }
-                ).catch(() => null);
+                ).catch((err: any) => {
+                    logger.error(`[Easebuzz Date Retrieve Secondary Error] Page ${pageCount}: ${err.message}`);
+                    return null;
+                });
             }
 
             const resData = response?.data;
@@ -306,16 +323,17 @@ export const syncEasebuzzTransactions = async (customStartDate?: string, customE
 
                             if (result?.status === "SUCCESS") {
                                 totalSettled++;
-                                unpaidTxnIds.delete(resolvedOrderId);
+                                logger.info(`[Easebuzz Date Sync] Order ID: ${resolvedOrderId} -> Easebuzz txnid: ${tx.txnid} -> Gateway Status: SUCCESS -> DB Result: PAID/CHARGED`);
                             }
                         } else if (isFailed) {
                             await prisma.payment.updateMany({
                                 where: { orderId: resolvedOrderId, status: "PENDING" },
                                 data: { status: "FAILED", metadata: tx }
                             });
+                            logger.info(`[Easebuzz Date Sync] Order ID: ${resolvedOrderId} -> Easebuzz txnid: ${tx.txnid} -> Gateway Status: ${statusStr.toUpperCase()} -> DB Result: FAILED`);
                         }
                     } catch (txErr: any) {
-                        logger.error(`[Easebuzz Sync] Error settling txnid ${tx.txnid}: ${txErr.message}`);
+                        logger.error(`[Easebuzz Date Sync] Error settling txnid ${tx.txnid}: ${txErr.message}`);
                     }
                 }
             }
@@ -327,21 +345,24 @@ export const syncEasebuzzTransactions = async (customStartDate?: string, customE
             }
         }
 
-        // 3. Clean up any existing duplicate payment entries across orders
+        // 4. Clean up any existing duplicate payment entries across orders
         const { cleanUpDuplicatePayments } = await import("../controllers/paymentController");
         await cleanUpDuplicatePayments();
 
-        logger.info(`[Easebuzz Sync] Sync complete! Total Fetched: ${totalFetched}, Total Settled: ${totalSettled}.`);
+        logger.info(`[Easebuzz Sync Summary] Total Pending Verified: ${unpaidOrders.length}, Settled: ${totalSettled}, Failed: ${totalFailed}, Kept Pending: ${totalKeptPending}, Total Bulk Fetched: ${totalFetched}.`);
+        
         return {
             success: true,
-            totalFetched,
+            totalUnpaidVerified: unpaidOrders.length,
             totalSettled,
-            unpaidOrdersChecked: unpaidOrders.length,
+            totalFailed,
+            totalKeptPending,
+            totalFetched,
             startDate,
             endDate
         };
     } catch (error: any) {
-        logger.error(`[Easebuzz Sync Error] ${error.message}`);
+        logger.error(`[Easebuzz Sync Exception] ${error.message}`);
         return { success: false, error: error.message };
     }
 };
