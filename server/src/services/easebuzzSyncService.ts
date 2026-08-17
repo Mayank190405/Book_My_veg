@@ -53,7 +53,7 @@ export const verifySingleEasebuzzTx = async (txnid: string, amount?: number, ema
                 }).toString(),
                 {
                     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-                    timeout: 5000
+                    timeout: 4000
                 }
             );
 
@@ -61,14 +61,14 @@ export const verifySingleEasebuzzTx = async (txnid: string, amount?: number, ema
                 return response.data;
             }
         } catch (e: any) {
-            // Silently ignore 400/404 if txnid does not exist on gateway
+            // Silence expected 400 for non-existent transaction IDs
         }
     }
 
     return null;
 };
 
-export const syncEasebuzzTransactions = async (customStartDate?: string, customEndDate?: string) => {
+export const syncEasebuzzTransactions = async (customStartDate?: string, customEndDate?: string, forceFullHistory: boolean = true) => {
     const key = process.env.EASEBUZZ_KEY || process.env.EASEBUZZ_MERCHANT_KEY;
     const salt = process.env.EASEBUZZ_SALT;
     const env = process.env.EASEBUZZ_ENV || process.env.ENV || "test";
@@ -80,15 +80,42 @@ export const syncEasebuzzTransactions = async (customStartDate?: string, customE
     }
 
     const today = new Date();
-    const thirtyDaysAgo = new Date(today);
-    thirtyDaysAgo.setDate(today.getDate() - 30);
+    
+    // Always default start date to earliest order in database or 2024-01-01 when forceFullHistory is true
+    let defaultStartDate = new Date(2024, 0, 1);
+    if (forceFullHistory) {
+        const earliestOrder = await prisma.order.findFirst({
+            orderBy: { createdAt: "asc" },
+            select: { createdAt: true }
+        });
+        if (earliestOrder?.createdAt) {
+            defaultStartDate = earliestOrder.createdAt;
+        }
+    }
 
-    const startDate = customStartDate || formatDate(thirtyDaysAgo);
+    const startDate = (forceFullHistory || !customStartDate) ? formatDate(defaultStartDate) : customStartDate;
     const endDate = customEndDate || formatDate(today);
 
     const baseUrl = env === "prod" || env === "production"
         ? "https://dashboard.easebuzz.in"
         : "https://testdashboard.easebuzz.in";
+
+    // 1. Collect all unpaid orders from the database till date
+    const unpaidOrders = await prisma.order.findMany({
+        where: {
+            isPaid: false,
+            paymentStatus: { in: ["PENDING", "PARTIAL"] },
+            status: { notIn: ["CANCELLED", "FAILED"] }
+        },
+        select: {
+            id: true,
+            totalAmount: true,
+            user: { select: { phone: true, email: true } }
+        }
+    });
+
+    const unpaidTxnIds = new Set(unpaidOrders.map(o => o.id));
+    logger.info(`[Easebuzz Sync] Querying all transactions till date (${startDate} to ${endDate}). Target unpaid orders count: ${unpaidTxnIds.size}`);
 
     // Try both hash sequences (with merchant_email and without) for Date Range Retrieve API
     const hashSeq1 = `${key}|${merchantEmail}|${startDate}|${endDate}|${salt}`;
@@ -97,8 +124,6 @@ export const syncEasebuzzTransactions = async (customStartDate?: string, customE
     let activeHash = generateSha512(hashSeq1);
     let activeEmail = merchantEmail;
 
-    logger.info(`[Easebuzz Sync] Starting fast transaction sync (from ${startDate} to ${endDate})...`);
-
     let totalFetched = 0;
     let totalSettled = 0;
     let nextToken: string | null = null;
@@ -106,7 +131,7 @@ export const syncEasebuzzTransactions = async (customStartDate?: string, customE
     let pageCount = 0;
 
     try {
-        while (hasMore && pageCount < 30) {
+        while (hasMore && pageCount < 50) {
             pageCount++;
             const payload: any = {
                 key,
@@ -190,6 +215,7 @@ export const syncEasebuzzTransactions = async (customStartDate?: string, customE
 
                         if (result?.status === "SUCCESS") {
                             totalSettled++;
+                            unpaidTxnIds.delete(resolvedOrderId);
                         }
                     } catch (txErr: any) {
                         logger.error(`[Easebuzz Sync] Error settling txnid ${tx.txnid}: ${txErr.message}`);
@@ -204,15 +230,53 @@ export const syncEasebuzzTransactions = async (customStartDate?: string, customE
             }
         }
 
-        // Clean up any existing duplicate payment entries across orders
+        // 2. Query remaining unpaid database orders via Single Retrieve API
+        const remainingUnpaid = unpaidOrders.filter(o => unpaidTxnIds.has(o.id));
+        if (remainingUnpaid.length > 0) {
+            logger.info(`[Easebuzz Sync] Checking ${remainingUnpaid.length} remaining unpaid orders via single retrieve API...`);
+            for (const order of remainingUnpaid) {
+                const singleRes = await verifySingleEasebuzzTx(
+                    order.id,
+                    Number(order.totalAmount),
+                    order.user?.email || undefined,
+                    order.user?.phone || undefined
+                );
+
+                if (singleRes && (singleRes.status === true || singleRes.status === "success")) {
+                    const txData = singleRes.msg || singleRes.data || singleRes;
+                    const statusStr = (txData.status || "").toLowerCase();
+                    if (statusStr === "success" || statusStr === "charged") {
+                        const easepayid = txData.easepayid || txData.easebuzz_id || order.id;
+                        const amount = Number(txData.amount || txData.net_debit_amount || order.totalAmount);
+                        const result = await completeOrderPayment(order.id, {
+                            status: "CHARGED",
+                            txn_id: easepayid,
+                            amount,
+                            payment_method_type: "ONLINE",
+                            phone: txData.phone || order.user?.phone,
+                            email: txData.email || order.user?.email,
+                            firstname: txData.firstname,
+                            productinfo: txData.productinfo,
+                            metadata: txData
+                        });
+                        if (result?.status === "SUCCESS") {
+                            totalSettled++;
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. Clean up any existing duplicate payment entries across orders
         const { cleanUpDuplicatePayments } = await import("../controllers/paymentController");
         await cleanUpDuplicatePayments();
 
-        logger.info(`[Easebuzz Sync] Fast sync complete! Total Fetched: ${totalFetched}, Total Settled: ${totalSettled}.`);
+        logger.info(`[Easebuzz Sync] Full sync complete till date! Total Fetched: ${totalFetched}, Total Settled: ${totalSettled}.`);
         return {
             success: true,
             totalFetched,
             totalSettled,
+            unpaidOrdersChecked: unpaidOrders.length,
             startDate,
             endDate
         };
@@ -225,15 +289,15 @@ export const syncEasebuzzTransactions = async (customStartDate?: string, customE
 export const startEasebuzzSyncCron = () => {
     // Schedule cron every 6 hours: 00:00, 06:00, 12:00, 18:00
     cron.schedule("0 */6 * * *", async () => {
-        logger.info("[Cron] Running 6-hour Easebuzz transaction sync job...");
-        await syncEasebuzzTransactions();
+        logger.info("[Cron] Running 6-hour Easebuzz transaction sync job targeting unpaid transactions till date...");
+        await syncEasebuzzTransactions(undefined, undefined, true);
     });
 
-    logger.info("⏰ Easebuzz Transaction Sync Cron initialized (Runs every 6 hours)");
+    logger.info("⏰ Easebuzz Transaction Sync Cron initialized (Targeting unpaid transactions till date every 6 hours)");
 
     // Initial sync 30 seconds after server startup
     setTimeout(() => {
-        syncEasebuzzTransactions().catch(err => {
+        syncEasebuzzTransactions(undefined, undefined, true).catch(err => {
             logger.error(`[Easebuzz Initial Sync Error] ${err.message}`);
         });
     }, 30000);
