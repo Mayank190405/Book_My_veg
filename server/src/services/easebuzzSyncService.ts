@@ -222,6 +222,10 @@ export const syncEasebuzzTransactions = async (customStartDate?: string, customE
             }
         }
 
+        // 3. Clean up any existing duplicate payment entries across orders
+        const { cleanUpDuplicatePayments } = await import("../controllers/paymentController");
+        await cleanUpDuplicatePayments();
+
         logger.info(`[Easebuzz Sync] Sync complete! Total Fetched: ${totalFetched}, Total Settled: ${totalSettled}.`);
         return {
             success: true,

@@ -582,6 +582,33 @@ export const completeOrderPayment = async (orderId: string, paymentDetails: any)
         }
     }
     if (paymentDetails.status === "CHARGED" || paymentDetails.status === "SUCCESS") {
+        const targetTxnId = paymentDetails.txn_id || paymentDetails.order_id || orderId;
+
+        // Check 1: Has this exact transaction ID already been processed successfully?
+        const existingTxnPayment = await prisma.payment.findFirst({
+            where: {
+                status: "SUCCESS",
+                OR: [
+                    { transactionId: targetTxnId },
+                    ...(paymentDetails.txn_id ? [{ transactionId: paymentDetails.txn_id }] : [])
+                ]
+            }
+        });
+        if (existingTxnPayment) {
+            logger.info(`[Payment] Transaction ${targetTxnId} already recorded for order ${resolvedOrderId}. Skipping duplicate.`);
+            return { status: "ALREADY_PROCESSED" };
+        }
+
+        // Check 2: Is order already fully paid?
+        const existingSuccessPayments = await prisma.payment.findMany({
+            where: { orderId: resolvedOrderId, status: "SUCCESS" }
+        });
+        const currentTotalPaid = existingSuccessPayments.reduce((sum: number, p: any) => sum + Number(p.amount), 0);
+        if (existing.isPaid && currentTotalPaid >= Number(existing.totalAmount)) {
+            logger.info(`[Payment] Order ${resolvedOrderId} is already fully paid (₹${currentTotalPaid} / ₹${existing.totalAmount}). Skipping duplicate.`);
+            return { status: "ALREADY_PROCESSED" };
+        }
+
         await prisma.$transaction(async (tx: any) => {
             // Record the payment first
             const pendingPayment = await tx.payment.findFirst({
@@ -597,7 +624,7 @@ export const completeOrderPayment = async (orderId: string, paymentDetails: any)
                         status: "SUCCESS",
                         amount: paymentDetails.amount || pendingPayment.amount,
                         method: paymentDetails.payment_method_type || pendingPayment.method,
-                        transactionId: paymentDetails.txn_id || paymentDetails.order_id || orderId,
+                        transactionId: targetTxnId,
                         metadata: paymentDetails || {},
                     }
                 });
@@ -608,7 +635,7 @@ export const completeOrderPayment = async (orderId: string, paymentDetails: any)
                         amount: paymentDetails.amount || existing.totalAmount,
                         method: paymentDetails.payment_method_type || "ONLINE",
                         status: "SUCCESS",
-                        transactionId: paymentDetails.txn_id || paymentDetails.order_id || orderId,
+                        transactionId: targetTxnId,
                         metadata: paymentDetails || {},
                     },
                 });
@@ -1558,6 +1585,50 @@ export const sendPaymentReminderController = async (req: Request, res: Response,
     } catch (error: any) {
         logger.error(`[Send Payment Reminder Error] ${error.message}`);
         return res.status(500).json({ message: "Failed to send WhatsApp reminder" });
+    }
+};
+
+export const cleanUpDuplicatePayments = async () => {
+    try {
+        const duplicateOrders = await prisma.payment.groupBy({
+            by: ["orderId"],
+            where: { status: "SUCCESS" },
+            _count: { id: true },
+            having: { id: { _count: { gt: 1 } } }
+        });
+
+        for (const item of duplicateOrders) {
+            const orderId = item.orderId;
+            const order = await prisma.order.findUnique({ where: { id: orderId } });
+            if (!order) continue;
+
+            const payments = await prisma.payment.findMany({
+                where: { orderId, status: "SUCCESS" },
+                orderBy: { createdAt: "asc" }
+            });
+
+            const orderTotal = Number(order.totalAmount);
+            let accum = 0;
+            const duplicateIds: string[] = [];
+
+            for (const p of payments) {
+                const amt = Number(p.amount);
+                if (accum >= orderTotal) {
+                    duplicateIds.push(p.id);
+                } else {
+                    accum += amt;
+                }
+            }
+
+            if (duplicateIds.length > 0) {
+                await prisma.payment.deleteMany({
+                    where: { id: { in: duplicateIds } }
+                });
+                logger.info(`[Payment Cleanup] Deleted ${duplicateIds.length} duplicate payment records for order ${orderId}`);
+            }
+        }
+    } catch (e: any) {
+        logger.error(`[Payment Cleanup Error] ${e.message}`);
     }
 };
 

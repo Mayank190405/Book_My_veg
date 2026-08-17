@@ -35,7 +35,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.sendPaymentReminderController = exports.triggerEasebuzzSync = exports.saveOrderFeedback = exports.publicCustomerOnboard = exports.initiatePayDue = exports.getPayInfo = exports.checkPaymentEligibility = exports.refundPayment = exports.handleEasebuzzCallback = exports.handleWebhook = exports.verifyPayment = exports.getOrderStatus = exports.completeOrderPayment = exports.settleDuesForCustomer = exports.generatePaymentLink = exports.initiatePayment = void 0;
+exports.cleanUpDuplicatePayments = exports.sendPaymentReminderController = exports.triggerEasebuzzSync = exports.saveOrderFeedback = exports.publicCustomerOnboard = exports.initiatePayDue = exports.getPayInfo = exports.checkPaymentEligibility = exports.refundPayment = exports.handleEasebuzzCallback = exports.handleWebhook = exports.verifyPayment = exports.getOrderStatus = exports.completeOrderPayment = exports.settleDuesForCustomer = exports.generatePaymentLink = exports.initiatePayment = void 0;
 const prisma_1 = __importDefault(require("../config/prisma"));
 const juspayService_1 = require("../services/juspayService");
 const productController_1 = require("./productController");
@@ -550,6 +550,30 @@ const completeOrderPayment = (orderId, paymentDetails) => __awaiter(void 0, void
         }
     }
     if (paymentDetails.status === "CHARGED" || paymentDetails.status === "SUCCESS") {
+        const targetTxnId = paymentDetails.txn_id || paymentDetails.order_id || orderId;
+        // Check 1: Has this exact transaction ID already been processed successfully?
+        const existingTxnPayment = yield prisma_1.default.payment.findFirst({
+            where: {
+                status: "SUCCESS",
+                OR: [
+                    { transactionId: targetTxnId },
+                    ...(paymentDetails.txn_id ? [{ transactionId: paymentDetails.txn_id }] : [])
+                ]
+            }
+        });
+        if (existingTxnPayment) {
+            logger_1.default.info(`[Payment] Transaction ${targetTxnId} already recorded for order ${resolvedOrderId}. Skipping duplicate.`);
+            return { status: "ALREADY_PROCESSED" };
+        }
+        // Check 2: Is order already fully paid?
+        const existingSuccessPayments = yield prisma_1.default.payment.findMany({
+            where: { orderId: resolvedOrderId, status: "SUCCESS" }
+        });
+        const currentTotalPaid = existingSuccessPayments.reduce((sum, p) => sum + Number(p.amount), 0);
+        if (existing.isPaid && currentTotalPaid >= Number(existing.totalAmount)) {
+            logger_1.default.info(`[Payment] Order ${resolvedOrderId} is already fully paid (₹${currentTotalPaid} / ₹${existing.totalAmount}). Skipping duplicate.`);
+            return { status: "ALREADY_PROCESSED" };
+        }
         yield prisma_1.default.$transaction((tx) => __awaiter(void 0, void 0, void 0, function* () {
             // Record the payment first
             const pendingPayment = (yield tx.payment.findFirst({
@@ -564,7 +588,7 @@ const completeOrderPayment = (orderId, paymentDetails) => __awaiter(void 0, void
                         status: "SUCCESS",
                         amount: paymentDetails.amount || pendingPayment.amount,
                         method: paymentDetails.payment_method_type || pendingPayment.method,
-                        transactionId: paymentDetails.txn_id || paymentDetails.order_id || orderId,
+                        transactionId: targetTxnId,
                         metadata: paymentDetails || {},
                     }
                 });
@@ -576,7 +600,7 @@ const completeOrderPayment = (orderId, paymentDetails) => __awaiter(void 0, void
                         amount: paymentDetails.amount || existing.totalAmount,
                         method: paymentDetails.payment_method_type || "ONLINE",
                         status: "SUCCESS",
-                        transactionId: paymentDetails.txn_id || paymentDetails.order_id || orderId,
+                        transactionId: targetTxnId,
                         metadata: paymentDetails || {},
                     },
                 });
@@ -1416,3 +1440,45 @@ const sendPaymentReminderController = (req, res, next) => __awaiter(void 0, void
     }
 });
 exports.sendPaymentReminderController = sendPaymentReminderController;
+const cleanUpDuplicatePayments = () => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const duplicateOrders = yield prisma_1.default.payment.groupBy({
+            by: ["orderId"],
+            where: { status: "SUCCESS" },
+            _count: { id: true },
+            having: { id: { _count: { gt: 1 } } }
+        });
+        for (const item of duplicateOrders) {
+            const orderId = item.orderId;
+            const order = yield prisma_1.default.order.findUnique({ where: { id: orderId } });
+            if (!order)
+                continue;
+            const payments = yield prisma_1.default.payment.findMany({
+                where: { orderId, status: "SUCCESS" },
+                orderBy: { createdAt: "asc" }
+            });
+            const orderTotal = Number(order.totalAmount);
+            let accum = 0;
+            const duplicateIds = [];
+            for (const p of payments) {
+                const amt = Number(p.amount);
+                if (accum >= orderTotal) {
+                    duplicateIds.push(p.id);
+                }
+                else {
+                    accum += amt;
+                }
+            }
+            if (duplicateIds.length > 0) {
+                yield prisma_1.default.payment.deleteMany({
+                    where: { id: { in: duplicateIds } }
+                });
+                logger_1.default.info(`[Payment Cleanup] Deleted ${duplicateIds.length} duplicate payment records for order ${orderId}`);
+            }
+        }
+    }
+    catch (e) {
+        logger_1.default.error(`[Payment Cleanup Error] ${e.message}`);
+    }
+});
+exports.cleanUpDuplicatePayments = cleanUpDuplicatePayments;
