@@ -314,6 +314,14 @@ export const syncEasebuzzTransactions = async (customStartDate?: string, customE
                         resolvedOrderId = tx.txnid.replace(/_\d{3,}$/, "");
                     }
 
+                    // Extract order ID candidate from productinfo if present (e.g. "Bill Payment BMV9IO3QM3C3F8T")
+                    if (tx.productinfo) {
+                        const productMatch = String(tx.productinfo).match(/BMV[A-Z0-9]+/i);
+                        if (productMatch && productMatch[0].length >= 8) {
+                            resolvedOrderId = productMatch[0].slice(0, 8);
+                        }
+                    }
+
                     try {
                         if (isSuccess) {
                             const result = await completeOrderPayment(resolvedOrderId, {
@@ -334,7 +342,13 @@ export const syncEasebuzzTransactions = async (customStartDate?: string, customE
                             }
                         } else if (isFailed) {
                             await prisma.payment.updateMany({
-                                where: { orderId: resolvedOrderId, status: "PENDING" },
+                                where: {
+                                    OR: [
+                                        { orderId: resolvedOrderId },
+                                        { transactionId: tx.txnid }
+                                    ],
+                                    status: "PENDING"
+                                },
                                 data: { status: "FAILED", metadata: tx }
                             });
                             logger.info(`[Easebuzz Date Sync] Order ID: ${resolvedOrderId} -> Easebuzz txnid: ${tx.txnid} -> Gateway Status: ${statusStr.toUpperCase()} -> DB Result: FAILED`);
