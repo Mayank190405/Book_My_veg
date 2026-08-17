@@ -236,12 +236,23 @@ const syncEasebuzzTransactions = (customStartDate_1, customEndDate_1, ...args_1)
     const hashSeq2 = `${key}|${startDate}|${endDate}|${salt}`;
     let activeHash = generateSha512(hashSeq1);
     let activeEmail = merchantEmail;
+    // Determine initial working hash sequence on Page 1
+    const testPayload = Object.assign(Object.assign({ key, hash: activeHash }, (activeEmail ? { merchant_email: activeEmail } : {})), { date_range: { start_date: startDate, end_date: endDate } });
+    const initialRes = yield axios_1.default.post(`${baseUrl}/transaction/v2/retrieve/date`, testPayload, {
+        headers: { "Accept": "application/json", "Content-Type": "application/json" },
+        timeout: 10000
+    }).catch(() => null);
+    if (!(initialRes === null || initialRes === void 0 ? void 0 : initialRes.data) || initialRes.data.status !== true) {
+        activeHash = generateSha512(hashSeq2);
+        activeEmail = undefined;
+        logger_1.default.info(`[Easebuzz Date Sync] Switching to secondary hash sequence (without merchant_email)...`);
+    }
     let nextToken = null;
     let hasMore = true;
     let pageCount = 0;
     logger_1.default.info(`[Easebuzz Sync] Running bulk date-range pagination sync from ${startDate} to ${endDate}...`);
     try {
-        while (hasMore && pageCount < 50) {
+        while (hasMore && pageCount < 100) {
             pageCount++;
             const payload = Object.assign(Object.assign({ key, hash: activeHash }, (activeEmail ? { merchant_email: activeEmail } : {})), { date_range: {
                     start_date: startDate,
@@ -250,31 +261,16 @@ const syncEasebuzzTransactions = (customStartDate_1, customEndDate_1, ...args_1)
             if (nextToken) {
                 payload.next = nextToken;
             }
-            let response = yield axios_1.default.post(`${baseUrl}/transaction/v2/retrieve/date`, payload, {
+            const response = yield axios_1.default.post(`${baseUrl}/transaction/v2/retrieve/date`, payload, {
                 headers: {
                     "Accept": "application/json",
                     "Content-Type": "application/json"
                 },
-                timeout: 12000
+                timeout: 15000
             }).catch((err) => {
                 logger_1.default.error(`[Easebuzz Date Retrieve Error] Page ${pageCount}: ${err.message}`);
                 return null;
             });
-            if (!response || !response.data || response.data.status !== true) {
-                activeHash = generateSha512(hashSeq2);
-                payload.hash = activeHash;
-                delete payload.merchant_email;
-                response = yield axios_1.default.post(`${baseUrl}/transaction/v2/retrieve/date`, payload, {
-                    headers: {
-                        "Accept": "application/json",
-                        "Content-Type": "application/json"
-                    },
-                    timeout: 12000
-                }).catch((err) => {
-                    logger_1.default.error(`[Easebuzz Date Retrieve Secondary Error] Page ${pageCount}: ${err.message}`);
-                    return null;
-                });
-            }
             const resData = response === null || response === void 0 ? void 0 : response.data;
             if (!resData || resData.status !== true || !Array.isArray(resData.data) || resData.data.length === 0) {
                 break;
