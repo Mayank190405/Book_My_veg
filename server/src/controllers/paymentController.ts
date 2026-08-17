@@ -514,17 +514,44 @@ export const completeOrderPayment = async (orderId: string, paymentDetails: any)
     });
 
     if (!existing) {
-        // Fallback 1: Try finding order by id case-insensitively or partial match
+        // Collect all possible candidate Order IDs from orderId, resolvedOrderId, productinfo, etc.
+        const candidates: string[] = [orderId, resolvedOrderId];
+        if (resolvedOrderId.length >= 8) {
+            candidates.push(resolvedOrderId.slice(0, 8));
+        }
+        if (resolvedOrderId.length >= 6) {
+            candidates.push(resolvedOrderId.slice(0, 6));
+        }
+
+        if (paymentDetails?.productinfo) {
+            const productStr = String(paymentDetails.productinfo);
+            const matches = productStr.match(/BMV[A-Z0-9]+/gi);
+            if (matches) {
+                matches.forEach(m => {
+                    candidates.push(m);
+                    if (m.length >= 8) candidates.push(m.slice(0, 8));
+                });
+            }
+        }
+
+        const uniqueCandidates = Array.from(new Set(candidates)).filter(Boolean);
+
         existing = await prisma.order.findFirst({
             where: {
-                OR: [
-                    { id: resolvedOrderId },
-                    { id: { contains: resolvedOrderId, mode: "insensitive" } },
-                    { id: { startsWith: resolvedOrderId.slice(0, 8) } }
-                ]
+                id: { in: uniqueCandidates }
             },
             include: { items: true, user: true }
         });
+
+        if (!existing) {
+            existing = await prisma.order.findFirst({
+                where: {
+                    OR: uniqueCandidates.map(cId => ({ id: { contains: cId, mode: "insensitive" } }))
+                },
+                include: { items: true, user: true }
+            });
+        }
+
         if (existing) {
             resolvedOrderId = existing.id;
         }
@@ -558,13 +585,18 @@ export const completeOrderPayment = async (orderId: string, paymentDetails: any)
         if (!existing && (paymentDetails.status === "CHARGED" || paymentDetails.status === "SUCCESS")) {
             const custPhone = paymentDetails.phone || paymentDetails.customerPhone || paymentDetails.firstname;
             const custEmail = paymentDetails.email || paymentDetails.customerEmail;
-            const cleanPhone = custPhone ? String(custPhone).replace(/\D/g, "") : "";
+            let cleanPhone = custPhone ? String(custPhone).replace(/\D/g, "") : "";
+            if (cleanPhone.length > 10) cleanPhone = cleanPhone.slice(-10);
 
             if (cleanPhone || custEmail) {
                 const customer = await prisma.user.findFirst({
                     where: {
                         OR: [
-                            ...(cleanPhone ? [{ phone: custPhone }, { phone: cleanPhone }, { phone: `+91${cleanPhone}` }] : []),
+                            ...(cleanPhone ? [
+                                { phone: cleanPhone },
+                                { phone: `+91${cleanPhone}` },
+                                { phone: { contains: cleanPhone } }
+                            ] : []),
                             ...(custEmail ? [{ email: custEmail }] : [])
                         ]
                     }
