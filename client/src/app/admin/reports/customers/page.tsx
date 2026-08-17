@@ -21,7 +21,8 @@ import {
     ChevronRight,
     HelpCircle,
     UserX,
-    Coins
+    Coins,
+    RefreshCw
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
@@ -129,6 +130,28 @@ export default function CustomerDuesReport() {
         }
     };
 
+    const [syncingEasebuzz, setSyncingEasebuzz] = useState(false);
+
+    const handleSyncEasebuzz = async () => {
+        setSyncingEasebuzz(true);
+        try {
+            const res = await api.post("/payments/easebuzz/sync", {
+                startDate: startDate ? format(new Date(startDate), "dd-MM-yyyy") : undefined,
+                endDate: endDate ? format(new Date(endDate), "dd-MM-yyyy") : undefined
+            });
+            if (res.data?.success) {
+                toast.success(`Easebuzz Sync Completed! Fetched: ${res.data.totalFetched || 0}, Settled: ${res.data.totalSettled || 0}`);
+                fetchData();
+            } else {
+                toast.warning(res.data?.message || "Easebuzz sync finished");
+            }
+        } catch (err: any) {
+            toast.error(err.response?.data?.message || "Failed to trigger Easebuzz payment sync");
+        } finally {
+            setSyncingEasebuzz(false);
+        }
+    };
+
     const handleExportCSV = () => {
         if (customers.length === 0) {
             toast.warning("No customer data available to export");
@@ -179,14 +202,25 @@ export default function CustomerDuesReport() {
                     </p>
                 </div>
                 
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 flex-wrap">
+                    <button 
+                        onClick={handleSyncEasebuzz}
+                        disabled={syncingEasebuzz}
+                        className="h-11 px-5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-bold text-xs uppercase tracking-widest transition-all flex items-center gap-2 active:scale-95 shadow-lg shadow-teal-600/20 disabled:opacity-50"
+                        title="Fetch & reconcile online payments from Easebuzz gateway"
+                    >
+                        <RefreshCw className={cn("h-4 w-4", syncingEasebuzz && "animate-spin")} />
+                        <span>{syncingEasebuzz ? "Syncing..." : "Sync Online Payments"}</span>
+                    </button>
+
                     <button 
                         onClick={fetchData} 
-                        className="h-11 px-6 bg-slate-900 text-white rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-emerald-600 transition-all flex items-center gap-2 active:scale-95 shadow-lg shadow-slate-200"
+                        className="h-11 px-5 bg-slate-900 text-white rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-emerald-600 transition-all flex items-center gap-2 active:scale-95 shadow-lg shadow-slate-200"
                     >
                         <Activity className="h-4 w-4" />
                         Live Refresh ({format(lastRefreshedAt, "HH:mm:ss")})
                     </button>
+
                     <button 
                         onClick={handleExportCSV}
                         className="h-11 w-11 bg-white border border-slate-200 rounded-xl flex items-center justify-center text-slate-500 hover:text-emerald-600 hover:border-emerald-500/30 transition-all shadow-sm active:scale-95"
