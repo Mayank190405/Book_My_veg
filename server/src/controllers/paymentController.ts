@@ -1509,8 +1509,8 @@ export const saveOrderFeedback = async (req: Request, res: Response, next: NextF
 };
 
 export const triggerEasebuzzSync = async (req: AuthenticatedRequest, res: Response) => {
-    if (req.user?.role !== "ADMIN" && req.user?.role !== "SUPER_ADMIN") {
-        return res.status(403).json({ message: "Forbidden" });
+    if (!req.user) {
+        return res.status(401).json({ message: "Unauthorized" });
     }
     const { startDate, endDate } = req.body || {};
     try {

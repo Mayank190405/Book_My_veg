@@ -1370,9 +1370,8 @@ const saveOrderFeedback = (req, res, next) => __awaiter(void 0, void 0, void 0, 
 });
 exports.saveOrderFeedback = saveOrderFeedback;
 const triggerEasebuzzSync = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a, _b;
-    if (((_a = req.user) === null || _a === void 0 ? void 0 : _a.role) !== "ADMIN" && ((_b = req.user) === null || _b === void 0 ? void 0 : _b.role) !== "SUPER_ADMIN") {
-        return res.status(403).json({ message: "Forbidden" });
+    if (!req.user) {
+        return res.status(401).json({ message: "Unauthorized" });
     }
     const { startDate, endDate } = req.body || {};
     try {

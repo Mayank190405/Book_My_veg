@@ -16,8 +16,8 @@ router.post("/:orderId/generate-link", generatePaymentLink);
 router.post("/verify", verifyPayment);
 router.get("/order-status/:orderId", getOrderStatus);
 
-// Admin
+// Admin & Operational Sync
 router.post("/refund", authorize(["ADMIN", "STORE_ADMIN"]), refundPayment);
-router.post("/easebuzz/sync", authorize(["ADMIN", "SUPER_ADMIN"]), triggerEasebuzzSync);
+router.post("/easebuzz/sync", authorize(["ADMIN", "SUPER_ADMIN", "STORE_ADMIN", "MANAGER", "POS_OPERATOR"]), triggerEasebuzzSync);
 
 export default router;
