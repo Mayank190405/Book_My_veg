@@ -55,6 +55,24 @@ export default function CustomerStatement() {
     const [billAmount, setBillAmount] = useState("");
     const [billMethod, setBillMethod] = useState("CASH");
     const [billLoading, setBillLoading] = useState(false);
+    const [cleaningDuplicates, setCleaningDuplicates] = useState(false);
+
+    const handleCleanDuplicates = async () => {
+        setCleaningDuplicates(true);
+        try {
+            const res = await api.post("/payments/cleanup-duplicates");
+            if (res.data?.success) {
+                toast.success("Duplicate payment entries purged! Statement recalculated.");
+                fetchDetails();
+            } else {
+                toast.warning(res.data?.message || "Deduplication finished.");
+            }
+        } catch (err: any) {
+            toast.error(err.response?.data?.message || "Failed to cleanup duplicate payments");
+        } finally {
+            setCleaningDuplicates(false);
+        }
+    };
 
     const fetchDetails = async () => {
         setLoading(true);
