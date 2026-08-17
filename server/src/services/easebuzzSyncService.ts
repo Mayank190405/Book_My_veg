@@ -141,11 +141,18 @@ export const syncEasebuzzTransactions = async (customStartDate?: string, customE
         const batch = unpaidOrders.slice(i, i + batchSize);
         await Promise.all(batch.map(async (order) => {
             // Determine exact transaction IDs associated with this order
-            const exactTxnIds: string[] = [order.id];
+            const exactTxnIds: string[] = [];
+            if (order.channel !== "POS") {
+                exactTxnIds.push(order.id);
+            }
             
-            // Check payments table for any exact transaction IDs stored during payment creation
+            // Check payments table for any exact online transaction IDs stored during payment creation
             order.payments.forEach((p: any) => {
-                if (p.transactionId && !p.transactionId.startsWith("PENDING_") && !p.transactionId.startsWith("DUE_COLLECT_") && !p.transactionId.startsWith("SETTLE_")) {
+                if (p.transactionId && 
+                    !p.transactionId.startsWith("PENDING_") && 
+                    !p.transactionId.startsWith("DUE_COLLECT_") && 
+                    !p.transactionId.startsWith("SETTLE_") &&
+                    !p.transactionId.startsWith("POS_")) {
                     exactTxnIds.push(p.transactionId);
                 }
             });

@@ -156,10 +156,17 @@ const syncEasebuzzTransactions = (customStartDate_1, customEndDate_1, ...args_1)
         yield Promise.all(batch.map((order) => __awaiter(void 0, void 0, void 0, function* () {
             var _a, _b;
             // Determine exact transaction IDs associated with this order
-            const exactTxnIds = [order.id];
-            // Check payments table for any exact transaction IDs stored during payment creation
+            const exactTxnIds = [];
+            if (order.channel !== "POS") {
+                exactTxnIds.push(order.id);
+            }
+            // Check payments table for any exact online transaction IDs stored during payment creation
             order.payments.forEach((p) => {
-                if (p.transactionId && !p.transactionId.startsWith("PENDING_") && !p.transactionId.startsWith("DUE_COLLECT_") && !p.transactionId.startsWith("SETTLE_")) {
+                if (p.transactionId &&
+                    !p.transactionId.startsWith("PENDING_") &&
+                    !p.transactionId.startsWith("DUE_COLLECT_") &&
+                    !p.transactionId.startsWith("SETTLE_") &&
+                    !p.transactionId.startsWith("POS_")) {
                     exactTxnIds.push(p.transactionId);
                 }
             });
