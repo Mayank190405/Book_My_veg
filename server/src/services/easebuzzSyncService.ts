@@ -259,7 +259,7 @@ export const syncEasebuzzTransactions = async (customStartDate?: string, customE
             }
 
             const resData = response?.data;
-            if (!resData || resData.status !== true || !Array.isArray(resData.data)) {
+            if (!resData || resData.status !== true || !Array.isArray(resData.data) || resData.data.length === 0) {
                 break;
             }
 

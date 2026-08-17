@@ -242,7 +242,7 @@ const syncEasebuzzTransactions = (customStartDate_1, customEndDate_1, ...args_1)
                 }).catch(() => null);
             }
             const resData = response === null || response === void 0 ? void 0 : response.data;
-            if (!resData || resData.status !== true || !Array.isArray(resData.data)) {
+            if (!resData || resData.status !== true || !Array.isArray(resData.data) || resData.data.length === 0) {
                 break;
             }
             const txList = resData.data;
