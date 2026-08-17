@@ -737,8 +737,8 @@ export const getCustomerDetailedReport = async (req: AuthenticatedRequest, res: 
             targetLocationId = locId;
         }
 
-        const customer = await prisma.user.findFirst({
-            where: { id: custId, role: "USER" },
+        const customer = await prisma.user.findUnique({
+            where: { id: custId },
             include: {
                 addresses: {
                     where: { isDefault: true },

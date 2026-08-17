@@ -644,8 +644,8 @@ const getCustomerDetailedReport = (req, res, next) => __awaiter(void 0, void 0, 
         else if (locId) {
             targetLocationId = locId;
         }
-        const customer = yield prisma_1.default.user.findFirst({
-            where: { id: custId, role: "USER" },
+        const customer = yield prisma_1.default.user.findUnique({
+            where: { id: custId },
             include: {
                 addresses: {
                     where: { isDefault: true },

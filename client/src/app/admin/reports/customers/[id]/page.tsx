@@ -201,7 +201,25 @@ export default function CustomerStatement() {
         );
     }
 
-    const { customer, summary, ledger, billWiseDues } = data;
+    if (!data || !data.customer) {
+        return (
+            <div className="min-h-[60vh] flex flex-col items-center justify-center gap-4 bg-white rounded-3xl p-8 border border-slate-100 shadow-sm my-8">
+                <div className="w-12 h-12 bg-red-50 text-red-500 rounded-2xl flex items-center justify-center font-bold text-lg">!</div>
+                <h3 className="text-base font-bold text-slate-900">Customer Statement Not Found</h3>
+                <p className="text-xs text-slate-500 text-center max-w-sm">
+                    The requested customer account statement could not be retrieved or does not exist.
+                </p>
+                <Link
+                    href="/admin/reports/customers"
+                    className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-md shadow-emerald-600/20 transition-all"
+                >
+                    Back to Customer Reports
+                </Link>
+            </div>
+        );
+    }
+
+    const { customer = {}, summary = {}, ledger = [], billWiseDues = [] } = data;
 
     return (
         <>
@@ -254,7 +272,7 @@ export default function CustomerStatement() {
                             </div>
                             <div>
                                 <h1 className="text-2xl font-black text-slate-900 tracking-tight">{customer.name || "Walk-in Guest"}</h1>
-                                <p className="text-xs text-slate-400 font-bold tracking-widest uppercase mt-0.5">Account ID: {customer.id.slice(0, 13).toUpperCase()}</p>
+                                <p className="text-xs text-slate-400 font-bold tracking-widest uppercase mt-0.5">Account ID: {customer.id ? customer.id.slice(0, 13).toUpperCase() : "N/A"}</p>
                             </div>
                         </div>
                         
@@ -271,13 +289,13 @@ export default function CustomerStatement() {
                             )}
                             <div className="flex items-center gap-2">
                                 <Calendar className="h-4 w-4 text-slate-300" />
-                                <span>Joined: {format(new Date(customer.createdAt), "dd MMM yyyy")}</span>
+                                <span>Joined: {customer.createdAt ? format(new Date(customer.createdAt), "dd MMM yyyy") : "N/A"}</span>
                             </div>
                         </div>
                         
                         <div className="text-xs text-slate-400 pt-1">
                             <span className="font-bold text-slate-500">Billing Address: </span>
-                            {customer.address}
+                            {customer.address || "N/A"}
                         </div>
                     </div>
 
