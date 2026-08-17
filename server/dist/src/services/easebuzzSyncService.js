@@ -51,6 +51,11 @@ const formatDate = (date) => {
     const year = date.getFullYear();
     return `${day}-${month}-${year}`;
 };
+/**
+ * Main Easebuzz v2.1 Single Retrieve API Query
+ * Endpoint: POST /transaction/v2.1/retrieve
+ * Body: key, txnid, hash (sha512(key|txnid|salt))
+ */
 const verifySingleEasebuzzTx = (txnid, amount, email, phone) => __awaiter(void 0, void 0, void 0, function* () {
     const key = process.env.EASEBUZZ_KEY || process.env.EASEBUZZ_MERCHANT_KEY;
     const salt = process.env.EASEBUZZ_SALT;
@@ -64,15 +69,33 @@ const verifySingleEasebuzzTx = (txnid, amount, email, phone) => __awaiter(void 0
     const emailStr = email || "";
     const phoneStr = phone || "";
     const merchantEmail = process.env.EASEBUZZ_MERCHANT_EMAIL || process.env.MERCHANT_EMAIL || "";
-    // Test hash sequences for v2.1 and v2 retrieve API:
-    // Format 1: key|txnid|salt (v2.1 standard)
-    // Format 2: key|txnid|amount|email|phone|salt
+    // Primary Hash sequence per Easebuzz v2.1 Spec: sha512(key|txnid|salt)
+    const primaryHashSeq = `${key}|${txnid}|${salt}`;
+    const primaryHash = generateSha512(primaryHashSeq);
+    try {
+        const response = yield axios_1.default.post(`${baseUrl}/transaction/v2.1/retrieve`, new URLSearchParams({
+            key,
+            txnid,
+            hash: primaryHash
+        }).toString(), {
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            timeout: 5000
+        });
+        if (response.data && response.data.status === true) {
+            const txData = Array.isArray(response.data.msg) ? response.data.msg[0] : response.data.msg;
+            if (txData) {
+                return { status: true, msg: txData };
+            }
+        }
+    }
+    catch (e) {
+        // Fallthrough to alternative hash sequence if primary hash sequence differs
+    }
+    // Secondary hash fallback
     const hashSequences = [
-        `${key}|${txnid}|${salt}`,
         `${key}|${txnid}|${amountStr}|${emailStr}|${phoneStr}|${salt}`,
         `${key}|${merchantEmail}|${txnid}|${salt}`
     ];
-    // First try Easebuzz v2.1 API Endpoint: /transaction/v2.1/retrieve
     for (const seq of hashSequences) {
         const hash = generateSha512(seq);
         try {
@@ -92,27 +115,7 @@ const verifySingleEasebuzzTx = (txnid, amount, email, phone) => __awaiter(void 0
             }
         }
         catch (e) {
-            // Fallthrough to v2 if v2.1 error
-        }
-    }
-    // Secondary fallback: Easebuzz v2 API Endpoint: /transaction/v2/retrieve
-    for (const seq of hashSequences) {
-        const hash = generateSha512(seq);
-        try {
-            const response = yield axios_1.default.post(`${baseUrl}/transaction/v2/retrieve`, new URLSearchParams(Object.assign(Object.assign(Object.assign(Object.assign({ key,
-                txnid }, (amountStr ? { amount: amountStr } : {})), (emailStr ? { email: emailStr } : {})), (phoneStr ? { phone: phoneStr } : {})), { hash })).toString(), {
-                headers: { "Content-Type": "application/x-www-form-urlencoded" },
-                timeout: 5000
-            });
-            if (response.data && (response.data.status === true || response.data.status === "success")) {
-                const txData = Array.isArray(response.data.msg) ? response.data.msg[0] : (response.data.msg || response.data);
-                if (txData) {
-                    return { status: true, msg: txData };
-                }
-            }
-        }
-        catch (e) {
-            // Ignore expected 400 for non-existent IDs
+            // Ignore non-existent txnid errors
         }
     }
     return null;
@@ -127,8 +130,64 @@ const syncEasebuzzTransactions = (customStartDate_1, customEndDate_1, ...args_1)
         logger_1.default.warn("[Easebuzz Sync] Skipping sync — EASEBUZZ_KEY or EASEBUZZ_SALT not configured.");
         return { success: false, message: "Easebuzz credentials missing" };
     }
+    // 1. PRIMARY QUERY ENGINE: Easebuzz v2.1 Retrieve API for all unpaid database orders
+    const unpaidOrders = yield prisma_1.default.order.findMany({
+        where: {
+            isPaid: false,
+            status: { notIn: ["CANCELLED", "FAILED"] }
+        },
+        select: {
+            id: true,
+            totalAmount: true,
+            user: { select: { phone: true, email: true } }
+        }
+    });
+    logger_1.default.info(`[Easebuzz Sync] PRIMARY QUERY: Reconciling ${unpaidOrders.length} unpaid database orders via Easebuzz v2.1 API...`);
+    let totalSettled = 0;
+    let totalFetched = 0;
+    const unpaidTxnIds = new Set(unpaidOrders.map(o => o.id));
+    // Process unpaid orders concurrently via Easebuzz v2.1 retrieve API (batch size 10)
+    const batchSize = 10;
+    for (let i = 0; i < unpaidOrders.length; i += batchSize) {
+        const batch = unpaidOrders.slice(i, i + batchSize);
+        yield Promise.all(batch.map((order) => __awaiter(void 0, void 0, void 0, function* () {
+            var _a, _b, _c, _d;
+            const txCandidates = [
+                order.id,
+                `${order.id}OKBBJYE`
+            ];
+            for (const candidateTxnId of txCandidates) {
+                const singleRes = yield (0, exports.verifySingleEasebuzzTx)(candidateTxnId, Number(order.totalAmount), ((_a = order.user) === null || _a === void 0 ? void 0 : _a.email) || undefined, ((_b = order.user) === null || _b === void 0 ? void 0 : _b.phone) || undefined);
+                if (singleRes && singleRes.status === true && singleRes.msg) {
+                    const txData = Array.isArray(singleRes.msg) ? singleRes.msg[0] : singleRes.msg;
+                    totalFetched++;
+                    const statusStr = (txData.status || "").toLowerCase();
+                    if (statusStr === "success" || statusStr === "charged") {
+                        const easepayid = txData.easepayid || txData.easebuzz_id || candidateTxnId;
+                        const amount = Number(txData.amount || txData.net_amount_debit || order.totalAmount);
+                        const result = yield (0, paymentController_1.completeOrderPayment)(order.id, {
+                            status: "CHARGED",
+                            txn_id: easepayid,
+                            amount,
+                            payment_method_type: "ONLINE",
+                            phone: txData.phone || ((_c = order.user) === null || _c === void 0 ? void 0 : _c.phone),
+                            email: txData.email || ((_d = order.user) === null || _d === void 0 ? void 0 : _d.email),
+                            firstname: txData.firstname,
+                            productinfo: txData.productinfo,
+                            metadata: txData
+                        });
+                        if ((result === null || result === void 0 ? void 0 : result.status) === "SUCCESS") {
+                            totalSettled++;
+                            unpaidTxnIds.delete(order.id);
+                            break;
+                        }
+                    }
+                }
+            }
+        })));
+    }
+    // 2. SECONDARY QUERY: Date Range Retrieve API for bulk historical transaction reconciliation
     const today = new Date();
-    // Always default start date to earliest order in database or 2024-01-01 when forceFullHistory is true
     let defaultStartDate = new Date(2024, 0, 1);
     if (forceFullHistory) {
         const earliestOrder = yield prisma_1.default.order.findFirst({
@@ -144,32 +203,15 @@ const syncEasebuzzTransactions = (customStartDate_1, customEndDate_1, ...args_1)
     const baseUrl = env === "prod" || env === "production"
         ? "https://dashboard.easebuzz.in"
         : "https://testdashboard.easebuzz.in";
-    // 1. Collect all unpaid orders from the database till date
-    const unpaidOrders = yield prisma_1.default.order.findMany({
-        where: {
-            isPaid: false,
-            status: { notIn: ["CANCELLED", "FAILED"] }
-        },
-        select: {
-            id: true,
-            totalAmount: true,
-            user: { select: { phone: true, email: true } }
-        }
-    });
-    const unpaidTxnIds = new Set(unpaidOrders.map(o => o.id));
-    logger_1.default.info(`[Easebuzz Sync] Querying all transactions till date (${startDate} to ${endDate}). Target unpaid orders count: ${unpaidTxnIds.size}`);
-    // Try both hash sequences (with merchant_email and without) for Date Range Retrieve API
     const hashSeq1 = `${key}|${merchantEmail}|${startDate}|${endDate}|${salt}`;
     const hashSeq2 = `${key}|${startDate}|${endDate}|${salt}`;
     let activeHash = generateSha512(hashSeq1);
     let activeEmail = merchantEmail;
-    let totalFetched = 0;
-    let totalSettled = 0;
     let nextToken = null;
     let hasMore = true;
     let pageCount = 0;
     try {
-        while (hasMore && pageCount < 50) {
+        while (hasMore && pageCount < 30) {
             pageCount++;
             const payload = Object.assign(Object.assign({ key, hash: activeHash }, (activeEmail ? { merchant_email: activeEmail } : {})), { date_range: {
                     start_date: startDate,
@@ -185,7 +227,6 @@ const syncEasebuzzTransactions = (customStartDate_1, customEndDate_1, ...args_1)
                 },
                 timeout: 10000
             }).catch(() => null);
-            // Retry with secondary hash format if first attempt failed
             if (!response || !response.data || response.data.status !== true) {
                 activeHash = generateSha512(hashSeq2);
                 payload.hash = activeHash;
@@ -210,7 +251,6 @@ const syncEasebuzzTransactions = (customStartDate_1, customEndDate_1, ...args_1)
                 if (isSuccess && tx.txnid) {
                     const easepayid = tx.easepayid || tx.easebuzz_id || tx.txnid;
                     const amount = Number(tx.net_debit_amount || tx.total_debit_amount || tx.amount || 0);
-                    // Resolve orderId from txnid
                     let resolvedOrderId = tx.txnid;
                     if (!tx.txnid.startsWith("DUE_") && !tx.txnid.startsWith("SETTLE_")) {
                         resolvedOrderId = tx.txnid.replace(/_\d{3,}$/, "");
@@ -244,45 +284,10 @@ const syncEasebuzzTransactions = (customStartDate_1, customEndDate_1, ...args_1)
                 hasMore = false;
             }
         }
-        // 2. Query remaining unpaid database orders via Easebuzz v2.1 Single Retrieve API concurrently
-        const remainingUnpaid = unpaidOrders.filter(o => unpaidTxnIds.has(o.id)).slice(0, 50);
-        if (remainingUnpaid.length > 0) {
-            logger_1.default.info(`[Easebuzz Sync] Parallel checking ${remainingUnpaid.length} remaining unpaid orders via Easebuzz v2.1 retrieve API...`);
-            const batchSize = 10;
-            for (let i = 0; i < remainingUnpaid.length; i += batchSize) {
-                const batch = remainingUnpaid.slice(i, i + batchSize);
-                yield Promise.all(batch.map((order) => __awaiter(void 0, void 0, void 0, function* () {
-                    var _a, _b, _c, _d;
-                    const singleRes = yield (0, exports.verifySingleEasebuzzTx)(order.id, Number(order.totalAmount), ((_a = order.user) === null || _a === void 0 ? void 0 : _a.email) || undefined, ((_b = order.user) === null || _b === void 0 ? void 0 : _b.phone) || undefined);
-                    if (singleRes && singleRes.status === true && singleRes.msg) {
-                        const txData = Array.isArray(singleRes.msg) ? singleRes.msg[0] : singleRes.msg;
-                        const statusStr = (txData.status || "").toLowerCase();
-                        if (statusStr === "success" || statusStr === "charged") {
-                            const easepayid = txData.easepayid || txData.easebuzz_id || order.id;
-                            const amount = Number(txData.amount || txData.net_amount_debit || order.totalAmount);
-                            const result = yield (0, paymentController_1.completeOrderPayment)(order.id, {
-                                status: "CHARGED",
-                                txn_id: easepayid,
-                                amount,
-                                payment_method_type: "ONLINE",
-                                phone: txData.phone || ((_c = order.user) === null || _c === void 0 ? void 0 : _c.phone),
-                                email: txData.email || ((_d = order.user) === null || _d === void 0 ? void 0 : _d.email),
-                                firstname: txData.firstname,
-                                productinfo: txData.productinfo,
-                                metadata: txData
-                            });
-                            if ((result === null || result === void 0 ? void 0 : result.status) === "SUCCESS") {
-                                totalSettled++;
-                            }
-                        }
-                    }
-                })));
-            }
-        }
         // 3. Clean up any existing duplicate payment entries across orders
         const { cleanUpDuplicatePayments } = yield Promise.resolve().then(() => __importStar(require("../controllers/paymentController")));
         yield cleanUpDuplicatePayments();
-        logger_1.default.info(`[Easebuzz Sync] Full sync complete till date! Total Fetched: ${totalFetched}, Total Settled: ${totalSettled}.`);
+        logger_1.default.info(`[Easebuzz Sync] Sync complete! Total Fetched: ${totalFetched}, Total Settled: ${totalSettled}.`);
         return {
             success: true,
             totalFetched,
@@ -301,10 +306,10 @@ exports.syncEasebuzzTransactions = syncEasebuzzTransactions;
 const startEasebuzzSyncCron = () => {
     // Schedule cron every 6 hours: 00:00, 06:00, 12:00, 18:00
     node_cron_1.default.schedule("0 */6 * * *", () => __awaiter(void 0, void 0, void 0, function* () {
-        logger_1.default.info("[Cron] Running 6-hour Easebuzz transaction sync job targeting unpaid transactions till date...");
+        logger_1.default.info("[Cron] Running 6-hour Easebuzz v2.1 transaction sync job...");
         yield (0, exports.syncEasebuzzTransactions)(undefined, undefined, true);
     }));
-    logger_1.default.info("⏰ Easebuzz Transaction Sync Cron initialized (Targeting unpaid transactions till date every 6 hours)");
+    logger_1.default.info("⏰ Easebuzz Transaction Sync Cron initialized (Primary: Easebuzz v2.1 API)");
     // Initial sync 30 seconds after server startup
     setTimeout(() => {
         (0, exports.syncEasebuzzTransactions)(undefined, undefined, true).catch(err => {
