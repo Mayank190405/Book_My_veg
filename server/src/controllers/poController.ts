@@ -121,7 +121,7 @@ const ensurePOSchema = async () => {
 // ─── 1. Create Purchase Order (Store Creation) ────────────────────────────────
 
 export const createPurchaseOrder = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
-    const { items, notes, supplierName, supplierPhone, locationId: reqLocId } = req.body;
+    const { items, notes, vendorId, supplierName, supplierPhone, locationId: reqLocId, autoSend = false } = req.body;
     const caller = req.user;
 
     try {
@@ -138,6 +138,16 @@ export const createPurchaseOrder = async (req: AuthenticatedRequest, res: Respon
 
         if (!Array.isArray(items) || items.length === 0) {
             return res.status(400).json({ message: "At least one product item is required for the Purchase Order." });
+        }
+
+        let effectiveSupplierName = supplierName;
+        let effectiveSupplierPhone = supplierPhone;
+        if (vendorId) {
+            const vendor = await prisma.vendor.findUnique({ where: { id: String(vendorId) } });
+            if (vendor) {
+                effectiveSupplierName = vendor.companyName ? `${vendor.name} (${vendor.companyName})` : vendor.name;
+                effectiveSupplierPhone = vendor.phone;
+            }
         }
 
         const poNumber = await generatePONumber();
@@ -172,16 +182,18 @@ export const createPurchaseOrder = async (req: AuthenticatedRequest, res: Respon
                     poNumber,
                     locationId: String(targetLocationId),
                     createdById: String(creatorId),
+                    vendorId: vendorId ? String(vendorId) : null,
                     notes: notes || null,
-                    supplierName: supplierName || null,
-                    supplierPhone: supplierPhone || null,
+                    supplierName: effectiveSupplierName || null,
+                    supplierPhone: effectiveSupplierPhone || null,
                     status: POStatus.SUBMITTED,
                     totalEstimatedCost: new Prisma.Decimal(totalEst),
                     items: { create: itemCreates }
                 },
                 include: {
-                    location: { select: { id: true, name: true, slug: true } },
+                    location: { select: { id: true, name: true, slug: true, address: true } },
                     createdBy: { select: { id: true, name: true, role: true } },
+                    vendor: { select: { id: true, name: true, companyName: true, phone: true, email: true } },
                     items: {
                         include: {
                             product: { select: { id: true, name: true, sku: true, images: true, basePrice: true } },
@@ -192,14 +204,37 @@ export const createPurchaseOrder = async (req: AuthenticatedRequest, res: Respon
             });
         });
 
-        res.status(201).json({ message: "Purchase Order submitted successfully for manager review.", purchaseOrder: po });
+        // Trigger WhatsApp to vendor if autoSend is requested and phone is present
+        if (autoSend && effectiveSupplierPhone) {
+            try {
+                const { sendTemplateViaChatHub } = require("../services/mbgcard");
+                const storeName = po.location?.name || "Book My Veg";
+                const origin = process.env.CLIENT_URL || "https://bookmyveg.co.in";
+                const poLink = `${origin}/admin/purchase-orders?po=${po.id}`;
+                await sendTemplateViaChatHub(effectiveSupplierPhone, "vendor_po_dispatch", {
+                    body: [
+                        effectiveSupplierName || "Vendor",
+                        po.poNumber,
+                        String(po.items.length),
+                        String(Number(po.totalEstimatedCost)),
+                        storeName,
+                        po.location?.address || "Store Hub",
+                        poLink
+                    ]
+                }).catch((e: any) => console.warn("[PO autoSend warning]:", e.message));
+            } catch (e) {
+                console.error("[PO autoSend error]:", e);
+            }
+        }
+
+        res.status(201).json({ message: "Purchase Order submitted successfully.", purchaseOrder: po });
     } catch (error) { next(error); }
 };
 
 // ─── 2. List Purchase Orders ──────────────────────────────────────────────────
 
 export const getPurchaseOrders = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
-    const { status, locationId } = req.query;
+    const { status, locationId, vendorId } = req.query;
     const caller = req.user;
 
     try {
@@ -216,6 +251,10 @@ export const getPurchaseOrders = async (req: AuthenticatedRequest, res: Response
             whereClause.locationId = String(locationId);
         }
 
+        if (vendorId) {
+            whereClause.vendorId = String(vendorId);
+        }
+
         if (status && status !== "ALL") {
             whereClause.status = String(status) as POStatus;
         }
@@ -228,6 +267,7 @@ export const getPurchaseOrders = async (req: AuthenticatedRequest, res: Response
                     location: { select: { id: true, name: true, slug: true } },
                     createdBy: { select: { id: true, name: true, role: true, phone: true } },
                     reviewedBy: { select: { id: true, name: true, role: true } },
+                    vendor: { select: { id: true, name: true, companyName: true, phone: true } },
                     items: {
                         include: {
                             product: { select: { id: true, name: true, sku: true, images: true, basePrice: true } },
@@ -531,3 +571,64 @@ export const getPurchaseManagerAssignedStores = async (req: AuthenticatedRequest
         res.json({ assignedStores: assignments.map(a => a.location) });
     } catch (error) { next(error); }
 };
+
+// ─── 8. Dispatch PO to Vendor WhatsApp ────────────────────────────────────────
+
+export const sendPOToVendorWhatsApp = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    const id = String(req.params.id);
+    const { templateName = "vendor_po_dispatch", customPhone, customMessage } = req.body;
+
+    try {
+        const po = await prisma.purchaseOrder.findUnique({
+            where: { id },
+            include: {
+                location: { select: { name: true, address: true, contactNumber: true } },
+                vendor: { select: { name: true, companyName: true, phone: true } },
+                items: {
+                    include: {
+                        product: { select: { name: true } },
+                        variant: { select: { name: true } }
+                    }
+                }
+            }
+        });
+
+        if (!po) {
+            return res.status(404).json({ message: "Purchase Order not found." });
+        }
+
+        const recipientPhone = customPhone || po.supplierPhone || po.vendor?.phone;
+        if (!recipientPhone) {
+            return res.status(400).json({ message: "No phone number available for vendor/supplier." });
+        }
+
+        const vendorName = po.vendor?.companyName || po.vendor?.name || po.supplierName || "Vendor";
+        const storeName = po.location?.name || "Book My Veg Hub";
+        const storeAddress = po.location?.address || "Store Hub";
+        const totalAmount = String(Number(po.actualCost) > 0 ? Number(po.actualCost) : Number(po.totalEstimatedCost));
+        const origin = process.env.CLIENT_URL || "https://bookmyveg.co.in";
+        const poLink = `${origin}/admin/purchase-orders?po=${po.id}`;
+
+        const { sendTemplateViaChatHub } = require("../services/mbgcard");
+        const variables = [
+            vendorName,
+            po.poNumber,
+            String(po.items.length),
+            totalAmount,
+            storeName,
+            storeAddress,
+            poLink
+        ];
+
+        const dispatchResult = await sendTemplateViaChatHub(recipientPhone, templateName, { body: variables });
+
+        res.json({
+            success: true,
+            message: `Purchase Order ${po.poNumber} sent to vendor WhatsApp (${recipientPhone}).`,
+            dispatchResult
+        });
+    } catch (error: any) {
+        res.status(500).json({ success: false, message: error.message || "Failed to send PO via WhatsApp." });
+    }
+};
+

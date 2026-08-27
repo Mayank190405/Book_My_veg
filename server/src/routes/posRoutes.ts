@@ -14,7 +14,8 @@ import {
     getTodayPOSSales,
     getPOSDueCustomers,
     sendPOSWhatsappDueReminders,
-    getPOSOrderById
+    getPOSOrderById,
+    customerDeposit
 } from "../controllers/posController";
 import { authenticate, authorize } from "../middleware/auth";
 
@@ -28,6 +29,8 @@ router.get("/customers/search", searchCustomer);
 router.post("/customers/upsert", createOrUpdateCustomer);
 router.get("/customers/:customerId/history", getCustomerHistory);
 router.post("/customers/:customerId/settle", settleAccountBalance);
+router.post("/customers/deposit", customerDeposit);
+
 
 // ─── Transaction Node ─────────────────────────────────────────────────────────
 router.post("/orders/process", processPOSOrder);

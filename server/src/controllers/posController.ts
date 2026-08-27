@@ -42,6 +42,8 @@ export const searchCustomer = async (req: AuthenticatedRequest, res: Response, n
                 phone: true, 
                 email: true,
                 profileAddress: true,
+                accountBalance: true,
+                totalDue: true,
                 addresses: {
                     where: { isDefault: true },
                     take: 1
@@ -55,6 +57,8 @@ export const searchCustomer = async (req: AuthenticatedRequest, res: Response, n
             phone: c.phone,
             email: c.email || "",
             profileAddress: c.profileAddress || "",
+            accountBalance: Number(c.accountBalance || 0),
+            totalDue: Number(c.totalDue || 0),
             address: c.addresses?.[0]?.fullAddress || c.profileAddress || "",
             addresses: c.addresses
         }));
@@ -410,10 +414,11 @@ export const processPOSOrder = async (req: AuthenticatedRequest, res: Response, 
         couponId,
         packerId,
         duePaymentAmount = 0,
-        paidAmount = 0, // NEW: Amount paid specifically for THIS bill
+        paidAmount = 0,
+        splitPayments, // Array of { method: "CASH" | "EASEBUZZ" | "WALLET", amount: number, transactionId?: string, denominations?: any }
         suspend = false,
         denominations,
-        orderId // NEW: Edit Bill support
+        orderId
     } = req.body;
     
     const staffId = req.user?.userId;
@@ -451,28 +456,51 @@ export const processPOSOrder = async (req: AuthenticatedRequest, res: Response, 
         });
         const previousDue = prevOrders.reduce((acc, o) => acc + (Number(o.totalAmount) - o.payments.reduce((pAcc, p) => pAcc + Number(p.amount), 0)), 0);
         
-        // 🛡️ RECOVERY: Verify Staff Existence (Avoid P2003 if DB was wiped/re-seeded)
         let validatedStaffId = staffId;
         const staffExists = await prisma.user.findUnique({ where: { id: staffId } });
         if (!staffExists) {
             console.warn(`[POS] Invalid Staff Session ID ${staffId}. Falling back to Root Admin.`);
             const rootAdmin = await prisma.user.findFirst({ where: { role: "ADMIN" } });
-            validatedStaffId = rootAdmin?.id || staffId; // Fallback to root or keep original if absolutely zero users (though unlikely)
+            validatedStaffId = rootAdmin?.id || staffId;
         }
 
         const result = await (prisma as any).$transaction(async (tx: any) => {
             const itemTotals = items.reduce((acc: number, item: any) => acc + (item.price * item.quantity), 0);
             const totalAmount = itemTotals - (discountAmount || 0);
 
-            // Determine payment status for THIS bill
-            const effectivePaid = paymentMethod === "CREDIT" ? 0 : Number(paidAmount || totalAmount);
+            // Determine payment slices
+            let paymentSlices: Array<{ method: string; amount: number; transactionId?: string; denominations?: any }> = [];
+            if (Array.isArray(splitPayments) && splitPayments.length > 0) {
+                paymentSlices = splitPayments
+                    .map(p => ({
+                        method: String(p.method || "CASH").toUpperCase(),
+                        amount: Number(p.amount || 0),
+                        transactionId: p.transactionId,
+                        denominations: p.denominations
+                    }))
+                    .filter(p => p.amount > 0);
+            } else if (paymentMethod && paymentMethod !== "CREDIT") {
+                const pAmt = paidAmount !== undefined && paidAmount !== null && Number(paidAmount) >= 0 
+                    ? Number(paidAmount) 
+                    : totalAmount;
+                if (pAmt > 0) {
+                    paymentSlices = [{
+                        method: String(paymentMethod).toUpperCase(),
+                        amount: pAmt,
+                        transactionId: paymentDetails?.transactionId,
+                        denominations: denominations
+                    }];
+                }
+            }
+
+            const effectivePaid = paymentSlices.reduce((sum, p) => sum + p.amount, 0);
             const totalPaidAmount = existingPaidTotal + effectivePaid;
             const isFull = totalPaidAmount >= totalAmount;
+            const isCredit = paymentMethod === "CREDIT" || (paymentSlices.length === 0 && !suspend);
             const pStatus = totalPaidAmount <= 0 ? "PENDING" : (isFull ? "COMPLETED" : "PARTIAL");
 
             let order;
             if (existingOrder) {
-                // 1. Restore stock first if not cancelled or pending
                 if (existingOrder.status !== "PENDING" && existingOrder.status !== "CANCELLED") {
                     await InventoryService.restoreStock({
                         items: existingOrder.items.map((i: any) => ({
@@ -486,12 +514,10 @@ export const processPOSOrder = async (req: AuthenticatedRequest, res: Response, 
                     }, tx);
                 }
 
-                // 2. Delete old order items
                 await tx.orderItem.deleteMany({
                     where: { orderId: existingOrder.id }
                 });
 
-                // 3. Update order fields and create new items
                 order = await tx.order.update({
                     where: { id: existingOrder.id },
                     data: {
@@ -500,7 +526,7 @@ export const processPOSOrder = async (req: AuthenticatedRequest, res: Response, 
                         status: (suspend ? "PENDING" : (existingOrder.status === "PENDING" ? "CONFIRMED" : existingOrder.status)) as OrderStatus,
                         paymentStatus: pStatus,
                         isPaid: isFull,
-                        isCredit: paymentMethod === "CREDIT",
+                        isCredit: isCredit,
                         packerId,
                         staffId: validatedStaffId,
                         items: {
@@ -525,12 +551,12 @@ export const processPOSOrder = async (req: AuthenticatedRequest, res: Response, 
                         status: (suspend ? "PENDING" : "CONFIRMED") as OrderStatus,
                         paymentStatus: pStatus,
                         isPaid: isFull,
-                        isCredit: paymentMethod === "CREDIT",
+                        isCredit: isCredit,
                         shippingAddress: { type: "POS_IN_STORE", note: "Handover at Counter" } as any,
                         channel: Channel.POS,
-                        notes: `POS Transaction by ${staffId}${!staffExists ? " (SESSION_RECOVERED)" : ""}`,
+                        notes: `POS Transaction by ${staffId}${paymentSlices.length > 1 ? " (SPLIT_PAYMENT)" : ""}`,
                         packerId,
-                        staffId: validatedStaffId, // Use validated ID
+                        staffId: validatedStaffId,
                         items: {
                             create: items.map((item: any) => ({
                                 productId: item.productId,
@@ -543,7 +569,7 @@ export const processPOSOrder = async (req: AuthenticatedRequest, res: Response, 
                         statusHistory: {
                             create: {
                                 status: (suspend ? "PENDING" : "CONFIRMED") as OrderStatus,
-                                remark: `POS Checkout (${pStatus})`,
+                                remark: `POS Checkout (${pStatus}) - Paid: ₹${effectivePaid}`,
                                 changedBy: staffId
                             }
                         }
@@ -560,47 +586,70 @@ export const processPOSOrder = async (req: AuthenticatedRequest, res: Response, 
                 }, tx);
             }
 
-            if (effectivePaid > 0 && !suspend && paymentMethod !== "CREDIT") {
-                await tx.payment.create({
-                    data: {
-                        orderId: order.id,
-                        amount: new Prisma.Decimal(effectivePaid),
-                        method: paymentMethod,
-                        status: "SUCCESS",
-                        transactionId: paymentDetails?.transactionId || `POS_${Date.now()}`,
-                        denominations: denominations || null
-                    }
-                });
-
-                if (paymentMethod === "CASH" && denominations && locationId) {
-                    const activeShift = await tx.cashierShift.findFirst({
-                        where: { locationId, status: "OPEN" }
-                    });
-                    if (activeShift) {
-                        const shiftDenominations = activeShift.currentDenominations 
-                            ? (typeof activeShift.currentDenominations === "string" 
-                                ? JSON.parse(activeShift.currentDenominations) 
-                                : activeShift.currentDenominations as Record<string, number>)
-                            : {} as Record<string, number>;
-                        
-                        const received = denominations.received || {};
-                        const change = denominations.change || {};
-                        
-                        const denominationsKeys = ["500", "200", "100", "50", "20", "10", "5", "2", "1"];
-                        const updatedDenominations: Record<string, number> = {};
-                        for (const key of denominationsKeys) {
-                            const currentCount = Number(shiftDenominations[key] || 0);
-                            const receivedCount = Number(received[key] || 0);
-                            const changeCount = Number(change[key] || 0);
-                            updatedDenominations[key] = Math.max(0, currentCount + receivedCount - changeCount);
-                        }
-                        
-                        await tx.cashierShift.update({
-                            where: { id: activeShift.id },
+            // Record each payment slice
+            if (!suspend && paymentSlices.length > 0) {
+                for (const slice of paymentSlices) {
+                    if (slice.method === "WALLET" && customerId) {
+                        const cust = await tx.user.findUnique({ where: { id: customerId } });
+                        const curBal = Number(cust?.accountBalance || 0);
+                        const newBal = Math.max(0, curBal - slice.amount);
+                        await tx.user.update({
+                            where: { id: customerId },
+                            data: { accountBalance: new Prisma.Decimal(newBal) }
+                        });
+                        await tx.walletTransaction.create({
                             data: {
-                                currentDenominations: updatedDenominations
+                                userId: customerId,
+                                amount: new Prisma.Decimal(slice.amount),
+                                type: "PAYMENT_DEDUCTION",
+                                paymentMethod: "WALLET",
+                                referenceId: order.id,
+                                balanceAfter: new Prisma.Decimal(newBal),
+                                notes: `Settlement for POS Bill #${order.id}`,
+                                createdBy: staffId
                             }
                         });
+                    }
+
+                    await tx.payment.create({
+                        data: {
+                            orderId: order.id,
+                            amount: new Prisma.Decimal(slice.amount),
+                            method: slice.method,
+                            status: "SUCCESS",
+                            transactionId: slice.transactionId || `POS_${slice.method}_${Date.now()}`,
+                            denominations: slice.denominations || null
+                        }
+                    });
+
+                    if (slice.method === "CASH" && slice.denominations && locationId) {
+                        const activeShift = await tx.cashierShift.findFirst({
+                            where: { locationId, status: "OPEN" }
+                        });
+                        if (activeShift) {
+                            const shiftDenominations = activeShift.currentDenominations 
+                                ? (typeof activeShift.currentDenominations === "string" 
+                                    ? JSON.parse(activeShift.currentDenominations) 
+                                    : activeShift.currentDenominations as Record<string, number>)
+                                : {} as Record<string, number>;
+                            
+                            const received = slice.denominations.received || {};
+                            const change = slice.denominations.change || {};
+                            
+                            const denominationsKeys = ["500", "200", "100", "50", "20", "10", "5", "2", "1"];
+                            const updatedDenominations: Record<string, number> = {};
+                            for (const key of denominationsKeys) {
+                                const currentCount = Number(shiftDenominations[key] || 0);
+                                const receivedCount = Number(received[key] || 0);
+                                const changeCount = Number(change[key] || 0);
+                                updatedDenominations[key] = Math.max(0, currentCount + receivedCount - changeCount);
+                            }
+                            
+                            await tx.cashierShift.update({
+                                where: { id: activeShift.id },
+                                data: { currentDenominations: updatedDenominations }
+                            });
+                        }
                     }
                 }
             }
@@ -655,11 +704,33 @@ export const processPOSOrder = async (req: AuthenticatedRequest, res: Response, 
             where: { id: (result as any).id }, 
             include: { 
                 payments: true,
-                staff: { select: { name: true } }
+                staff: { select: { name: true } },
+                location: { select: { name: true, contactNumber: true } }
             } 
         });
         const currentBillPaid = finalOrder.payments.reduce((acc: number, p: any) => acc + Number(p.amount), 0);
-        const currentBillDue = Number(finalOrder.totalAmount) - currentBillPaid;
+        const currentBillDue = Math.max(0, Number(finalOrder.totalAmount) - currentBillPaid);
+
+        // Update customer totalDue field
+        if (customerId) {
+            const allUnpaid = await prisma.order.findMany({
+                where: {
+                    userId: customerId,
+                    paymentStatus: { in: ["PENDING", "PARTIAL"] },
+                    status: { notIn: ["CANCELLED", "FAILED"] }
+                },
+                include: { payments: true }
+            });
+            const netDue = allUnpaid.reduce((sum, o) => {
+                const pPaid = o.payments.reduce((pSum: number, p: any) => pSum + Number(p.amount), 0);
+                return sum + Math.max(0, Number(o.totalAmount) - pPaid);
+            }, 0);
+
+            await prisma.user.update({
+                where: { id: customerId },
+                data: { totalDue: new Prisma.Decimal(netDue) }
+            }).catch(() => null);
+        }
 
         res.status(201).json({ 
             message: "POS Order Processed", 
@@ -671,8 +742,6 @@ export const processPOSOrder = async (req: AuthenticatedRequest, res: Response, 
                 netOutstanding: previousDue - settledFromOld + currentBillDue
             }
         });
-
-
 
         // 🔔 Alert Packer if assigned
         if (packerId && !suspend) {
@@ -690,18 +759,22 @@ export const processPOSOrder = async (req: AuthenticatedRequest, res: Response, 
                 if (user?.phone) {
                     const orderId = (result as any).id;
                     const totalAmount = Number((result as any).totalAmount);
-                    const paymentMode = paymentMethod === "CASH" ? "CASH" : (paymentMethod === "CREDIT" ? "DUE ON ACCOUNT" : "DIGITAL PAY");
                     const isPaid = (result as any).isPaid || (result as any).paymentStatus === "COMPLETED" || (result as any).paymentStatus === "PAID";
+                    const isPartial = (result as any).paymentStatus === "PARTIAL";
+
+                    const paymentModeDesc = finalOrder.payments.length > 1
+                        ? finalOrder.payments.map((p: any) => `${p.method}: ₹${Number(p.amount)}`).join(", ")
+                        : (finalOrder.payments[0]?.method || (finalOrder.isCredit ? "DUE ON ACCOUNT" : "CASH"));
 
                     const { sendInvoicePaidViaWhatsapp, sendInvoiceDueViaWhatsapp } = require("../services/mbgcard");
                     
                     if (isPaid) {
-                        sendInvoicePaidViaWhatsapp(user.phone, user.name || "Customer", orderId, totalAmount, paymentMode, orderId).catch((err: any) => {
+                        sendInvoicePaidViaWhatsapp(user.phone, user.name || "Customer", orderId, totalAmount, paymentModeDesc, orderId).catch((err: any) => {
                             console.error("[POSController] WhatsApp Invoice Paid dispatch failure:", err);
                         });
                     } else {
-                        const dueAmount = totalAmount;
-                        sendInvoiceDueViaWhatsapp(user.phone, user.name || "Customer", orderId, totalAmount, paymentMode, dueAmount, customerId, orderId).catch((err: any) => {
+                        const dueAmount = isPartial ? currentBillDue : totalAmount;
+                        sendInvoiceDueViaWhatsapp(user.phone, user.name || "Customer", orderId, totalAmount, paymentModeDesc, dueAmount, customerId, orderId).catch((err: any) => {
                             console.error("[POSController] WhatsApp Invoice Due dispatch failure:", err);
                         });
                     }
@@ -780,29 +853,38 @@ export const getStoreProducts = async (req: AuthenticatedRequest, res: Response,
 export const getCustomerHistory = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     const customerId = req.params.customerId as string;
     try {
-        const orders = await prisma.order.findMany({
-            where: { userId: customerId, channel: "POS" as Channel },
-            include: {
-                user: {
-                    select: {
-                        id: true,
-                        name: true,
-                        phone: true,
-                        email: true,
-                        profileAddress: true,
-                        addresses: true
-                    }
+        const [customerUser, orders, walletTransactions] = await Promise.all([
+            prisma.user.findUnique({
+                where: { id: customerId },
+                select: {
+                    id: true,
+                    name: true,
+                    phone: true,
+                    email: true,
+                    profileAddress: true,
+                    accountBalance: true,
+                    totalDue: true,
+                    createdAt: true
+                }
+            }),
+            prisma.order.findMany({
+                where: { userId: customerId, channel: "POS" as Channel },
+                include: {
+                    items: { include: { product: { select: { name: true, sku: true } } } },
+                    payments: true,
+                    staff: { select: { name: true } },
+                    location: { select: { name: true } }
                 },
-                items: { include: { product: { select: { name: true, sku: true } } } },
-                payments: true,
-                staff: { select: { name: true } },
-                location: { select: { name: true } }
-            },
-            orderBy: { createdAt: "desc" },
-            take: 50
-        });
+                orderBy: { createdAt: "desc" },
+                take: 100
+            }),
+            prisma.walletTransaction.findMany({
+                where: { userId: customerId },
+                orderBy: { createdAt: "desc" },
+                take: 20
+            })
+        ]);
 
-        // 🛡️ ACCURATE DUE: Only calculate due on unpaid orders (!isPaid & paymentStatus not completed/paid/settled)
         const dueOrders = orders.filter(o => 
             !o.isPaid && 
             o.paymentStatus !== "COMPLETED" && 
@@ -817,6 +899,21 @@ export const getCustomerHistory = async (req: AuthenticatedRequest, res: Respons
 
         let todayDue = 0;
         let pastDue = 0;
+
+        const enrichedOrders = orders.map(o => {
+            const paid = o.payments ? o.payments.filter((p: any) => p.status === "SUCCESS" || !p.status).reduce((pAcc: number, p: any) => pAcc + Number(p.amount), 0) : 0;
+            const due = Math.max(0, Number(o.totalAmount) - paid);
+            const isCompleted = o.isPaid || o.paymentStatus === "COMPLETED" || o.paymentStatus === "PAID" || due <= 0;
+            const isPartial = !isCompleted && paid > 0;
+            const isUnpaid = !isCompleted && paid === 0;
+
+            return {
+                ...o,
+                paidAmount: paid,
+                dueAmount: due,
+                billStatus: isCompleted ? "PAID" : (isPartial ? "PARTIAL" : "UNPAID")
+            };
+        });
 
         dueOrders.forEach(o => {
             const paid = o.payments ? o.payments.filter((p: any) => p.status === "SUCCESS" || !p.status).reduce((pAcc: number, p: any) => pAcc + Number(p.amount), 0) : 0;
@@ -835,13 +932,20 @@ export const getCustomerHistory = async (req: AuthenticatedRequest, res: Respons
         const lastVisit = orders[0]?.createdAt || null;
 
         res.json({
-            orders,
+            customer: customerUser ? {
+                ...customerUser,
+                accountBalance: Number(customerUser.accountBalance || 0),
+                totalDue: Number(customerUser.totalDue || totalDue)
+            } : null,
+            orders: enrichedOrders,
+            walletTransactions,
             summary: { 
                 totalOrders: orders.length, 
                 totalSpend, 
                 totalDue, 
                 todayDue, 
                 pastDue, 
+                accountBalance: Number(customerUser?.accountBalance || 0),
                 lastVisit 
             }
         });
@@ -1328,3 +1432,78 @@ export const getPOSOrderById = async (req: AuthenticatedRequest, res: Response, 
         res.json(order);
     } catch (error) { next(error); }
 };
+
+// ─── 9. Customer Advance Deposit / Credit Top-up ──────────────────────────────
+
+export const customerDeposit = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    const { customerId, amount, paymentMethod = "CASH", transactionId, notes } = req.body;
+    const staffId = req.user?.userId;
+
+    if (!customerId || !amount || Number(amount) <= 0) {
+        return res.status(400).json({ message: "Valid customer and positive deposit amount are required." });
+    }
+
+    try {
+        const depositAmt = Number(amount);
+
+        const result = await prisma.$transaction(async (tx) => {
+            const customer = await tx.user.findUnique({
+                where: { id: String(customerId) },
+                select: { id: true, name: true, phone: true, accountBalance: true }
+            });
+
+            if (!customer) {
+                throw new Error("Customer not found.");
+            }
+
+            const currentBalance = Number(customer.accountBalance || 0);
+            const newBalance = currentBalance + depositAmt;
+
+            await tx.user.update({
+                where: { id: String(customerId) },
+                data: { accountBalance: new Prisma.Decimal(newBalance) }
+            });
+
+            const transaction = await tx.walletTransaction.create({
+                data: {
+                    userId: String(customerId),
+                    amount: new Prisma.Decimal(depositAmt),
+                    type: "DEPOSIT",
+                    paymentMethod: String(paymentMethod).toUpperCase(),
+                    referenceId: transactionId || `DEP_${Date.now()}`,
+                    balanceAfter: new Prisma.Decimal(newBalance),
+                    notes: notes || "Advance Credit Deposit in POS",
+                    createdBy: staffId || "STAFF"
+                }
+            });
+
+            return { customer, newBalance, transaction };
+        });
+
+        // Send WhatsApp confirmation if customer phone exists
+        if (result.customer.phone) {
+            try {
+                const { sendTemplateViaChatHub } = require("../services/mbgcard");
+                await sendTemplateViaChatHub(result.customer.phone, "payment_received", {
+                    body: [
+                        result.customer.name || "Customer",
+                        `ADV-DEP-${Date.now().toString().slice(-4)}`,
+                        String(depositAmt),
+                        `${paymentMethod} (Advance Wallet Credit - Current Balance: ₹${result.newBalance})`
+                    ]
+                }).catch(() => null);
+            } catch (err) {
+                console.warn("[Deposit WhatsApp warning]:", err);
+            }
+        }
+
+        res.status(201).json({
+            message: `₹${depositAmt} deposited successfully into ${result.customer.name || 'Customer'}'s advance wallet.`,
+            accountBalance: result.newBalance,
+            transaction: result.transaction
+        });
+    } catch (error: any) {
+        next(error);
+    }
+};
+

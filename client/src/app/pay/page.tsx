@@ -224,6 +224,12 @@ function PayContent({ slugParams }: PayPageProps) {
         }
     };
 
+    const isAmountLocked = useMemo(() => {
+        return searchParams.get("lockAmount") === "true" || 
+               searchParams.get("locked") === "true" || 
+               searchParams.get("fixed") === "true";
+    }, [searchParams]);
+
     if (loading) {
         return (
             <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-center p-4">
@@ -486,49 +492,70 @@ function PayContent({ slugParams }: PayPageProps) {
                                 <div className="flex justify-between items-center">
                                     <label className="block text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
                                         <Tag className="w-3.5 h-3.5 text-emerald-500" />
-                                        {selectedBillId ? `Settlement Amount for Bill #${selectedBillId} (₹)` : "Enter Custom Payment Amount (₹)"}
+                                        {selectedBillId ? `Settlement Amount for Bill #${selectedBillId} (₹)` : "Payment Amount (₹)"}
                                     </label>
-                                    <span className="text-[10px] font-bold bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 px-2.5 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-500/20">
-                                        Custom Input Allowed
-                                    </span>
+                                    {isAmountLocked ? (
+                                        <span className="text-[10px] font-bold bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 px-2.5 py-0.5 rounded-full border border-amber-200 dark:border-amber-500/20 flex items-center gap-1">
+                                            🔒 Fixed Due Amount (Locked)
+                                        </span>
+                                    ) : (
+                                        <span className="text-[10px] font-bold bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 px-2.5 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-500/20">
+                                            Custom Input Allowed
+                                        </span>
+                                    )}
                                 </div>
 
                                 <div className="relative">
                                     <input 
                                         type="number"
                                         value={customAmount}
-                                        onChange={(e) => setCustomAmount(e.target.value)}
+                                        readOnly={isAmountLocked}
+                                        onChange={(e) => !isAmountLocked && setCustomAmount(e.target.value)}
                                         placeholder="0.00"
                                         step="0.01"
                                         min="1"
-                                        className="w-full h-16 bg-slate-50 dark:bg-slate-950 border-2 border-slate-200 dark:border-slate-700/80 focus:border-emerald-500 rounded-2xl px-12 text-2xl font-black text-slate-900 dark:text-white outline-none transition-all tabular-nums [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none shadow-inner"
+                                        className={cn(
+                                            "w-full h-16 border-2 rounded-2xl px-12 text-2xl font-black outline-none transition-all tabular-nums [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none shadow-inner",
+                                            isAmountLocked 
+                                                ? "bg-slate-100 dark:bg-slate-900 border-amber-300 dark:border-amber-600/50 text-slate-700 dark:text-slate-300 cursor-not-allowed" 
+                                                : "bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-700/80 focus:border-emerald-500 text-slate-900 dark:text-white"
+                                        )}
                                     />
                                     <span className="absolute left-4 top-1/2 -translate-y-1/2 text-2xl font-black text-emerald-600 dark:text-emerald-500">₹</span>
+                                    {isAmountLocked && (
+                                        <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider bg-amber-100/80 dark:bg-amber-950/60 px-2 py-1 rounded-md border border-amber-300/60 dark:border-amber-700/60">
+                                            Exact Amount
+                                        </span>
+                                    )}
                                 </div>
 
                                 {/* Preset Amount Buttons */}
-                                <div className="flex flex-wrap gap-2 pt-1">
-                                    <button
-                                        type="button"
-                                        onClick={() => setCustomAmount((selectedBill ? selectedBill.dueAmount : (payData?.totalDue || 0)).toString())}
-                                        className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold rounded-xl transition-all cursor-pointer border border-slate-200/80 dark:border-slate-700"
-                                    >
-                                        Full Due (₹{(selectedBill ? selectedBill.dueAmount : (payData?.totalDue || 0)).toFixed(2)})
-                                    </button>
-                                    {[500, 200, 100, 50, 1].map((amt) => (
+                                {!isAmountLocked && (
+                                    <div className="flex flex-wrap gap-2 pt-1">
                                         <button
-                                            key={amt}
                                             type="button"
-                                            onClick={() => setCustomAmount(amt.toString())}
-                                            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800/80 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold rounded-xl transition-all cursor-pointer border border-slate-200/60 dark:border-slate-700/60"
+                                            onClick={() => setCustomAmount((selectedBill ? selectedBill.dueAmount : (payData?.totalDue || 0)).toString())}
+                                            className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold rounded-xl transition-all cursor-pointer border border-slate-200/80 dark:border-slate-700"
                                         >
-                                            ₹{amt}
+                                            Full Due (₹{(selectedBill ? selectedBill.dueAmount : (payData?.totalDue || 0)).toFixed(2)})
                                         </button>
-                                    ))}
-                                </div>
+                                        {[500, 200, 100, 50, 1].map((amt) => (
+                                            <button
+                                                key={amt}
+                                                type="button"
+                                                onClick={() => setCustomAmount(amt.toString())}
+                                                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800/80 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold rounded-xl transition-all cursor-pointer border border-slate-200/60 dark:border-slate-700/60"
+                                            >
+                                                ₹{amt}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
 
                                 <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium leading-relaxed pt-1">
-                                    💡 <span className="font-bold text-slate-700 dark:text-slate-300">Automatic Ledger Sync:</span> Any input amount paid creates a verified transaction ID, records a credit entry in your account ledger, and updates unpaid invoice statuses.
+                                    {isAmountLocked 
+                                        ? "🔒 Exact Due Amount: This payment link has been locked to prevent any modifications to the required settlement amount."
+                                        : "💡 Automatic Ledger Sync: Any input amount paid creates a verified transaction ID, records a credit entry in your account ledger, and updates unpaid invoice statuses."}
                                 </p>
                             </div>
 

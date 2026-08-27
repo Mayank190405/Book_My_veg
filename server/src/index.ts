@@ -41,6 +41,9 @@ import integrationRouter from "./routes/integration/index";
 import incidentRoutes from "./routes/incidentRoutes";
 import analyticsRoutes from "./routes/analyticsRoutes";
 import pageContentRoutes from "./routes/pageContentRoutes";
+import templateRoutes from "./routes/templateRoutes";
+import vendorRoutes from "./routes/vendorRoutes";
+import staffAdvanceRoutes from "./routes/staffAdvanceRoutes";
 import { authenticate, authorize } from "./middleware/auth";
 import { socketHandler } from "./sockets/socketHandler";
 import logger from "./utils/logger";
@@ -140,6 +143,9 @@ app.use("/api/v1/integration-keys", authenticate, authorize(["ADMIN", "STORE_ADM
 app.use("/api/v1/incidents", authenticate, authorize(["ADMIN"]), incidentRoutes);
 app.use("/api/v1/analytics", authenticate, authorize(["ADMIN"]), analyticsRoutes);
 app.use("/api/v1/page-content", pageContentRoutes);
+app.use("/api/v1/templates", templateRoutes);
+app.use("/api/v1/vendors", vendorRoutes);
+app.use("/api/v1/staff-advances", staffAdvanceRoutes);
 app.use("/api/integration/v1", integrationRouter);
 
 app.get("/health", (_req, res) => {

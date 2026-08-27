@@ -185,6 +185,26 @@ export default function POSOperator() {
     const [posPaymentIframeUrl, setPosPaymentIframeUrl] = useState<string | null>(null);
     const [showPosIframeModal, setShowPosIframeModal] = useState(false);
 
+    // Split & Advance Wallet State
+    const [splitCashAmount, setSplitCashAmount] = useState<number | "">("");
+    const [splitOnlineAmount, setSplitOnlineAmount] = useState<number | "">("");
+    const [splitWalletAmount, setSplitWalletAmount] = useState<number | "">("");
+    const [useWalletBalance, setUseWalletBalance] = useState(false);
+
+    // Deposit Advance State
+    const [showDepositModal, setShowDepositModal] = useState(false);
+    const [depositAmount, setDepositAmount] = useState("");
+    const [depositMethod, setDepositMethod] = useState("CASH");
+    const [depositNotes, setDepositNotes] = useState("");
+    const [isDepositing, setIsDepositing] = useState(false);
+
+    // Custom WhatsApp Modal State
+    const [showCustomWhatsAppModal, setShowCustomWhatsAppModal] = useState(false);
+    const [customWhatsAppTemplate, setCustomWhatsAppTemplate] = useState("due_payment_reminder");
+    const [customWhatsAppVariables, setCustomWhatsAppVariables] = useState<string[]>(["", "", "", ""]);
+    const [customWhatsAppPhone, setCustomWhatsAppPhone] = useState("");
+    const [isSendingCustomWhatsApp, setIsSendingCustomWhatsApp] = useState(false);
+
     // Expense
     const [expenseData, setExpenseData] = useState({ amount: "", category: "MISC", description: "" });
     const [expenseDenoms, setExpenseDenoms] = useState<Record<number, number>>({ 500: 0, 200: 0, 100: 0, 50: 0, 20: 0, 10: 0, 5: 0, 2: 0, 1: 0 });
@@ -476,8 +496,73 @@ export default function POSOperator() {
         try {
             const res = await api.get(`/pos/customers/${customerId}/history`);
             setCustomerHistory(res.data);
+            if (res.data?.customer) {
+                setSelectedCustomer((prev: any) => ({ ...prev, ...res.data.customer }));
+            }
             if (showDialog) setShowHistoryDialog(true);
         } catch { toast.error("Failed to load history"); }
+    };
+
+    const handleSelectSplitPreset = (cashPercent: number) => {
+        const netTotal = grandTotal;
+        let walletDeduction = 0;
+        if (useWalletBalance && Number(selectedCustomer?.accountBalance || 0) > 0) {
+            walletDeduction = Math.min(Number(selectedCustomer.accountBalance), netTotal);
+        }
+        const remainingToSplit = Math.max(0, netTotal - walletDeduction);
+        const cash = Number(((remainingToSplit * cashPercent) / 100).toFixed(2));
+        const online = Number((remainingToSplit - cash).toFixed(2));
+        setSplitCashAmount(cash);
+        setSplitOnlineAmount(online);
+        setSplitWalletAmount(walletDeduction);
+    };
+
+    const handleCustomerDeposit = async () => {
+        if (!selectedCustomer?.id || !depositAmount || Number(depositAmount) <= 0) {
+            return toast.error("Please enter a valid positive deposit amount.");
+        }
+        setIsDepositing(true);
+        try {
+            const res = await api.post("/pos/customers/deposit", {
+                customerId: selectedCustomer.id,
+                amount: Number(depositAmount),
+                paymentMethod: depositMethod,
+                notes: depositNotes
+            });
+            toast.success(res.data?.message || `₹${depositAmount} deposited into advance wallet!`);
+            setShowDepositModal(false);
+            setDepositAmount("");
+            setDepositNotes("");
+            fetchCustomerHistory(selectedCustomer.id, false);
+        } catch (err: any) {
+            toast.error(err.response?.data?.message || "Failed to process advance deposit");
+        } finally {
+            setIsDepositing(false);
+        }
+    };
+
+    const handleSendCustomWhatsAppToCustomer = async () => {
+        if (!customWhatsAppPhone || !customWhatsAppTemplate) {
+            return toast.error("Phone and template name are required");
+        }
+        setIsSendingCustomWhatsApp(true);
+        try {
+            const res = await api.post("/templates/send-custom", {
+                phone: customWhatsAppPhone,
+                templateName: customWhatsAppTemplate,
+                variables: customWhatsAppVariables
+            });
+            if (res.data?.success) {
+                toast.success(res.data.message || "Custom WhatsApp dispatched!");
+                setShowCustomWhatsAppModal(false);
+            } else {
+                toast.error(res.data?.message || "Failed to dispatch message");
+            }
+        } catch (err: any) {
+            toast.error(err.response?.data?.message || "WhatsApp dispatch error");
+        } finally {
+            setIsSendingCustomWhatsApp(false);
+        }
     };
 
     const forwardWhatsAppLink = async (type: "BILL" | "ALL_DUES", customBillId?: string) => {
@@ -832,6 +917,26 @@ export default function POSOperator() {
         if (!activeShift) { toast.error("Operational Block: No active shift found. Open a shift to proceed."); setShowShiftModal(true); return; }
         if (!selectedCustomer?.id) { toast.error("Customer required. Walk-in is disabled."); return; }
         setIsProcessing(true);
+
+        const splitPayments: any[] = [];
+        if (paymentMethod === "SPLIT") {
+            if (Number(splitCashAmount) > 0) {
+                splitPayments.push({ method: "CASH", amount: Number(splitCashAmount) });
+            }
+            if (Number(splitOnlineAmount) > 0) {
+                splitPayments.push({ method: "EASEBUZZ", amount: Number(splitOnlineAmount) });
+            }
+            if (useWalletBalance && Number(splitWalletAmount) > 0) {
+                splitPayments.push({ method: "WALLET", amount: Number(splitWalletAmount) });
+            }
+        }
+
+        const effectivePaidAmount = paymentMethod === "CREDIT"
+            ? 0
+            : (paymentMethod === "SPLIT"
+                ? splitPayments.reduce((sum, p) => sum + p.amount, 0)
+                : (paidAmount || grandTotal));
+
         const changeBreakdown = (paymentMethod === "CASH" && changeDue > 0)
             ? (calculateOptimalChangeBreakdown(changeDue, drawerDenominations) || getStandardGreedyBreakdown(changeDue))
             : {};
@@ -845,17 +950,18 @@ export default function POSOperator() {
                     price: i.overridePrice !== undefined ? i.overridePrice : getPrice(i)
                 })),
                 paymentMethod,
+                splitPayments: paymentMethod === "SPLIT" ? splitPayments : undefined,
                 discountAmount: discount,
                 packerId: localStorage.getItem("selectedPackerId"),
                 duePaymentAmount: Number(duePaymentAmount),
-                paidAmount: paymentMethod === "CREDIT" ? 0 : (paidAmount || grandTotal),
-                denominations: paymentMethod === "CASH" ? {
+                paidAmount: effectivePaidAmount,
+                denominations: (paymentMethod === "CASH" || (paymentMethod === "SPLIT" && Number(splitCashAmount) > 0)) ? {
                     received: cashReceived,
                     change: changeBreakdown
                 } : null,
                 orderId: editingOrderId || undefined
             });
-            if (paymentMethod === "CASH") {
+            if (paymentMethod === "CASH" || (paymentMethod === "SPLIT" && Number(splitCashAmount) > 0)) {
                 const newDrawer = { ...drawerDenominations };
                 const received = cashReceived || {};
                 const change = changeBreakdown || {};
@@ -891,6 +997,10 @@ export default function POSOperator() {
             setCouponCode("");
             setPaidAmount("");
             setDuePaymentAmount("");
+            setSplitCashAmount("");
+            setSplitOnlineAmount("");
+            setSplitWalletAmount("");
+            setUseWalletBalance(false);
             toast.success("Transaction completed");
         } catch (e: any) {
             toast.error(e?.response?.data?.message || "Transaction failed");
@@ -2225,12 +2335,15 @@ export default function POSOperator() {
                                 {[
                                     { key: "CASH", icon: Banknote, label: "Cash Desk" },
                                     { key: "UPI", icon: Smartphone, label: "Digital Pay" },
+                                    { key: "SPLIT", icon: Layers, label: "Split Pay" },
                                     { key: "CREDIT", icon: BookOpen, label: "Due Sale" }
                                 ].map(m => (
                                     <button key={m.key} onClick={() => {
                                         setPaymentMethod(m.key);
                                         if (m.key === "UPI") {
                                             triggerEasebuzzCheckoutInPOS();
+                                        } else if (m.key === "SPLIT") {
+                                            handleSelectSplitPreset(50);
                                         }
                                     }}
                                         className={cn("flex-1 h-full rounded-[1.5rem] flex items-center justify-center gap-3 text-[10px] font-black uppercase tracking-[0.2em] border-[4px] transition-all active:scale-[0.98]",
@@ -2298,24 +2411,156 @@ export default function POSOperator() {
                                                         <div className="flex flex-wrap gap-2 mt-1">
                                                             {Object.entries(breakdown).map(([den, count]) => (
                                                                 <span key={den} className="px-2 py-1 bg-emerald-500/10 rounded-lg text-xs font-bold text-emerald-700 font-mono">
-                                                                    {count}x ₹{den}
+                                                                    ₹{den} × {count}
                                                                 </span>
                                                             ))}
                                                         </div>
                                                     );
                                                 }
-                                                return (
-                                                    <span className="text-[9px] font-bold text-amber-700">
-                                                        Please load more cash denominations before completing checkout, or manually adjust payments.
-                                                    </span>
-                                                );
+                                                return null;
                                             })()}
                                         </div>
                                     )}
                                 </div>
+                            ) : paymentMethod === "SPLIT" ? (
+                                <div className="flex-1 flex flex-col gap-5 overflow-y-auto pr-1">
+                                    {/* Advance Wallet Option */}
+                                    {Number(selectedCustomer?.accountBalance || 0) > 0 && (
+                                        <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center justify-between">
+                                            <label className="flex items-center gap-2.5 cursor-pointer text-xs font-bold text-emerald-900">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={useWalletBalance}
+                                                    onChange={(e) => {
+                                                        const checked = e.target.checked;
+                                                        setUseWalletBalance(checked);
+                                                        const walletAmt = checked ? Math.min(Number(selectedCustomer.accountBalance), grandTotal) : 0;
+                                                        setSplitWalletAmount(walletAmt);
+                                                        const rem = Math.max(0, grandTotal - walletAmt);
+                                                        setSplitCashAmount(Number((rem * 0.5).toFixed(2)));
+                                                        setSplitOnlineAmount(Number((rem * 0.5).toFixed(2)));
+                                                    }}
+                                                    className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500"
+                                                />
+                                                <span>Deduct from Customer Advance Credit Wallet</span>
+                                            </label>
+                                            <span className="text-xs font-black text-emerald-700 font-mono">
+                                                Avail: ₹{Number(selectedCustomer.accountBalance).toFixed(2)}
+                                            </span>
+                                        </div>
+                                    )}
+
+                                    {/* Split Ratio Presets */}
+                                    <div className="space-y-1.5">
+                                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                                            Quick Split Ratios (Cash / Easebuzz Online)
+                                        </span>
+                                        <div className="grid grid-cols-5 gap-2">
+                                            {[
+                                                { cash: 10, online: 90, label: "10 / 90" },
+                                                { cash: 20, online: 80, label: "20 / 80" },
+                                                { cash: 50, online: 50, label: "50 / 50" },
+                                                { cash: 70, online: 30, label: "70 / 30" },
+                                                { cash: 90, online: 10, label: "90 / 10" }
+                                            ].map(preset => (
+                                                <button
+                                                    key={preset.label}
+                                                    type="button"
+                                                    onClick={() => handleSelectSplitPreset(preset.cash)}
+                                                    className="py-2 px-1 bg-white hover:bg-emerald-50 border border-slate-200 hover:border-emerald-500 rounded-xl text-xs font-black text-slate-800 hover:text-emerald-700 transition-all shadow-xs cursor-pointer"
+                                                >
+                                                    {preset.label}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* Split Amount Manual Inputs */}
+                                    <div className="grid grid-cols-2 gap-4 pt-1">
+                                        {/* Cash Portion */}
+                                        <div className="p-5 bg-white rounded-2xl border-2 border-slate-200 space-y-3 shadow-xs">
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-xs font-black text-slate-700 uppercase flex items-center gap-1.5">
+                                                    <Banknote className="w-4 h-4 text-emerald-500" /> Cash Portion (₹)
+                                                </span>
+                                            </div>
+                                            <div className="relative">
+                                                <input
+                                                    type="number"
+                                                    step="0.01"
+                                                    value={splitCashAmount}
+                                                    onChange={(e) => {
+                                                        const val = e.target.value === "" ? "" : Number(e.target.value);
+                                                        setSplitCashAmount(val);
+                                                        if (typeof val === "number") {
+                                                            const walletAmt = useWalletBalance ? Number(splitWalletAmount || 0) : 0;
+                                                            const rem = Math.max(0, grandTotal - walletAmt - val);
+                                                            setSplitOnlineAmount(Number(rem.toFixed(2)));
+                                                        }
+                                                    }}
+                                                    placeholder="0.00"
+                                                    className="w-full h-12 pl-8 pr-3 text-xl font-black text-slate-900 border border-slate-200 rounded-xl outline-none focus:border-emerald-500"
+                                                />
+                                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">₹</span>
+                                            </div>
+                                        </div>
+
+                                        {/* Easebuzz Online Portion */}
+                                        <div className="p-5 bg-white rounded-2xl border-2 border-teal-500/30 space-y-3 shadow-xs">
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-xs font-black text-teal-700 uppercase flex items-center gap-1.5">
+                                                    <Smartphone className="w-4 h-4 text-teal-500" /> Easebuzz Online (₹)
+                                                </span>
+                                            </div>
+                                            <div className="relative">
+                                                <input
+                                                    type="number"
+                                                    step="0.01"
+                                                    value={splitOnlineAmount}
+                                                    onChange={(e) => {
+                                                        const val = e.target.value === "" ? "" : Number(e.target.value);
+                                                        setSplitOnlineAmount(val);
+                                                        if (typeof val === "number") {
+                                                            const walletAmt = useWalletBalance ? Number(splitWalletAmount || 0) : 0;
+                                                            const rem = Math.max(0, grandTotal - walletAmt - val);
+                                                            setSplitCashAmount(Number(rem.toFixed(2)));
+                                                        }
+                                                    }}
+                                                    placeholder="0.00"
+                                                    className="w-full h-12 pl-8 pr-3 text-xl font-black text-slate-900 border border-teal-200 rounded-xl outline-none focus:border-teal-500"
+                                                />
+                                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">₹</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Reconciliation Summary Bar */}
+                                    <div className="p-4 bg-slate-900 text-white rounded-2xl flex items-center justify-between text-xs">
+                                        <div className="space-y-0.5">
+                                            <span className="text-slate-400 uppercase text-[10px] font-bold">Total Bill: ₹{grandTotal.toFixed(2)}</span>
+                                            <p className="font-bold">
+                                                Cash: ₹{Number(splitCashAmount || 0).toFixed(2)} + Online: ₹{Number(splitOnlineAmount || 0).toFixed(2)}
+                                                {useWalletBalance && ` + Wallet: ₹${Number(splitWalletAmount || 0).toFixed(2)}`}
+                                            </p>
+                                        </div>
+                                        <div className="text-right">
+                                            {(() => {
+                                                const totalPaid = Number(splitCashAmount || 0) + Number(splitOnlineAmount || 0) + (useWalletBalance ? Number(splitWalletAmount || 0) : 0);
+                                                const diff = grandTotal - totalPaid;
+                                                if (Math.abs(diff) < 0.05) {
+                                                    return <span className="text-emerald-400 font-bold">✓ Fully Balanced (₹{totalPaid.toFixed(2)})</span>;
+                                                } else if (diff > 0) {
+                                                    return <span className="text-amber-400 font-bold">Partial Settlement (Due: ₹{diff.toFixed(2)})</span>;
+                                                } else {
+                                                    return <span className="text-rose-400 font-bold">Overpaid: ₹{(-diff).toFixed(2)}</span>;
+                                                }
+                                            })()}
+                                        </div>
+                                    </div>
+                                </div>
                             ) : paymentMethod === "CREDIT" ? (
-                                <div className="flex-1 flex flex-col items-center justify-center text-center gap-6 p-8 bg-amber-500/5 rounded-[3.5rem] border-4 border-dashed border-amber-500/10">
-                                    <div className="w-24 h-24 bg-amber-500 rounded-[2.5rem] flex items-center justify-center shadow-2xl shadow-amber-500/40 border-6 border-white/20">
+                                <div className="flex-1 flex flex-col items-center justify-center text-center gap-6 p-8 bg-white rounded-[3.5rem] border-4 border-dashed border-slate-200 shadow-inner">
+                                    <div className="w-24 h-24 bg-slate-900 rounded-[2.5rem] flex items-center justify-center shadow-2xl shadow-slate-900/40 border-6 border-white">
                                         <BookOpen className="h-10 w-10 text-white" />
                                     </div>
                                     <div className="space-y-2">
@@ -2376,102 +2621,307 @@ export default function POSOperator() {
 
             {/* ── CUSTOMER HISTORY DIALOG ── */}
             <Dialog open={showHistoryDialog} onOpenChange={setShowHistoryDialog}>
-                <DialogContent className="max-w-2xl bg-white rounded-2xl p-8 border-none shadow-2xl max-h-[85vh] overflow-hidden flex flex-col">
+                <DialogContent className="max-w-3xl bg-white rounded-3xl p-8 border-none shadow-2xl max-h-[88vh] overflow-hidden flex flex-col">
                     <DialogHeader>
-                        <DialogTitle className="text-xl font-black uppercase text-slate-900 flex items-center gap-2 mb-2">
-                            <History className="h-6 w-6 text-teal-500" />
-                            Customer Purchase Record
-                        </DialogTitle>
-                        <DialogDescription>
-                            Review transaction history, spend stats, and outstanding balances for {selectedCustomer?.name}.
-                        </DialogDescription>
-                        <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">{selectedCustomer?.name} — {selectedCustomer?.phone}</p>
+                        <div className="flex justify-between items-start">
+                            <div>
+                                <DialogTitle className="text-xl font-black uppercase text-slate-900 flex items-center gap-2 mb-1">
+                                    <History className="h-6 w-6 text-teal-500" />
+                                    Customer Hub & Billing History
+                                </DialogTitle>
+                                <DialogDescription>
+                                    Review account balance credits, dues ledger, and past bills for {selectedCustomer?.name}.
+                                </DialogDescription>
+                                <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mt-1">{selectedCustomer?.name} — {selectedCustomer?.phone}</p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => {
+                                        setCustomWhatsAppPhone(selectedCustomer?.phone || "");
+                                        setCustomWhatsAppVariables([selectedCustomer?.name || "", "Book My Veg", "500", "https://bookmyveg.co.in"]);
+                                        setShowCustomWhatsAppModal(true);
+                                    }}
+                                    className="px-3 py-1.5 bg-slate-900 text-white hover:bg-slate-800 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs"
+                                >
+                                    <Send className="w-3.5 h-3.5" /> Send Custom WhatsApp
+                                </button>
+                            </div>
+                        </div>
                     </DialogHeader>
                     {customerHistory && (
                         <div className="space-y-6 mt-6 overflow-y-auto pr-2">
-                            <div className="grid grid-cols-4 gap-3">
-                                <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 text-center">
-                                    <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest mb-1">Total Orders</p>
-                                    <p className="text-2xl font-black text-slate-900 tabular-nums">{customerHistory.summary.totalOrders}</p>
+                            {/* Summary Metrics */}
+                            <div className="grid grid-cols-5 gap-3">
+                                {/* Advance Credit Wallet Card */}
+                                <div className="bg-emerald-50 border border-emerald-200/80 rounded-2xl p-3 text-center flex flex-col justify-between shadow-xs">
+                                    <div>
+                                        <p className="text-[9px] text-emerald-700 font-black uppercase tracking-widest mb-0.5">Advance Wallet</p>
+                                        <p className="text-xl font-black text-emerald-700 tabular-nums">
+                                            ₹{Number(customerHistory.customer?.accountBalance || customerHistory.summary?.accountBalance || 0).toFixed(0)}
+                                        </p>
+                                    </div>
+                                    <button
+                                        onClick={() => {
+                                            setDepositAmount("");
+                                            setShowDepositModal(true);
+                                        }}
+                                        className="h-6 mt-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black uppercase text-[8px] tracking-wider rounded-lg shadow cursor-pointer transition-all active:scale-95"
+                                    >
+                                        + Deposit Advance
+                                    </button>
                                 </div>
-                                <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 text-center">
+
+                                <div className="bg-slate-50 border border-slate-100 rounded-2xl p-3 text-center">
+                                    <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest mb-1">Total Orders</p>
+                                    <p className="text-xl font-black text-slate-900 tabular-nums">{customerHistory.summary.totalOrders}</p>
+                                </div>
+                                <div className="bg-slate-50 border border-slate-100 rounded-2xl p-3 text-center">
                                     <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest mb-1">Total Spend</p>
-                                    <p className="text-2xl font-black text-teal-600 tabular-nums">₹{customerHistory.summary.totalSpend?.toFixed(0)}</p>
+                                    <p className="text-xl font-black text-teal-600 tabular-nums">₹{customerHistory.summary.totalSpend?.toFixed(0)}</p>
                                 </div>
                                 <div className="flex flex-col items-center justify-center p-3 bg-red-50 border border-red-100 rounded-2xl text-center">
                                     <p className="text-[9px] text-red-400 font-black uppercase tracking-widest leading-none mb-1 text-center">Due Balance</p>
-                                    <p className="text-xl font-black text-red-600 tabular-nums mb-1">₹{customerHistory.summary.totalDue.toFixed(0)}</p>
-                                    {(customerHistory.summary.todayDue > 0 || customerHistory.summary.pastDue > 0) && (
-                                        <div className="flex flex-col gap-0.5 text-[9px] font-bold mb-2 w-full">
-                                            <span className="text-amber-700 bg-amber-100/80 px-2 py-0.5 rounded font-black">Today: ₹{(customerHistory.summary.todayDue || 0).toFixed(0)}</span>
-                                            {customerHistory.summary.pastDue > 0 && (
-                                                <span className="text-red-700 bg-red-100/80 px-2 py-0.5 rounded font-black">Past: ₹{(customerHistory.summary.pastDue || 0).toFixed(0)}</span>
-                                            )}
-                                        </div>
-                                    )}
+                                    <p className="text-lg font-black text-red-600 tabular-nums mb-1">₹{customerHistory.summary.totalDue.toFixed(0)}</p>
                                     {customerHistory.summary.totalDue > 0 && (
-                                        <div className="flex flex-col gap-1 w-full">
-                                            {customerHistory.summary.todayDue > 0 && customerHistory.summary.pastDue > 0 && (
-                                                <Button
-                                                    onClick={() => { setShowSettleDialog(true); setSettleAmount(customerHistory.summary.todayDue); }}
-                                                    className="h-7 px-2 bg-amber-600 hover:bg-amber-700 text-white font-black uppercase text-[8px] tracking-wider rounded-lg shadow"
-                                                >
-                                                    Pay Today Due (₹{customerHistory.summary.todayDue.toFixed(0)})
-                                                </Button>
-                                            )}
-                                            <Button
-                                                onClick={() => { setShowSettleDialog(true); setSettleAmount(customerHistory.summary.totalDue); }}
-                                                className="h-7 px-2 bg-red-600 hover:bg-red-700 text-white font-black uppercase text-[8px] tracking-wider rounded-lg shadow"
-                                            >
-                                                {customerHistory.summary.pastDue > 0 ? `Pay All Dues (₹${customerHistory.summary.totalDue.toFixed(0)})` : "Settle Now"}
-                                            </Button>
-                                        </div>
+                                        <Button
+                                            onClick={() => { setShowSettleDialog(true); setSettleAmount(customerHistory.summary.totalDue); }}
+                                            className="h-6 px-2 bg-red-600 hover:bg-red-700 text-white font-black uppercase text-[8px] tracking-wider rounded-lg shadow mt-1"
+                                        >
+                                            Settle Dues
+                                        </Button>
                                     )}
                                 </div>
-                                <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 text-center">
-                                    <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest mb-1">Last Transaction</p>
+                                <div className="bg-slate-50 border border-slate-100 rounded-2xl p-3 text-center">
+                                    <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest mb-1">Last Visit</p>
                                     <p className="text-xs font-black text-slate-900 uppercase">{customerHistory.summary.lastVisit ? new Date(customerHistory.summary.lastVisit).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : "Never"}</p>
                                 </div>
                             </div>
+
+                            {/* Bills List */}
                             <div className="space-y-3">
                                 <p className="text-[10px] font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
-                                    <Receipt className="h-3 w-3" /> Recent Transactions
+                                    <Receipt className="h-3 w-3" /> Recent Transactions & Bills
                                 </p>
-                                {customerHistory.orders?.map((order: any) => (
-                                    <div
-                                        key={order.id}
-                                        onClick={() => handleViewHistoricalReceipt(order)}
-                                        className="border border-slate-100 rounded-2xl p-4 flex items-center justify-between hover:bg-teal-50 hover:border-teal-200 transition-all cursor-pointer group"
-                                    >
-                                        <div className="flex items-center gap-4">
-                                            <div className="w-10 h-10 rounded-xl bg-slate-100 group-hover:bg-teal-100 text-slate-400 group-hover:text-teal-500 transition-colors flex items-center justify-center">
-                                                <Package className="h-5 w-5" />
+                                {customerHistory.orders?.map((order: any) => {
+                                    const isCancelled = order.status === "CANCELLED";
+                                    const isPartial = order.billStatus === "PARTIAL" || order.paymentStatus === "PARTIAL";
+                                    const isPaid = order.billStatus === "PAID" || order.isPaid || order.paymentStatus === "COMPLETED" || order.paymentStatus === "PAID" || order.paymentStatus === "SETTLED";
+                                    const dueAmt = order.dueAmount !== undefined ? order.dueAmount : Math.max(0, Number(order.totalAmount) - (Number(order.paidAmount) || 0));
+
+                                    return (
+                                        <div
+                                            key={order.id}
+                                            onClick={() => handleViewHistoricalReceipt(order)}
+                                            className="border border-slate-100 rounded-2xl p-4 flex items-center justify-between hover:bg-teal-50 hover:border-teal-200 transition-all cursor-pointer group"
+                                        >
+                                            <div className="flex items-center gap-4">
+                                                <div className="w-10 h-10 rounded-xl bg-slate-100 group-hover:bg-teal-100 text-slate-400 group-hover:text-teal-500 transition-colors flex items-center justify-center">
+                                                    <Package className="h-5 w-5" />
+                                                </div>
+                                                <div>
+                                                    <p className="text-sm font-black text-slate-900 group-hover:text-teal-700">#{order.id.slice(0, 8).toUpperCase()}</p>
+                                                    <div className="flex flex-col gap-0.5 mt-0.5">
+                                                        <p className="text-[10px] text-slate-400 font-bold uppercase">{new Date(order.createdAt).toLocaleDateString()} at {new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                                                        <p className="text-[9px] text-teal-600 font-black uppercase tracking-widest">Billed By: {order.staff?.name || "System"}</p>
+                                                    </div>
+                                                </div>
                                             </div>
-                                            <div>
-                                                <p className="text-sm font-black text-slate-900 group-hover:text-teal-700">#{order.id.slice(0, 8).toUpperCase()}</p>
-                                                <div className="flex flex-col gap-0.5 mt-0.5">
-                                                    <p className="text-[10px] text-slate-400 font-bold uppercase">{new Date(order.createdAt).toLocaleDateString()} at {new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
-                                                    <p className="text-[9px] text-teal-600 font-black uppercase tracking-widest">Billed By: {order.staff?.name || "System"}</p>
+                                            <div className="text-right">
+                                                <p className="text-lg font-black text-slate-900 tabular-nums">₹{Number(order.totalAmount).toFixed(0)}</p>
+                                                <div className="flex flex-col items-end gap-1.5 mt-1">
+                                                    {isCancelled ? (
+                                                        <div className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-slate-100 text-slate-600 border border-slate-200">
+                                                            Cancelled
+                                                        </div>
+                                                    ) : isPartial ? (
+                                                        <div className="px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-amber-100 text-amber-800 border border-amber-300">
+                                                            Partial (Due: ₹{Number(dueAmt).toFixed(0)})
+                                                        </div>
+                                                    ) : isPaid ? (
+                                                        <div className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-teal-100 text-teal-600">
+                                                            Settled
+                                                        </div>
+                                                    ) : (
+                                                        <div className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-red-100 text-red-600">
+                                                            Unpaid Due
+                                                        </div>
+                                                    )}
+                                                    <span className="text-[9px] font-black text-teal-500 uppercase flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        <Receipt className="h-2.5 w-2.5" /> View Bill
+                                                    </span>
                                                 </div>
                                             </div>
                                         </div>
-                                        <div className="text-right">
-                                            <p className="text-lg font-black text-slate-900 tabular-nums">₹{Number(order.totalAmount).toFixed(0)}</p>
-                                            <div className="flex flex-col items-end gap-1.5 mt-1">
-                                                <div className={cn("px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest",
-                                                    order.paymentStatus === "PENDING" ? "bg-red-100 text-red-600" : "bg-teal-100 text-teal-600")}>
-                                                    {order.paymentStatus === "PENDING" ? "Unpaid Due" : "Settled"}
-                                                </div>
-                                                <span className="text-[9px] font-black text-teal-500 uppercase flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                    <Receipt className="h-2.5 w-2.5" /> View Bill
-                                                </span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         </div>
                     )}
+                </DialogContent>
+            </Dialog>
+
+            {/* ── CUSTOMER ADVANCE DEPOSIT MODAL ── */}
+            <Dialog open={showDepositModal} onOpenChange={setShowDepositModal}>
+                <DialogContent className="max-w-md bg-white rounded-3xl p-6 border-none shadow-2xl">
+                    <DialogHeader>
+                        <DialogTitle className="text-lg font-black uppercase text-slate-900 flex items-center gap-2">
+                            <Banknote className="h-5 w-5 text-emerald-600" />
+                            Deposit Advance Customer Credit
+                        </DialogTitle>
+                        <DialogDescription className="text-xs text-slate-500">
+                            Add pre-paid store credit to {selectedCustomer?.name}'s account wallet for fast future checkouts.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="space-y-4 mt-3 text-xs">
+                        <div>
+                            <label className="text-[10px] font-bold text-slate-400 uppercase">Deposit Amount (₹) *</label>
+                            <input
+                                type="number"
+                                required
+                                min="1"
+                                value={depositAmount}
+                                onChange={(e) => setDepositAmount(e.target.value)}
+                                placeholder="e.g. 500 or 1000"
+                                className="w-full h-11 px-3 text-lg font-black text-slate-900 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-emerald-500"
+                            />
+                        </div>
+
+                        {/* Quick Presets */}
+                        <div className="flex gap-2">
+                            {[500, 1000, 2000, 5000].map(amt => (
+                                <button
+                                    key={amt}
+                                    type="button"
+                                    onClick={() => setDepositAmount(String(amt))}
+                                    className="flex-1 py-1.5 bg-slate-100 hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 font-bold rounded-lg text-xs cursor-pointer border border-slate-200"
+                                >
+                                    +₹{amt}
+                                </button>
+                            ))}
+                        </div>
+
+                        <div>
+                            <label className="text-[10px] font-bold text-slate-400 uppercase">Payment Mode Received</label>
+                            <select
+                                value={depositMethod}
+                                onChange={(e) => setDepositMethod(e.target.value)}
+                                className="w-full h-10 px-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 outline-none cursor-pointer"
+                            >
+                                <option value="CASH">Cash at Desk</option>
+                                <option value="UPI">UPI / Digital</option>
+                                <option value="BANK_TRANSFER">Bank Transfer</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label className="text-[10px] font-bold text-slate-400 uppercase">Deposit Notes</label>
+                            <input
+                                type="text"
+                                value={depositNotes}
+                                onChange={(e) => setDepositNotes(e.target.value)}
+                                placeholder="e.g. Pre-paid monthly vegetable credit"
+                                className="w-full h-10 px-3 bg-slate-50 border border-slate-200 rounded-xl font-medium outline-none"
+                            />
+                        </div>
+
+                        <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                            <button
+                                type="button"
+                                onClick={() => setShowDepositModal(false)}
+                                className="px-4 py-2 bg-slate-100 text-slate-700 font-bold rounded-xl text-xs cursor-pointer"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleCustomerDeposit}
+                                disabled={isDepositing || !depositAmount}
+                                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs shadow-md cursor-pointer disabled:opacity-50"
+                            >
+                                {isDepositing ? "Depositing..." : "Confirm Deposit"}
+                            </button>
+                        </div>
+                    </div>
+                </DialogContent>
+            </Dialog>
+
+            {/* ── CUSTOM WHATSAPP MODAL ── */}
+            <Dialog open={showCustomWhatsAppModal} onOpenChange={setShowCustomWhatsAppModal}>
+                <DialogContent className="max-w-md bg-white rounded-3xl p-6 border-none shadow-2xl">
+                    <DialogHeader>
+                        <DialogTitle className="text-lg font-black uppercase text-slate-900 flex items-center gap-2">
+                            <Send className="h-5 w-5 text-emerald-600" />
+                            Send Custom WhatsApp to Customer
+                        </DialogTitle>
+                        <DialogDescription className="text-xs text-slate-500">
+                            Dispatch dynamic template message with live variable overrides.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="space-y-3.5 mt-3 text-xs">
+                        <div>
+                            <label className="text-[10px] font-bold text-slate-400 uppercase">Customer Phone</label>
+                            <input
+                                type="text"
+                                value={customWhatsAppPhone}
+                                onChange={(e) => setCustomWhatsAppPhone(e.target.value)}
+                                className="w-full h-10 px-3 bg-slate-50 border border-slate-200 rounded-xl font-bold font-mono outline-none"
+                            />
+                        </div>
+
+                        <div>
+                            <label className="text-[10px] font-bold text-slate-400 uppercase">Template</label>
+                            <select
+                                value={customWhatsAppTemplate}
+                                onChange={(e) => setCustomWhatsAppTemplate(e.target.value)}
+                                className="w-full h-10 px-3 bg-slate-50 border border-slate-200 rounded-xl font-bold outline-none cursor-pointer"
+                            >
+                                <option value="due_payment_reminder">due_payment_reminder (Payment Due Reminder)</option>
+                                <option value="customer_inactive_reminder">customer_inactive_reminder (Inactivity / Miss You)</option>
+                                <option value="invoice_paid">invoice_paid (Invoice Paid Receipt)</option>
+                                <option value="payment_received">payment_received (Credit Deposit Confirmation)</option>
+                            </select>
+                        </div>
+
+                        <div className="space-y-2">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase">Variable Mapping</label>
+                            {[0, 1, 2, 3].map(idx => (
+                                <div key={idx} className="flex items-center gap-2">
+                                    <span className="font-mono text-slate-400 text-xs w-10">{`{{${idx + 1}}}:`}</span>
+                                    <input
+                                        type="text"
+                                        value={customWhatsAppVariables[idx] || ""}
+                                        onChange={(e) => {
+                                            const updated = [...customWhatsAppVariables];
+                                            updated[idx] = e.target.value;
+                                            setCustomWhatsAppVariables(updated);
+                                        }}
+                                        placeholder={`Variable {{${idx + 1}}} value`}
+                                        className="flex-1 h-9 px-3 bg-slate-50 border border-slate-200 rounded-xl font-medium outline-none"
+                                    />
+                                </div>
+                            ))}
+                        </div>
+
+                        <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                            <button
+                                type="button"
+                                onClick={() => setShowCustomWhatsAppModal(false)}
+                                className="px-4 py-2 bg-slate-100 text-slate-700 font-bold rounded-xl text-xs cursor-pointer"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleSendCustomWhatsAppToCustomer}
+                                disabled={isSendingCustomWhatsApp}
+                                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs shadow-md cursor-pointer disabled:opacity-50"
+                            >
+                                {isSendingCustomWhatsApp ? "Dispatching..." : "Send Message"}
+                            </button>
+                        </div>
+                    </div>
                 </DialogContent>
             </Dialog>
 

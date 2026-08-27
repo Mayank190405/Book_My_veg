@@ -28,7 +28,9 @@ import {
     Tag,
     History,
     MessageSquare,
-    Key
+    Key,
+    Truck,
+    Sparkles
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
@@ -43,17 +45,20 @@ import GlobalNotificationListener from "@/components/features/GlobalNotification
 const NAV_ITEMS = [
     { label: "Overview", icon: LayoutDashboard, href: "/admin/dashboard" },
     { label: "Sales Reports", icon: TrendingUp, href: "/admin/reports" },
+    { label: "Daily Product Report", icon: TrendingUp, href: "/admin/reports/daily-products" },
     { label: "Customer Dues & Sales", icon: Users, href: "/admin/reports/customers" },
     { label: "POS Terminal", icon: Monitor, href: "/pos" },
-    { label: "Attendance", icon: Clock, href: "/admin/attendance" },
+    { label: "Attendance & Advances", icon: Clock, href: "/admin/attendance" },
     { label: "Expenses", icon: Receipt, href: "/admin/expenses" },
+    { label: "WhatsApp Templates", icon: MessageSquare, href: "/admin/templates" },
+    { label: "Vendors & Suppliers", icon: Truck, href: "/admin/vendors" },
+    { label: "Purchase Orders (PO)", icon: FileText, href: "/admin/purchase-orders" },
     { label: "Categories", icon: Layers, href: "/admin/categories" },
     { label: "Units", icon: Scale, href: "/admin/units" },
     { label: "Products", icon: ShoppingCart, href: "/admin/products" },
     { label: "Product Variants", icon: Tag, href: "/admin/variants" },
     { label: "Inventory", icon: Warehouse, href: "/admin/inventory" },
     { label: "Stock Inward", icon: ArrowDownToLine, href: "/admin/inventory/inward" },
-    { label: "Purchase Orders (PO)", icon: FileText, href: "/admin/purchase-orders" },
     { label: "Stock Transfer", icon: ChevronRight, href: "/admin/inventory/transfer" },
     { label: "Mortality (Wastage)", icon: Skull, href: "/admin/inventory/mortality" },
     { label: "Orders", icon: ShoppingCart, href: "/admin/orders" },
@@ -88,6 +93,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             // Dedicated UI for Purchase Managers: Procurement & Inventory operations only
             const allowed = [
                 "/admin/purchase-orders",
+                "/admin/vendors",
+                "/admin/reports/daily-products",
                 "/admin/inventory",
                 "/admin/inventory/inward",
                 "/admin/inventory/transfer",

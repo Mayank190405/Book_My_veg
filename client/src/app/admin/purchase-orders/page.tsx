@@ -70,7 +70,9 @@ export default function PurchaseOrdersPage() {
     const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
     const [locations, setLocations] = useState<any[]>([]);
     const [products, setProducts] = useState<any[]>([]);
+    const [vendors, setVendors] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+    const [sendingWhatsAppId, setSendingWhatsAppId] = useState<string | null>(null);
 
     // Filters
     const [statusFilter, setStatusFilter] = useState("ALL");
@@ -80,7 +82,9 @@ export default function PurchaseOrdersPage() {
     // Create PO Modal State
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [createTargetLocation, setCreateTargetLocation] = useState("");
+    const [createVendorId, setCreateVendorId] = useState("");
     const [createSupplier, setCreateSupplier] = useState("");
+    const [createSupplierPhone, setCreateSupplierPhone] = useState("");
     const [createNotes, setCreateNotes] = useState("");
     const [createItems, setCreateItems] = useState<{ productId: string; variantId: string | null; name: string; quantity: string; buyingPrice: string }[]>([]);
     const [productSearch, setProductSearch] = useState("");
@@ -120,13 +124,33 @@ export default function PurchaseOrdersPage() {
 
     const fetchMetadata = async () => {
         try {
-            const [locRes, prodRes] = await Promise.all([
+            const [locRes, prodRes, vendRes] = await Promise.all([
                 api.get("/locations"),
-                api.get("/products/admin")
+                api.get("/products/admin"),
+                api.get("/vendors").catch(() => ({ data: { vendors: [] } }))
             ]);
             setLocations(locRes.data || []);
             setProducts(prodRes.data?.products || prodRes.data || []);
+            setVendors(vendRes.data?.vendors || []);
         } catch (err) { console.error(err); }
+    };
+
+    const handleSendPOWhatsApp = async (poId: string, vendorPhone?: string) => {
+        setSendingWhatsAppId(poId);
+        try {
+            const res = await api.post(`/purchase-orders/${poId}/send-whatsapp`, {
+                vendorPhone: vendorPhone || undefined
+            });
+            if (res.data?.success) {
+                toast.success(res.data.message || "Purchase Order sent to Vendor via WhatsApp!");
+            } else {
+                toast.error(res.data?.message || "Failed to send WhatsApp message");
+            }
+        } catch (err: any) {
+            toast.error(err.response?.data?.message || "WhatsApp dispatch failed.");
+        } finally {
+            setSendingWhatsAppId(null);
+        }
     };
 
     useEffect(() => {
@@ -197,7 +221,9 @@ export default function PurchaseOrdersPage() {
         try {
             await api.post("/purchase-orders", {
                 locationId: createTargetLocation || user?.locationId,
+                vendorId: createVendorId || undefined,
                 supplierName: createSupplier,
+                supplierPhone: createSupplierPhone || undefined,
                 notes: createNotes,
                 items: createItems.map(i => ({
                     productId: i.productId,
@@ -210,7 +236,9 @@ export default function PurchaseOrdersPage() {
             toast.success("Purchase Order request submitted successfully!");
             setShowCreateModal(false);
             setCreateItems([]);
+            setCreateVendorId("");
             setCreateSupplier("");
+            setCreateSupplierPhone("");
             setCreateNotes("");
             fetchPurchaseOrders();
         } catch (err: any) {
@@ -543,7 +571,16 @@ export default function PurchaseOrdersPage() {
                                         </span>
                                     </div>
 
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <button
+                                            onClick={() => handleSendPOWhatsApp(po.id, po.supplierPhone || undefined)}
+                                            disabled={sendingWhatsAppId === po.id}
+                                            className="px-3.5 py-2.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 font-bold text-xs border border-emerald-300 dark:border-emerald-700 hover:bg-emerald-100 flex items-center gap-1.5 transition-all whitespace-nowrap cursor-pointer"
+                                            title="Send PO details to vendor WhatsApp"
+                                        >
+                                            {sendingWhatsAppId === po.id ? "Sending..." : "📲 WhatsApp PO"}
+                                        </button>
+
                                         {isSubmitted && isPurchaseManager && (
                                             <button
                                                 onClick={() => openReviewModal(po)}
@@ -603,12 +640,48 @@ export default function PurchaseOrdersPage() {
                                 </select>
                             </div>
                             <div>
-                                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 block mb-1.5">Preferred Supplier / Vendor</label>
+                                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 block mb-1.5">Select Registered Vendor / Supplier</label>
+                                <select
+                                    value={createVendorId}
+                                    onChange={(e) => {
+                                        const vId = e.target.value;
+                                        setCreateVendorId(vId);
+                                        const matched = vendors.find(v => v.id === vId);
+                                        if (matched) {
+                                            setCreateSupplier(matched.companyName || matched.name);
+                                            setCreateSupplierPhone(matched.phone || "");
+                                        }
+                                    }}
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-xs font-bold text-slate-900 outline-none cursor-pointer"
+                                >
+                                    <option value="">-- Choose from Vendor Directory --</option>
+                                    {vendors.map(v => (
+                                        <option key={v.id} value={v.id}>
+                                            🚚 {v.name} {v.companyName ? `(${v.companyName})` : ''} - {v.phone}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 block mb-1.5">Supplier Name</label>
                                 <input
                                     type="text"
                                     placeholder="e.g. FreshAgro Vendors"
                                     value={createSupplier}
                                     onChange={(e) => setCreateSupplier(e.target.value)}
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-xs font-medium text-slate-900 outline-none"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 block mb-1.5">Supplier WhatsApp / Phone</label>
+                                <input
+                                    type="tel"
+                                    placeholder="e.g. 9876543210"
+                                    value={createSupplierPhone}
+                                    onChange={(e) => setCreateSupplierPhone(e.target.value)}
                                     className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-xs font-medium text-slate-900 outline-none"
                                 />
                             </div>

@@ -138,21 +138,20 @@ export const sendFlowViaChatHub = async (
  */
 export const getMyMetaTemplates = async () => {
     try {
-        console.log("Fetching Meta templates from MBG Card...");
-        const response = await axios.get("https://chatbot.digitalmbg.com/v1/whatsapp/get_my_meta_templets", {
+        console.log("Fetching Meta templates from MBG Card (https://chatbotbe.digitalmbg.com/v1/whatsapp/get_my_meta_templets)...");
+        const response = await axios.get("https://chatbotbe.digitalmbg.com/v1/whatsapp/get_my_meta_templets", {
             headers: {
                 'accept': 'application/json',
-                'x-api-key': MBGCARD_API_TOKEN
-            }
+                'Content-Type': 'application/json',
+                'x-api-key': MBGCARD_API_TOKEN,
+                'User-Agent': 'BookMyVeg-Server/1.0'
+            },
+            timeout: 8000
         });
         return response.data;
     } catch (error: any) {
-        console.error("Error fetching MBG Card Meta templates:", {
-            code: error.code,
-            message: error.message,
-            response: error.response?.data
-        });
-        throw error;
+        console.warn("MBG Card Meta templates fetch notice:", error.message);
+        return { success: false, data: [] };
     }
 };
 
