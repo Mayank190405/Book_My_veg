@@ -98,10 +98,16 @@ export const verifyOtpAndLogin = async (req: Request, res: Response) => {
         }
 
         // Find or create user (retry on stale-connection errors)
-        let user = await withRetry(() => prisma.user.findUnique({ where: { phone } }));
+        let user = await withRetry(() => prisma.user.findUnique({ 
+            where: { phone },
+            select: { id: true, phone: true, role: true, name: true, locationId: true }
+        }));
 
         if (!user) {
-            user = await withRetry(() => prisma.user.create({ data: { phone } }));
+            user = await withRetry(() => prisma.user.create({ 
+                data: { phone },
+                select: { id: true, phone: true, role: true, name: true, locationId: true }
+            }));
         }
 
         const { accessToken, refreshToken } = generateTokens(user.id, user.role, user.locationId);
@@ -372,6 +378,16 @@ export const loginWithPassword = async (req: Request, res: Response) => {
                     { phone: loginId },
                     { email: { equals: loginId, mode: "insensitive" } }
                 ]
+            },
+            select: {
+                id: true,
+                phone: true,
+                email: true,
+                name: true,
+                role: true,
+                password: true,
+                isActive: true,
+                locationId: true
             }
         }));
         let locationMatch: any = null;

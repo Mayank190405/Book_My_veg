@@ -484,10 +484,16 @@ export const processPOSOrder = async (req: AuthenticatedRequest, res: Response, 
         const previousDue = prevOrders.reduce((acc, o) => acc + (Number(o.totalAmount) - o.payments.reduce((pAcc, p) => pAcc + Number(p.amount), 0)), 0);
         
         let validatedStaffId = staffId;
-        const staffExists = await prisma.user.findUnique({ where: { id: staffId } });
+        const staffExists = await prisma.user.findUnique({ 
+            where: { id: staffId },
+            select: { id: true, name: true, role: true }
+        });
         if (!staffExists) {
             console.warn(`[POS] Invalid Staff Session ID ${staffId}. Falling back to Root Admin.`);
-            const rootAdmin = await prisma.user.findFirst({ where: { role: "ADMIN" } });
+            const rootAdmin = await prisma.user.findFirst({ 
+                where: { role: "ADMIN" },
+                select: { id: true }
+            });
             validatedStaffId = rootAdmin?.id || staffId;
         }
 
