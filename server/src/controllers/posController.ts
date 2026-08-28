@@ -44,25 +44,23 @@ export const searchCustomer = async (req: AuthenticatedRequest, res: Response, n
                 name: true, 
                 phone: true, 
                 email: true,
-                profileAddress: true,
-                accountBalance: true,
-                totalDue: true,
                 addresses: {
                     where: { isDefault: true },
-                    take: 1
+                    take: 1,
+                    select: { fullAddress: true }
                 }
             }
         });
 
-        const mapped = customers.map(c => ({
+        const mapped = customers.map((c: any) => ({
             id: c.id,
             name: c.name || "Customer",
             phone: c.phone,
             email: c.email || "",
-            profileAddress: c.profileAddress || "",
+            profileAddress: "",
             accountBalance: Number(c.accountBalance || 0),
             totalDue: Number(c.totalDue || 0),
-            address: c.addresses?.[0]?.fullAddress || c.profileAddress || "",
+            address: c.addresses?.[0]?.fullAddress || "",
             addresses: c.addresses || []
         }));
 
@@ -353,8 +351,7 @@ export const createOrUpdateCustomer = async (req: AuthenticatedRequest, res: Res
                 data: {
                     name: name !== undefined ? String(name).trim() : existingCustomer.name,
                     phone: rawPhone ? rawPhone : existingCustomer.phone,
-                    email: sanitizedEmail,
-                    profileAddress: address !== undefined ? String(address).trim() : existingCustomer.profileAddress
+                    email: sanitizedEmail
                 },
                 include: { addresses: { where: { isDefault: true } } }
             });
@@ -365,8 +362,7 @@ export const createOrUpdateCustomer = async (req: AuthenticatedRequest, res: Res
                     phone: rawPhone,
                     email: sanitizedEmail,
                     role: "USER",
-                    password: "POS_AUTO_GENERATED_" + Math.random().toString(36).slice(-8),
-                    profileAddress: address ? String(address).trim() : null
+                    password: "POS_AUTO_GENERATED_" + Math.random().toString(36).slice(-8)
                 },
                 include: { addresses: { where: { isDefault: true } } }
             });
@@ -375,22 +371,22 @@ export const createOrUpdateCustomer = async (req: AuthenticatedRequest, res: Res
             try {
                 const { sendRegistrationThankYouViaWhatsapp } = require("../services/mbgcard");
                 sendRegistrationThankYouViaWhatsapp(customer.phone, customer.name || "Customer").catch((err: any) => {
-                    console.error("[POS] Welcome WhatsApp dispatch failure:", err);
+                    console.error("[POS] WhatsApp welcome dispatch error:", err.message);
                 });
-            } catch (err) {
-                console.error("[POS] WhatsApp service module import failed:", err);
+            } catch (err: any) {
+                console.warn("[POS] Welcome dispatch trigger warning:", err.message);
             }
         }
 
-        // Save or update default address safely without Prisma upsert id crashes
-        if (address !== undefined && String(address).trim() !== "") {
-            const existingAddress = await prisma.address.findFirst({
+        // Upsert default address
+        if (address && String(address).trim()) {
+            const existingAddr = await prisma.address.findFirst({
                 where: { userId: customer.id, isDefault: true }
             });
 
-            if (existingAddress) {
+            if (existingAddr) {
                 await prisma.address.update({
-                    where: { id: existingAddress.id },
+                    where: { id: existingAddr.id },
                     data: { fullAddress: String(address).trim() }
                 });
             } else {
@@ -413,8 +409,7 @@ export const createOrUpdateCustomer = async (req: AuthenticatedRequest, res: Res
                 name: true,
                 phone: true,
                 email: true,
-                profileAddress: true,
-                addresses: { where: { isDefault: true }, take: 1 }
+                addresses: { where: { isDefault: true }, take: 1, select: { fullAddress: true } }
             }
         });
 
@@ -423,8 +418,8 @@ export const createOrUpdateCustomer = async (req: AuthenticatedRequest, res: Res
             name: fullCustomer?.name || customer.name,
             phone: fullCustomer?.phone || customer.phone,
             email: fullCustomer?.email || "",
-            profileAddress: fullCustomer?.profileAddress || "",
-            address: fullCustomer?.addresses?.[0]?.fullAddress || fullCustomer?.profileAddress || (typeof address === "string" ? address : ""),
+            profileAddress: "",
+            address: fullCustomer?.addresses?.[0]?.fullAddress || (typeof address === "string" ? address : ""),
             addresses: fullCustomer?.addresses || []
         };
 
@@ -885,7 +880,18 @@ export const getStoreProducts = async (req: AuthenticatedRequest, res: Response,
 export const getCustomerHistory = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     const customerId = req.params.customerId as string;
     try {
-        const [customerUser, orders, walletTransactions] = await Promise.all([
+        let walletTransactions: any[] = [];
+        try {
+            walletTransactions = await prisma.walletTransaction.findMany({
+                where: { userId: customerId },
+                orderBy: { createdAt: "desc" },
+                take: 20
+            });
+        } catch {
+            walletTransactions = [];
+        }
+
+        const [customerUser, orders] = await Promise.all([
             prisma.user.findUnique({
                 where: { id: customerId },
                 select: {
@@ -893,9 +899,6 @@ export const getCustomerHistory = async (req: AuthenticatedRequest, res: Respons
                     name: true,
                     phone: true,
                     email: true,
-                    profileAddress: true,
-                    accountBalance: true,
-                    totalDue: true,
                     createdAt: true
                 }
             }),
@@ -909,11 +912,6 @@ export const getCustomerHistory = async (req: AuthenticatedRequest, res: Respons
                 },
                 orderBy: { createdAt: "desc" },
                 take: 100
-            }),
-            prisma.walletTransaction.findMany({
-                where: { userId: customerId },
-                orderBy: { createdAt: "desc" },
-                take: 20
             })
         ]);
 
@@ -926,11 +924,15 @@ export const getCustomerHistory = async (req: AuthenticatedRequest, res: Respons
             o.status !== "FAILED"
         );
 
-        const now = new Date();
-        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+        const startOfToday = new Date();
+        startOfToday.setHours(0, 0, 0, 0);
 
         let todayDue = 0;
         let pastDue = 0;
+
+        const calculatedWalletBalance = Math.max(0, walletTransactions.reduce((acc: number, tx: any) => {
+            return tx.type === "DEPOSIT" ? acc + Number(tx.amount) : acc - Number(tx.amount);
+        }, 0));
 
         const enrichedOrders = orders.map(o => {
             const paid = o.payments ? o.payments.filter((p: any) => p.status === "SUCCESS" || !p.status).reduce((pAcc: number, p: any) => pAcc + Number(p.amount), 0) : 0;
@@ -966,8 +968,8 @@ export const getCustomerHistory = async (req: AuthenticatedRequest, res: Respons
         res.json({
             customer: customerUser ? {
                 ...customerUser,
-                accountBalance: Number(customerUser.accountBalance || 0),
-                totalDue: Number(customerUser.totalDue || totalDue)
+                accountBalance: calculatedWalletBalance,
+                totalDue: totalDue
             } : null,
             orders: enrichedOrders,
             walletTransactions,
@@ -977,7 +979,7 @@ export const getCustomerHistory = async (req: AuthenticatedRequest, res: Respons
                 totalDue, 
                 todayDue, 
                 pastDue, 
-                accountBalance: Number(customerUser?.accountBalance || 0),
+                accountBalance: calculatedWalletBalance,
                 lastVisit 
             }
         });
