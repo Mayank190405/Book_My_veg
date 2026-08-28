@@ -1074,7 +1074,27 @@ model StaffAdvance {
 }
 
 model Product_backup_20260709 {
-  id String @id @default(uuid())
+  id                 String     @id @default(uuid())
+  name               String
+  slug               String
+  description        String?
+  categoryId         String
+  images             String[]
+  taxSlab            Decimal?   @db.Decimal(5, 2)
+  weightUnit         WeightUnit @default(KG)
+  minQuantity        Int        @default(1)
+  maxQuantity        Int        @default(10)
+  isActive           Boolean    @default(true)
+  nutritionInfo      Json?
+  specifications     Json?
+  tags               Json?
+  version            Int        @default(0)
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+  isWebsitePublished Boolean    @default(true)
+  sku                String?
+  gstRate            Decimal?   @db.Decimal(5, 2)
+  isFavourite        Boolean    @default(false)
 
   @@ignore
 }
