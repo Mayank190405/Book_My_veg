@@ -3,7 +3,7 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-const MBGCARD_API_URL = process.env.MBGCARD_API_URL || "https://chatbot.digitalmbg.com/v1/whatsapp/send_meta_templet";
+const MBGCARD_API_URL = process.env.MBGCARD_API_URL || "https://chatbotbe.digitalmbg.com/v1/whatsapp/send_meta_templet";
 const MBGCARD_API_TOKEN = process.env.MBGCARD_API_TOKEN || "91edd77281c02b04c4bdfb36aa5e4978";
 const MBGCARD_TEMPLATE_ID = process.env.MBGCARD_TEMPLATE_ID || "login";
 const MBGCARD_OTP_FLOW_ID = process.env.MBGCARD_OTP_FLOW_ID || "flow_1782732506015";
@@ -42,7 +42,8 @@ export const sendOtpViaWhatsapp = async (phone: string, otp: string) => {
                 headers: {
                     'Content-Type': 'application/json',
                     'accept': '*/*',
-                    'x-api-key': MBGCARD_API_TOKEN
+                    'x-api-key': MBGCARD_API_TOKEN,
+                    'User-Agent': 'BookMyVeg-Server/1.0'
                 }
             });
 
@@ -104,7 +105,7 @@ export const sendFlowViaChatHub = async (
         actions
     };
 
-    const url = "https://chatbot.digitalmbg.com/v1/contacts/send_flow";
+    const url = "https://chatbotbe.digitalmbg.com/v1/contacts/send_flow";
 
     try {
         console.log(`[ChatHub Flow] Sending flow ${flowId} to ${formattedPhone} with custom fields:`, customFields);
@@ -118,7 +119,8 @@ export const sendFlowViaChatHub = async (
             timeout: 10000,
             headers: {
                 'Content-Type': 'application/json',
-                'x-api-key': MBGCARD_API_TOKEN
+                'x-api-key': MBGCARD_API_TOKEN,
+                'User-Agent': 'BookMyVeg-Server/1.0'
             }
         });
 
@@ -190,7 +192,7 @@ export const sendTemplateViaChatHub = async (
         dynamicMedia
     };
 
-    const url = "https://chatbot.digitalmbg.com/v1/whatsapp/send_meta_templet";
+    const url = "https://chatbotbe.digitalmbg.com/v1/whatsapp/send_meta_templet";
 
     try {
         console.log(`[ChatHub Template] Sending template ${templateName} to ${formattedPhone}`);
@@ -200,7 +202,8 @@ export const sendTemplateViaChatHub = async (
             headers: {
                 'Content-Type': 'application/json',
                 'accept': '*/*',
-                'x-api-key': MBGCARD_API_TOKEN
+                'x-api-key': MBGCARD_API_TOKEN,
+                'User-Agent': 'BookMyVeg-Server/1.0'
             }
         });
 
