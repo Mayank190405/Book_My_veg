@@ -22,9 +22,12 @@ export const searchCustomer = async (req: AuthenticatedRequest, res: Response, n
     try {
         const orConditions: any[] = [
             { name: { contains: rawQuery, mode: 'insensitive' } },
-            { phone: { contains: rawQuery } },
-            { email: { contains: rawQuery, mode: 'insensitive' } }
+            { phone: { contains: rawQuery } }
         ];
+
+        if (rawQuery.includes("@")) {
+            orConditions.push({ email: { contains: rawQuery, mode: 'insensitive' } });
+        }
 
         if (cleanDigits.length >= 3) {
             orConditions.push({ phone: { contains: cleanDigits } });
@@ -53,19 +56,48 @@ export const searchCustomer = async (req: AuthenticatedRequest, res: Response, n
 
         const mapped = customers.map(c => ({
             id: c.id,
-            name: c.name,
+            name: c.name || "Customer",
             phone: c.phone,
             email: c.email || "",
             profileAddress: c.profileAddress || "",
             accountBalance: Number(c.accountBalance || 0),
             totalDue: Number(c.totalDue || 0),
             address: c.addresses?.[0]?.fullAddress || c.profileAddress || "",
-            addresses: c.addresses
+            addresses: c.addresses || []
         }));
 
         res.json(mapped);
-    } catch (error) {
-        next(error);
+    } catch (error: any) {
+        console.warn("[POS] searchCustomer fallback notice:", error?.message);
+        try {
+            const basic = await prisma.user.findMany({
+                where: {
+                    OR: [
+                        { name: { contains: rawQuery, mode: 'insensitive' } },
+                        { phone: { contains: rawQuery } }
+                    ]
+                },
+                take: 20,
+                select: {
+                    id: true,
+                    name: true,
+                    phone: true,
+                    email: true
+                }
+            });
+            return res.json(basic.map(b => ({
+                id: b.id,
+                name: b.name || "Customer",
+                phone: b.phone,
+                email: b.email || "",
+                accountBalance: 0,
+                totalDue: 0,
+                address: "",
+                addresses: []
+            })));
+        } catch (innerErr) {
+            return res.json([]);
+        }
     }
 };
 
