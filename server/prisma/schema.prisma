@@ -1072,3 +1072,9 @@ model StaffAdvance {
   @@index([locationId])
   @@index([month, year])
 }
+
+model Product_backup_20260709 {
+  id String @id @default(uuid())
+
+  @@ignore
+}
