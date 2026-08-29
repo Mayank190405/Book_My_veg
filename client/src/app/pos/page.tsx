@@ -2697,7 +2697,7 @@ export default function POSOperator() {
 
             {/* ── CUSTOMER HISTORY DIALOG ── */}
             <Dialog open={showHistoryDialog} onOpenChange={setShowHistoryDialog}>
-                <DialogContent className="max-w-3xl bg-white rounded-3xl p-8 border-none shadow-2xl max-h-[88vh] overflow-hidden flex flex-col">
+                <DialogContent className="sm:max-w-4xl lg:max-w-5xl w-[94vw] bg-white rounded-3xl p-8 border-none shadow-2xl max-h-[90vh] overflow-hidden flex flex-col font-sans">
                     <DialogHeader>
                         <div className="flex justify-between items-start">
                             <div>
@@ -2857,7 +2857,7 @@ export default function POSOperator() {
 
             {/* ── CUSTOMER ADVANCE DEPOSIT MODAL ── */}
             <Dialog open={showDepositModal} onOpenChange={setShowDepositModal}>
-                <DialogContent className="max-w-md bg-white rounded-3xl p-6 border-none shadow-2xl">
+                <DialogContent className="sm:max-w-md max-w-md w-[92vw] bg-white rounded-3xl p-6 border-none shadow-2xl">
                     <DialogHeader>
                         <DialogTitle className="text-lg font-black uppercase text-slate-900 flex items-center gap-2">
                             <Banknote className="h-5 w-5 text-emerald-600" />
@@ -2943,7 +2943,7 @@ export default function POSOperator() {
 
             {/* ── CUSTOM WHATSAPP MODAL ── */}
             <Dialog open={showCustomWhatsAppModal} onOpenChange={setShowCustomWhatsAppModal}>
-                <DialogContent className="max-w-md bg-white rounded-3xl p-6 border-none shadow-2xl">
+                <DialogContent className="sm:max-w-lg max-w-lg w-[92vw] bg-white rounded-3xl p-6 border-none shadow-2xl font-sans">
                     <DialogHeader>
                         <DialogTitle className="text-lg font-black uppercase text-slate-900 flex items-center gap-2">
                             <Send className="h-5 w-5 text-emerald-600" />
@@ -4494,7 +4494,7 @@ export default function POSOperator() {
             </Dialog>
             {/* ── BILL-WISE SETTLEMENT MODAL ── */}
             <Dialog open={showBillSettleModal} onOpenChange={setShowBillSettleModal}>
-                <DialogContent className="max-w-md bg-white rounded-3xl p-0 overflow-hidden shadow-2xl border-none font-sans text-slate-900">
+                <DialogContent className="sm:max-w-xl max-w-xl w-[92vw] bg-white rounded-3xl p-0 overflow-hidden shadow-2xl border-none font-sans text-slate-900">
                     <DialogHeader className="sr-only">
                         <DialogTitle>Settle Bill #{settlingBill?.id?.slice(0, 8)?.toUpperCase()}</DialogTitle>
                         <DialogDescription>Process bill-wise settlement with multi-mode payment options.</DialogDescription>
