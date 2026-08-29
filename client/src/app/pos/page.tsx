@@ -1548,14 +1548,19 @@ export default function POSOperator() {
                     <div class="divider-solid"></div>
 
                     <!-- Metadata Rows -->
-                    <div class="metadata-block">
-                        <div><strong>Date:</strong> ${formatDate(lastReceipt.order?.createdAt)}</div>
-                        <div><strong>Invoice No.:</strong> ${lastReceipt.order?.id?.slice(-5).toUpperCase() || ''}</div>
-                        <div><strong>Reference No:</strong> ${lastReceipt.order?.id || ''}</div>
-                        <div style="margin-top: 2px;">
-                            <strong>Customer:</strong> ${printCustName}
-                            ${printCustPhone ? `, <strong>Ph:</strong> ${printCustPhone}` : ''}
-                            ${printCustAddress ? `<br/><strong>Address:</strong> ${printCustAddress}` : ''}
+                    <div class="metadata-block" style="text-align: left; padding: 4px 0; border-top: 1px dashed #000; border-bottom: 1px dashed #000; margin: 6px 0;">
+                        <div style="display: flex; justify-content: space-between;">
+                            <span><strong>Date:</strong> ${formatDate(lastReceipt.order?.createdAt)}</span>
+                            <span><strong>Inv:</strong> #${lastReceipt.order?.id?.slice(-8).toUpperCase() || ''}</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; margin-top: 2px;">
+                            <span><strong>Cashier:</strong> ${lastReceipt.order?.staff?.name || user?.name || 'System'}</span>
+                            <span><strong>Ref:</strong> ${lastReceipt.order?.id?.slice(0, 12) || ''}</span>
+                        </div>
+                        <div style="margin-top: 4px; padding-top: 4px; border-top: 1px dotted #ccc;">
+                            <div><strong>Customer:</strong> ${printCustName}</div>
+                            ${printCustPhone ? `<div><strong>Phone:</strong> ${printCustPhone}</div>` : ''}
+                            ${printCustAddress ? `<div><strong>Address:</strong> ${printCustAddress}</div>` : ''}
                         </div>
                     </div>
 
@@ -2841,9 +2846,31 @@ export default function POSOperator() {
                                                         </button>
                                                     )}
 
-                                                    <span className="text-[9px] font-black text-teal-500 uppercase flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                        <Receipt className="h-2.5 w-2.5" /> View Bill
-                                                    </span>
+                                                    <div className="flex items-center gap-1 mt-0.5">
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleViewHistoricalReceipt(order);
+                                                                setTimeout(() => {
+                                                                    handlePrintReceipt();
+                                                                }, 250);
+                                                            }}
+                                                            className="px-2 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md text-[8px] font-black uppercase tracking-wider flex items-center gap-1 transition-all active:scale-95"
+                                                            title="Direct Reprint Thermal Receipt"
+                                                        >
+                                                            <Printer className="h-2.5 w-2.5 text-slate-600" /> Reprint
+                                                        </button>
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleViewHistoricalReceipt(order);
+                                                            }}
+                                                            className="px-2 py-0.5 bg-teal-50 hover:bg-teal-100 text-teal-700 rounded-md text-[8px] font-black uppercase tracking-wider flex items-center gap-1 transition-all active:scale-95"
+                                                            title="View On-Screen Receipt"
+                                                        >
+                                                            <Receipt className="h-2.5 w-2.5 text-teal-600" /> View
+                                                        </button>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
