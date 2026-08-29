@@ -623,9 +623,12 @@ export default function POSOperator() {
 
             // ── Enforce Single Easebuzz Checkout Modal ──
             if (onlinePortion > 0) {
+                const targetPhone = settlingBill.customerPhone || selectedCustomer?.phone || settlingBill.user?.phone || settlingBill.userPhone || "9999999999";
+                const targetUserId = settlingBill.userId || selectedCustomer?.id || settlingBill.user?.id || "";
+
                 const res = await api.post("/pay/pay-due", {
-                    userId: settlingBill.userId || selectedCustomer?.id,
-                    phone: selectedCustomer?.phone || settlingBill.customerPhone,
+                    userId: targetUserId,
+                    phone: targetPhone,
                     billId: settlingBill.id,
                     amount: onlinePortion
                 });
@@ -4897,20 +4900,24 @@ export default function POSOperator() {
                                 )}
 
                                 {billSettleMethod === "EASEBUZZ" && (
-                                    <div className="p-4 bg-teal-50 rounded-2xl border border-teal-100 flex flex-col items-center text-center gap-3">
-                                        <div className="w-32 h-32 bg-white rounded-xl p-2 shadow-md border border-teal-100">
-                                            <img
-                                                src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(
-                                                    `upi://pay?pa=${storeConfig?.upiId || 'bookmyveg@upi'}&pn=${encodeURIComponent(storeConfig?.name || 'BookMyVeg')}&am=${currentSettleAmt.toFixed(2)}&tn=${encodeURIComponent(`SETTLE_BILL_${settlingBill.id.slice(0, 8)}`)}&cu=INR`
-                                                )}`}
-                                                alt="UPI QR"
-                                                className="w-full h-full object-contain"
-                                            />
+                                    <div className="p-5 bg-teal-50 rounded-2xl border border-teal-100 flex flex-col items-center text-center gap-3">
+                                        <div className="w-14 h-14 bg-teal-600 text-white rounded-2xl flex items-center justify-center shadow-lg shadow-teal-500/20">
+                                            <Smartphone className="w-7 h-7" />
                                         </div>
                                         <div className="space-y-1">
-                                            <p className="text-[10px] font-black text-teal-800 uppercase tracking-wider">UPI / Easebuzz Online Payment</p>
-                                            <p className="text-xs font-bold text-teal-600">Scan QR to pay ₹{currentSettleAmt.toFixed(2)}</p>
+                                            <p className="text-xs font-black text-teal-950 uppercase tracking-wider">Easebuzz Secure Checkout</p>
+                                            <p className="text-[11px] font-bold text-teal-700 max-w-[280px]">
+                                                Collect ₹{currentSettleAmt.toFixed(2)} via Easebuzz Iframe (UPI, Dynamic QR, Debit/Credit Cards & NetBanking).
+                                            </p>
                                         </div>
+                                        <button
+                                            type="button"
+                                            disabled={isSubmittingBillSettle || currentSettleAmt <= 0}
+                                            onClick={handleSettleIndividualBill}
+                                            className="w-full py-3 bg-teal-600 hover:bg-teal-700 active:scale-95 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer mt-1"
+                                        >
+                                            <Smartphone className="h-4 w-4" /> Launch Easebuzz Iframe (₹{currentSettleAmt.toFixed(0)})
+                                        </button>
                                     </div>
                                 )}
 
