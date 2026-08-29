@@ -9,7 +9,7 @@ import {
     Clock, User, Printer, AlertTriangle, ChevronDown, Receipt,
     Banknote, Smartphone, BookOpen, XCircle, Check, Package, Settings, SquarePen, Globe,
     ArrowLeft, Bell, Wallet, CheckCircle2, AlertCircle, ScanLine,
-    Power, PowerOff, RefreshCw, MessageCircle, Send, Layers
+    Power, PowerOff, RefreshCw, MessageCircle, Send, Layers, Loader2
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
