@@ -597,6 +597,8 @@ export default function POSOperator() {
                 useWalletBalance: billSettleUseWallet
             };
 
+            const onlinePortion = billSettleMethod === "EASEBUZZ" ? amountToPay : (billSettleMethod === "SPLIT" ? Number(billSettleSplit.online || 0) : 0);
+
             if (billSettleMethod === "SPLIT") {
                 const cashAmt = Number(billSettleSplit.cash || 0);
                 const onlineAmt = Number(billSettleSplit.online || 0);
@@ -619,6 +621,97 @@ export default function POSOperator() {
                 }
             }
 
+            // ── Enforce Easebuzz Iframe Checkout for any Online Slice ──
+            if (onlinePortion > 0) {
+                const res = await api.post("/pay/pay-due", {
+                    userId: settlingBill.userId || selectedCustomer?.id,
+                    phone: selectedCustomer?.phone || settlingBill.customerPhone,
+                    billId: settlingBill.id,
+                    amount: onlinePortion
+                });
+                const data = res.data;
+
+                if (!data.accessKey && !data.paymentLink) {
+                    toast.error(data.message || "Failed to initialize Easebuzz gateway. Please verify gateway configuration.");
+                    setIsSubmittingBillSettle(false);
+                    return;
+                }
+
+                const sdkUrl = "https://ebz-static.s3.ap-south-1.amazonaws.com/easecheckout/v2.0.0/easebuzz-checkout-v2.min.js";
+                const loadAndTrigger = () => {
+                    const EasebuzzCheckout = (window as any).EasebuzzCheckout;
+                    if (EasebuzzCheckout && data.accessKey) {
+                        try {
+                            const checkoutObj = new EasebuzzCheckout(data.key || "EASEBUZZ", data.env || "test");
+                            checkoutObj.initiatePayment({
+                                access_key: data.accessKey,
+                                onResponse: async (response: any) => {
+                                    const respStatus = (response?.status || "").toLowerCase();
+                                    if (respStatus === "user_cancelled" || respStatus === "usercancelled" || respStatus === "cancelled") {
+                                        toast.warning("Easebuzz payment cancelled. Bill remains unsettled.");
+                                        setIsSubmittingBillSettle(false);
+                                        return;
+                                    }
+                                    if (respStatus === "failed" || respStatus === "failure" || respStatus === "declined") {
+                                        toast.error("Easebuzz payment failed or was declined. Bill was not settled.");
+                                        setIsSubmittingBillSettle(false);
+                                        return;
+                                    }
+                                    if (respStatus === "success" || respStatus === "charged") {
+                                        // Transaction verified! Now complete settlement in DB
+                                        if (billSettleMethod === "SPLIT") {
+                                            payload.splitPayments = [
+                                                { method: "CASH", amount: Number(billSettleSplit.cash || 0) },
+                                                { method: "EASEBUZZ", amount: onlinePortion, transactionId: response.easepayid || response.txnid || response.easebuzz_id }
+                                            ];
+                                        } else {
+                                            payload.transactionId = response.easepayid || response.txnid || response.easebuzz_id;
+                                        }
+
+                                        const settleRes = await api.post(`/pos/orders/${settlingBill.id}/collect-due`, payload);
+                                        if (settleRes.data?.success || settleRes.status === 200) {
+                                            toast.success(`Easebuzz payment successful! Bill #${settlingBill.id.slice(0, 8).toUpperCase()} settled with ₹${amountToPay}.`);
+                                            setShowBillSettleModal(false);
+                                            setSettlingBill(null);
+                                            if (selectedCustomer?.id) {
+                                                await fetchCustomerHistory(selectedCustomer.id, false);
+                                            }
+                                            fetchTodaySales(false);
+                                        } else {
+                                            toast.error(settleRes.data?.message || "Failed to update settlement ledger.");
+                                        }
+                                        setIsSubmittingBillSettle(false);
+                                    }
+                                }
+                            });
+                        } catch (sdkErr) {
+                            console.error("Easebuzz SDK error:", sdkErr);
+                            toast.error("Easebuzz iframe could not be launched.");
+                            setIsSubmittingBillSettle(false);
+                        }
+                    } else {
+                        toast.error("Easebuzz Checkout SDK could not be loaded.");
+                        setIsSubmittingBillSettle(false);
+                    }
+                };
+
+                if (!(window as any).EasebuzzCheckout) {
+                    const script = document.createElement("script");
+                    script.src = sdkUrl;
+                    script.async = true;
+                    script.onload = loadAndTrigger;
+                    script.onerror = () => {
+                        toast.error("Failed to load Easebuzz payment SDK");
+                        setIsSubmittingBillSettle(false);
+                    };
+                    document.body.appendChild(script);
+                } else {
+                    loadAndTrigger();
+                }
+                return;
+            }
+
+            // Cash or Advance Wallet settlement (no Easebuzz iframe required)
             const token = localStorage.getItem("token") || "";
             const res = await api.post(`/pos/orders/${settlingBill.id}/collect-due`, payload);
 
@@ -626,7 +719,6 @@ export default function POSOperator() {
                 toast.success(res.data?.message || `Bill #${settlingBill.id.slice(0, 8).toUpperCase()} settled with ₹${amountToPay}!`);
                 setShowBillSettleModal(false);
                 setSettlingBill(null);
-                // Refresh customer history
                 if (selectedCustomer?.id) {
                     await fetchCustomerHistory(selectedCustomer.id, false);
                 }
