@@ -3375,7 +3375,7 @@ export default function POSOperator() {
 
             {/* ── RECEIPT DIALOG ── */}
             <Dialog open={showReceiptDialog} onOpenChange={setShowReceiptDialog}>
-                <DialogContent className="max-w-md bg-white rounded-3xl p-0 overflow-hidden shadow-2xl border-none">
+                <DialogContent className="sm:max-w-2xl lg:max-w-3xl w-[94vw] bg-white rounded-3xl p-0 overflow-hidden shadow-2xl border-none font-sans text-slate-900">
                     <DialogTitle className="sr-only">Order Receipt Preview</DialogTitle>
                     <DialogDescription className="sr-only">Detailed breakdown of the current transaction including items and totals.</DialogDescription>
 
@@ -3383,8 +3383,11 @@ export default function POSOperator() {
                         <div className="flex flex-col max-h-[90vh]">
                             {/* Header Area */}
                             <div className="p-4 border-b bg-slate-50 flex items-center justify-between">
-                                <h3 className="font-black uppercase text-xs text-slate-500 tracking-widest leading-none">Bill Preview</h3>
-                                <button onClick={() => setShowReceiptDialog(false)} className="p-2 hover:bg-white text-slate-400 hover:text-slate-900 rounded-xl transition-all border border-transparent hover:border-slate-100">
+                                <div className="flex items-center gap-2">
+                                    <Receipt className="h-4 w-4 text-teal-600" />
+                                    <h3 className="font-black uppercase text-xs text-slate-700 tracking-widest leading-none">Bill Preview & Reprint</h3>
+                                </div>
+                                <button onClick={() => setShowReceiptDialog(false)} className="p-2 hover:bg-white text-slate-400 hover:text-slate-900 rounded-xl transition-all border border-transparent hover:border-slate-200">
                                     <X className="h-4 w-4" />
                                 </button>
                             </div>
@@ -3393,10 +3396,10 @@ export default function POSOperator() {
                             <div className="flex-1 overflow-y-auto p-8 font-sans text-[11px] bg-white text-[#1a1a1a] scrollbar-thin scrollbar-thumb-slate-100" id="receipt-content">
                                 {/* Header Section */}
                                 <div className="text-center mb-6">
-                                    <h2 className="text-lg font-black uppercase leading-tight tracking-tight mb-1">{storeConfig?.name || "Book My Veg"}</h2>
-                                    <p className="text-[10px] font-medium text-slate-400 px-6 leading-relaxed">{storeConfig?.address || ""}</p>
-                                    <div className="mt-3 flex items-center justify-center gap-3 text-[9px] font-bold text-slate-900 uppercase tracking-widest bg-slate-50 py-2 rounded-xl border border-slate-100">
-                                        {storeConfig?.gstNumber && <span>{storeConfig.gstNumber}</span>}
+                                    <h2 className="text-xl font-black uppercase leading-tight tracking-tight mb-1">{storeConfig?.name || "Book My Veg"}</h2>
+                                    <p className="text-[10px] font-medium text-slate-500 max-w-lg mx-auto leading-relaxed">{storeConfig?.address || ""}</p>
+                                    <div className="mt-3 inline-flex items-center justify-center gap-3 text-[9px] font-bold text-slate-900 uppercase tracking-widest bg-slate-50 px-4 py-2 rounded-xl border border-slate-100">
+                                        {storeConfig?.gstNumber && <span>GST: {storeConfig.gstNumber}</span>}
                                         <span className="w-1 h-1 rounded-full bg-slate-300" />
                                         {storeConfig?.contactNumber && <span>PH: {storeConfig.contactNumber}</span>}
                                     </div>
@@ -3404,31 +3407,39 @@ export default function POSOperator() {
 
                                 <div className="h-px border-t border-dashed border-slate-200 my-4" />
 
-                                {/* Meta Section */}
-                                <div className="space-y-2 mb-6">
-                                    <div className="flex justify-between items-center group">
-                                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Client Name</span>
-                                        <span className="font-black text-slate-900 uppercase">{lastReceipt.customer?.name || "Walk-In"}</span>
-                                    </div>
-                                    <div className="flex justify-between items-center">
-                                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Contact No</span>
-                                        <span className="font-black text-slate-900">{lastReceipt.customer?.phone || "N/A"}</span>
-                                    </div>
-                                    <div className="flex justify-between items-center">
-                                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Invoice Code</span>
-                                        <span className="font-black text-slate-900">#{lastReceipt.order?.id?.slice(-8).toUpperCase()}</span>
-                                    </div>
-                                    {(lastReceipt.customer?.addresses?.[0]?.fullAddress || lastReceipt.customer?.profileAddress) && (
-                                        <div className="flex justify-between items-start">
-                                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">Address</span>
-                                            <span className="font-black text-slate-900 text-right max-w-[200px] leading-tight">
-                                                {lastReceipt.customer?.addresses?.[0]?.fullAddress || lastReceipt.customer?.profileAddress}
-                                            </span>
+                                {/* Meta Section - 2 Columns */}
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-100 mb-6">
+                                    <div className="space-y-2">
+                                        <div className="flex justify-between items-center text-[10px]">
+                                            <span className="font-bold text-slate-400 uppercase tracking-widest">Client Name:</span>
+                                            <span className="font-black text-slate-900 uppercase">{lastReceipt.customer?.name || "Walk-In"}</span>
                                         </div>
-                                    )}
-                                    <div className="flex justify-between items-center bg-slate-50 p-2 rounded-lg border border-slate-100">
-                                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Billed By</span>
-                                        <span className="font-black text-slate-900 uppercase">{lastReceipt.order?.staff?.name || user?.name || "System"}</span>
+                                        <div className="flex justify-between items-center text-[10px]">
+                                            <span className="font-bold text-slate-400 uppercase tracking-widest">Contact No:</span>
+                                            <span className="font-black text-slate-900">{lastReceipt.customer?.phone || "N/A"}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center text-[10px]">
+                                            <span className="font-bold text-slate-400 uppercase tracking-widest">Billed By:</span>
+                                            <span className="font-black text-slate-900 uppercase">{lastReceipt.order?.staff?.name || user?.name || "System"}</span>
+                                        </div>
+                                    </div>
+                                    <div className="space-y-2 sm:border-l border-slate-200 sm:pl-4">
+                                        <div className="flex justify-between items-center text-[10px]">
+                                            <span className="font-bold text-slate-400 uppercase tracking-widest">Invoice Code:</span>
+                                            <span className="font-black text-slate-900">#{lastReceipt.order?.id?.slice(-8).toUpperCase()}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center text-[10px]">
+                                            <span className="font-bold text-slate-400 uppercase tracking-widest">Date & Time:</span>
+                                            <span className="font-bold text-slate-700">{new Date(lastReceipt.order?.createdAt || Date.now()).toLocaleString()}</span>
+                                        </div>
+                                        {(lastReceipt.customer?.address || lastReceipt.customer?.addresses?.[0]?.fullAddress || lastReceipt.customer?.profileAddress || selectedCustomer?.address || selectedCustomer?.addresses?.[0]?.fullAddress) && (
+                                            <div className="flex flex-col text-[10px] mt-1 pt-1 border-t border-slate-200">
+                                                <span className="font-bold text-slate-400 uppercase tracking-widest">Address:</span>
+                                                <span className="font-black text-slate-800 leading-tight mt-0.5">
+                                                    {lastReceipt.customer?.address || lastReceipt.customer?.addresses?.[0]?.fullAddress || lastReceipt.customer?.profileAddress || selectedCustomer?.address || selectedCustomer?.addresses?.[0]?.fullAddress}
+                                                </span>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
 
