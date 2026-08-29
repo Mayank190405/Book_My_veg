@@ -253,7 +253,7 @@ export const sendInvoiceDueViaWhatsapp = async (
 ) => {
     const origin = process.env.CLIENT_URL || "https://bookmyveg.co.in";
     const invoicePdfLink = `${origin}/invoice/${orderId}`;
-    const publicPayLink = `${origin}/pay?userid=${userId}&number=${phone}&billid=${orderId}`;
+    const publicPayLink = `${origin}/pay?userid=${userId}&number=${phone}&billid=${orderId}&amount=${dueAmount}&lockAmount=true`;
     return sendTemplateViaChatHub(phone, "bill_created_due", {
         body: [customerName, invoiceNo, String(totalAmount), String(dueAmount), invoicePdfLink, publicPayLink]
     });
@@ -268,7 +268,7 @@ export const sendPaymentReminderViaWhatsapp = async (
     orderId: string
 ) => {
     const origin = process.env.CLIENT_URL || "https://bookmyveg.co.in";
-    const publicPayLink = `${origin}/pay?userid=${userId}&number=${phone}&billid=${orderId}`;
+    const publicPayLink = `${origin}/pay?userid=${userId}&number=${phone}&billid=${orderId}&amount=${dueAmount}&lockAmount=true`;
     return sendTemplateViaChatHub(phone, "due_payment_reminder", {
         body: [customerName, String(dueAmount), invoiceNo, publicPayLink]
     });
