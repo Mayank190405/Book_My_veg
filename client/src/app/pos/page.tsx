@@ -888,7 +888,7 @@ export default function POSOperator() {
         }
     };
 
-    const triggerEasebuzzCheckoutInPOS = async () => {
+    const triggerEasebuzzCheckoutInPOS = async (overrideAmount?: number) => {
         if (!selectedCustomer?.id) {
             toast.error("Customer required to initiate payment");
             return;
@@ -898,6 +898,7 @@ export default function POSOperator() {
 
         try {
             let targetBillId = lastReceipt?.order?.id || inspectingOrder?.id || editingOrderId || "";
+            const amountToCharge = overrideAmount !== undefined && overrideAmount > 0 ? overrideAmount : grandTotal;
 
             // If there's active items in the cart, create the bill first!
             if (cart.length > 0) {
@@ -908,6 +909,13 @@ export default function POSOperator() {
                     return;
                 }
                 
+                const splitPayments: any[] = [];
+                if (paymentMethod === "SPLIT") {
+                    if (Number(splitCashAmount) > 0) splitPayments.push({ method: "CASH", amount: Number(splitCashAmount) });
+                    if (Number(splitOnlineAmount) > 0) splitPayments.push({ method: "EASEBUZZ", amount: Number(splitOnlineAmount) });
+                    if (useWalletBalance && Number(splitWalletAmount) > 0) splitPayments.push({ method: "WALLET", amount: Number(splitWalletAmount) });
+                }
+
                 const res = await api.post("/pos/orders/process", {
                     customerId: selectedCustomer?.id,
                     items: cart.map(i => ({
@@ -916,7 +924,8 @@ export default function POSOperator() {
                         quantity: i.quantity,
                         price: i.overridePrice !== undefined ? i.overridePrice : getPrice(i)
                     })),
-                    paymentMethod: "CREDIT", // Create as Credit/Due first
+                    paymentMethod: paymentMethod === "SPLIT" ? "SPLIT" : "CREDIT",
+                    splitPayments: paymentMethod === "SPLIT" ? splitPayments : undefined,
                     discountAmount: discount,
                     packerId: localStorage.getItem("selectedPackerId"),
                     duePaymentAmount: 0,
@@ -932,16 +941,16 @@ export default function POSOperator() {
                     order: savedOrder,
                     items: [...cart],
                     customer: selectedCustomer,
-                    paymentMethod: "CREDIT",
+                    paymentMethod: paymentMethod,
                     subtotal,
                     discount,
                     grandTotal,
-                    cashTotal: 0,
+                    cashTotal: Number(splitCashAmount || 0),
                     changeDue: 0,
                     dueSummary: res.data.dueSummary
                 });
 
-                toast.success(`Bill #${targetBillId} generated. Initiating digital payment...`);
+                toast.success(`Bill #${targetBillId} generated. Initiating Easebuzz online payment of ₹${amountToCharge}...`);
             }
 
             if (!targetBillId) {
@@ -954,7 +963,7 @@ export default function POSOperator() {
                 userId: selectedCustomer?.id,
                 phone: selectedCustomer?.phone,
                 billId: targetBillId,
-                amount: grandTotal
+                amount: amountToCharge
             });
             const data = res.data;
 
@@ -974,18 +983,23 @@ export default function POSOperator() {
                 setShowPaymentDialog(true);
             };
 
-            if (data.accessKey || data.paymentLink) {
-                let checkoutUrl = data.paymentLink || `https://${data.env === "prod" ? "pay" : "testpay"}.easebuzz.in/pay/${data.accessKey}`;
-                if (typeof window !== "undefined" && window.location.protocol === "https:") {
-                    checkoutUrl = checkoutUrl.replace(/^http:/, "https:");
-                }
-                const sdkUrl = "https://ebz-static.s3.ap-south-1.amazonaws.com/easecheckout/v2.0.0/easebuzz-checkout-v2.min.js";
+            let checkoutUrl = data.paymentLink || (data.accessKey ? `https://${data.env === "prod" ? "pay" : "testpay"}.easebuzz.in/pay/${data.accessKey}` : "");
+            if (typeof window !== "undefined" && window.location.protocol === "https:" && checkoutUrl) {
+                checkoutUrl = checkoutUrl.replace(/^http:/, "https:");
+            }
 
+            // Always display the in-app iframe portal
+            if (checkoutUrl) {
+                setPosPaymentIframeUrl(checkoutUrl);
+                setShowPaymentDialog(false);
+                setShowPosIframeModal(true);
+            }
+
+            if (data.accessKey) {
+                const sdkUrl = "https://ebz-static.s3.ap-south-1.amazonaws.com/easecheckout/v2.0.0/easebuzz-checkout-v2.min.js";
                 const triggerSdk = () => {
                     const EasebuzzCheckout = (window as any).EasebuzzCheckout;
                     if (EasebuzzCheckout && data.accessKey) {
-                        setIsProcessing(false);
-                        setShowPaymentDialog(false);
                         try {
                             const checkoutObj = new EasebuzzCheckout(data.key || "EASEBUZZ", data.env || "test");
                             checkoutObj.initiatePayment({
@@ -1009,10 +1023,10 @@ export default function POSOperator() {
                                             await api.post("/payments/verify", {
                                                 order_id: data.txnid || targetBillId,
                                                 status: "SUCCESS",
-                                                amount: grandTotal,
+                                                amount: amountToCharge,
                                                 txn_id: response.easepayid || response.txnid || response.easebuzz_id
                                             });
-                                            toast.success("Payment completed & verified via Easebuzz");
+                                            toast.success(`Easebuzz Payment of ₹${amountToCharge} completed & verified!`);
                                         } catch (verifyErr) {
                                             console.error("Payment verify call failed:", verifyErr);
                                         }
@@ -1041,18 +1055,8 @@ export default function POSOperator() {
                                 }
                             });
                         } catch (sdkErr) {
-                            console.warn("[Easebuzz SDK] Frame access blocked, falling back to gateway window:", sdkErr);
-                            setIsProcessing(false);
-                            setShowPaymentDialog(false);
-                            if (checkoutUrl) {
-                                window.open(checkoutUrl, "_blank");
-                            }
+                            console.warn("[Easebuzz SDK] Frame blocked, embedded iframe is available:", sdkErr);
                         }
-                    } else {
-                        setIsProcessing(false);
-                        setShowPaymentDialog(false);
-                        setPosPaymentIframeUrl(checkoutUrl);
-                        setShowPosIframeModal(true);
                     }
                 };
 
@@ -1061,18 +1065,10 @@ export default function POSOperator() {
                     script.src = sdkUrl;
                     script.async = true;
                     script.onload = triggerSdk;
-                    script.onerror = () => {
-                        setIsProcessing(false);
-                        setShowPaymentDialog(false);
-                        setPosPaymentIframeUrl(checkoutUrl);
-                        setShowPosIframeModal(true);
-                    };
                     document.body.appendChild(script);
                 } else {
                     triggerSdk();
                 }
-            } else {
-                throw new Error("No payment authorization key returned");
             }
         } catch (err: any) {
             setIsProcessing(false);
@@ -2704,6 +2700,18 @@ export default function POSOperator() {
                                                 />
                                                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">₹</span>
                                             </div>
+
+                                            {Number(splitOnlineAmount) > 0 && (
+                                                <button
+                                                    type="button"
+                                                    disabled={isProcessing}
+                                                    onClick={() => triggerEasebuzzCheckoutInPOS(Number(splitOnlineAmount))}
+                                                    className="w-full h-11 bg-teal-600 hover:bg-teal-700 active:scale-95 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
+                                                >
+                                                    <Smartphone className="h-4 w-4" /> 
+                                                    Pay ₹{Number(splitOnlineAmount).toFixed(2)} via Easebuzz Iframe
+                                                </button>
+                                            )}
                                         </div>
                                     </div>
 
