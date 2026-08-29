@@ -621,7 +621,7 @@ export default function POSOperator() {
                 }
             }
 
-            // ── Enforce Easebuzz Iframe Checkout for any Online Slice ──
+            // ── Enforce Single Easebuzz Checkout Modal ──
             if (onlinePortion > 0) {
                 const res = await api.post("/pay/pay-due", {
                     userId: settlingBill.userId || selectedCustomer?.id,
@@ -642,14 +642,10 @@ export default function POSOperator() {
                     return;
                 }
 
-                // 1. Immediately close the settlement modal and launch the in-app Iframe portal
+                // Close settlement modal
                 setShowBillSettleModal(false);
-                if (checkoutUrl) {
-                    setPosPaymentIframeUrl(checkoutUrl);
-                    setShowPosIframeModal(true);
-                }
 
-                // 2. Also trigger Easebuzz SDK popup in parallel
+                // If Easebuzz access key is present, launch the official SDK modal alone!
                 if (data.accessKey) {
                     const sdkUrl = "https://ebz-static.s3.ap-south-1.amazonaws.com/easecheckout/v2.0.0/easebuzz-checkout-v2.min.js";
                     const loadAndTrigger = () => {
@@ -663,13 +659,11 @@ export default function POSOperator() {
                                         const respStatus = (response?.status || "").toLowerCase();
                                         if (respStatus === "user_cancelled" || respStatus === "usercancelled" || respStatus === "cancelled") {
                                             toast.warning("Easebuzz payment cancelled. Bill remains unsettled.");
-                                            setShowPosIframeModal(false);
                                             setIsSubmittingBillSettle(false);
                                             return;
                                         }
                                         if (respStatus === "failed" || respStatus === "failure" || respStatus === "declined") {
                                             toast.error("Easebuzz payment failed or was declined. Bill was not settled.");
-                                            setShowPosIframeModal(false);
                                             setIsSubmittingBillSettle(false);
                                             return;
                                         }
@@ -687,8 +681,6 @@ export default function POSOperator() {
                                             const settleRes = await api.post(`/pos/orders/${settlingBill.id}/collect-due`, payload);
                                             if (settleRes.data?.success || settleRes.status === 200) {
                                                 toast.success(`Easebuzz payment successful! Bill #${settlingBill.id.slice(0, 8).toUpperCase()} settled with ₹${amountToPay}.`);
-                                                setShowPosIframeModal(false);
-                                                setShowBillSettleModal(false);
                                                 setSettlingBill(null);
                                                 if (selectedCustomer?.id) {
                                                     await fetchCustomerHistory(selectedCustomer.id, false);
@@ -702,7 +694,11 @@ export default function POSOperator() {
                                     }
                                 });
                             } catch (sdkErr) {
-                                console.warn("[Easebuzz SDK] Frame popup blocked, in-app iframe portal remains active:", sdkErr);
+                                console.warn("[Easebuzz SDK] Frame error, falling back to embedded iframe:", sdkErr);
+                                if (checkoutUrl) {
+                                    setPosPaymentIframeUrl(checkoutUrl);
+                                    setShowPosIframeModal(true);
+                                }
                             }
                         }
                     };
@@ -716,6 +712,10 @@ export default function POSOperator() {
                     } else {
                         loadAndTrigger();
                     }
+                } else if (checkoutUrl) {
+                    // Only open in-app iframe dialog if no access key was returned
+                    setPosPaymentIframeUrl(checkoutUrl);
+                    setShowPosIframeModal(true);
                 }
                 return;
             }
@@ -997,12 +997,7 @@ export default function POSOperator() {
                 checkoutUrl = checkoutUrl.replace(/^http:/, "https:");
             }
 
-            // Always display the in-app iframe portal
-            if (checkoutUrl) {
-                setPosPaymentIframeUrl(checkoutUrl);
-                setShowPaymentDialog(false);
-                setShowPosIframeModal(true);
-            }
+            setShowPaymentDialog(false);
 
             if (data.accessKey) {
                 const sdkUrl = "https://ebz-static.s3.ap-south-1.amazonaws.com/easecheckout/v2.0.0/easebuzz-checkout-v2.min.js";
@@ -1064,7 +1059,11 @@ export default function POSOperator() {
                                 }
                             });
                         } catch (sdkErr) {
-                            console.warn("[Easebuzz SDK] Frame blocked, embedded iframe is available:", sdkErr);
+                            console.warn("[Easebuzz SDK] Frame error, falling back to embedded iframe:", sdkErr);
+                            if (checkoutUrl) {
+                                setPosPaymentIframeUrl(checkoutUrl);
+                                setShowPosIframeModal(true);
+                            }
                         }
                     }
                 };
@@ -1078,6 +1077,10 @@ export default function POSOperator() {
                 } else {
                     triggerSdk();
                 }
+            } else if (checkoutUrl) {
+                // Fallback to in-app iframe only if no access key was returned
+                setPosPaymentIframeUrl(checkoutUrl);
+                setShowPosIframeModal(true);
             }
         } catch (err: any) {
             setIsProcessing(false);
