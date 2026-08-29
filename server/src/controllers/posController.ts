@@ -1182,31 +1182,104 @@ export const getStoreConfig = async (req: AuthenticatedRequest, res: Response, n
 
 export const collectDuePayment = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     const orderId = req.params.orderId as string;
-    const { amount, method } = req.body;
+    const { 
+        amount, 
+        method = "CASH", 
+        splitPayments, 
+        useWalletBalance = false,
+        denominations,
+        notes,
+        transactionId
+    } = req.body;
     const staffId = req.user?.userId;
+    const locationId = req.user?.locationId;
 
     if (!staffId) return next(new AppError("Unauthorized", 401));
 
     try {
-        const order = await prisma.order.findUnique({ where: { id: orderId }, include: { payments: true } });
+        const order = await prisma.order.findUnique({ 
+            where: { id: orderId }, 
+            include: { payments: true, user: { select: { id: true, name: true, phone: true } } } 
+        });
         if (!order) return next(new AppError("Order not found", 404));
 
-        const paidAlready = order.payments.reduce((acc, p) => acc + Number(p.amount), 0);
-        const payingNow = Number(amount || (Number(order.totalAmount) - paidAlready));
-        const totalPaid = paidAlready + payingNow;
-        const isFull = totalPaid >= Number(order.totalAmount);
+        const paidAlready = (order.payments || []).reduce((acc: number, p: any) => {
+            const isSuccess = p.status === "SUCCESS" || p.status === "COMPLETED" || p.status === "PAID";
+            return isSuccess ? acc + Number(p.amount) : acc;
+        }, 0);
+        const orderTotal = Number(order.totalAmount);
+        const remainingDue = Math.max(0, orderTotal - paidAlready);
 
-        await prisma.$transaction(async (tx) => {
-            await tx.payment.create({
-                data: {
-                    orderId,
-                    amount: new Prisma.Decimal(payingNow),
-                    method: method || "CASH",
-                    status: "SUCCESS",
-                    transactionId: `DUE_COLLECT_${Date.now()}`
+        if (remainingDue <= 0) {
+            return res.status(400).json({ message: "This bill has already been fully paid and settled." });
+        }
+
+        // Determine payment slices
+        let paymentSlices: Array<{ method: string; amount: number; transactionId?: string; denominations?: any }> = [];
+        if (Array.isArray(splitPayments) && splitPayments.length > 0) {
+            paymentSlices = splitPayments
+                .map(p => ({
+                    method: String(p.method || "CASH").toUpperCase(),
+                    amount: Number(p.amount || 0),
+                    transactionId: p.transactionId,
+                    denominations: p.denominations
+                }))
+                .filter(p => p.amount > 0);
+        } else {
+            const payingAmt = amount !== undefined && amount !== null && Number(amount) > 0 
+                ? Math.min(Number(amount), remainingDue)
+                : remainingDue;
+            
+            paymentSlices = [{
+                method: String(method || "CASH").toUpperCase(),
+                amount: payingAmt,
+                transactionId: transactionId || `SETTLE_${Date.now()}`,
+                denominations: denominations
+            }];
+        }
+
+        const totalPayingNow = paymentSlices.reduce((acc, p) => acc + p.amount, 0);
+        if (totalPayingNow <= 0) {
+            return res.status(400).json({ message: "Invalid payment amount specified." });
+        }
+
+        const newTotalPaid = paidAlready + totalPayingNow;
+        const isFull = newTotalPaid >= orderTotal;
+
+        const customerId = order.userId;
+
+        await (prisma as any).$transaction(async (tx: any) => {
+            // Handle wallet deduction if applicable
+            for (const slice of paymentSlices) {
+                if (slice.method === "WALLET" || (useWalletBalance && slice.method === "ADVANCE")) {
+                    try {
+                        await tx.walletTransaction.create({
+                            data: {
+                                userId: customerId,
+                                amount: new Prisma.Decimal(slice.amount),
+                                type: "DEBIT",
+                                notes: `Bill #${order.id.slice(0, 8).toUpperCase()} settlement`,
+                                orderId: order.id
+                            }
+                        });
+                    } catch (wErr: any) {
+                        console.warn("[POS Bill Settle] Wallet transaction ledger notice:", wErr.message);
+                    }
                 }
-            });
 
+                await tx.payment.create({
+                    data: {
+                        orderId,
+                        amount: new Prisma.Decimal(slice.amount),
+                        method: slice.method,
+                        status: "SUCCESS",
+                        transactionId: slice.transactionId || `DUE_SETTLE_${Date.now()}_${Math.random().toString(36).slice(-4)}`,
+                        denominations: slice.method === "CASH" ? (slice.denominations || denominations || null) : null
+                    }
+                });
+            }
+
+            // Update order status
             await tx.order.update({
                 where: { id: orderId },
                 data: {
@@ -1215,15 +1288,88 @@ export const collectDuePayment = async (req: AuthenticatedRequest, res: Response
                     statusHistory: {
                         create: {
                             status: order.status,
-                            remark: `Due payment collected: ₹${payingNow} via ${method || "CASH"}. Total Paid: ₹${totalPaid}`,
+                            remark: `Bill settlement: ₹${totalPayingNow} collected (${paymentSlices.map(s => `${s.method}: ₹${s.amount}`).join(", ")}). Total Paid: ₹${newTotalPaid}/${orderTotal}`,
                             changedBy: staffId
                         }
                     }
                 }
             });
+
+            // Update cashier shift cash denominations if CASH was collected
+            const cashSlice = paymentSlices.find(s => s.method === "CASH");
+            if (cashSlice && (cashSlice.denominations || denominations) && locationId) {
+                try {
+                    const activeShift = await tx.cashierShift.findFirst({
+                        where: { locationId, status: "OPEN" }
+                    });
+                    if (activeShift) {
+                        const shiftDenominations = activeShift.currentDenominations 
+                            ? (typeof activeShift.currentDenominations === "string" 
+                                ? JSON.parse(activeShift.currentDenominations) 
+                                : activeShift.currentDenominations as Record<string, number>)
+                            : {} as Record<string, number>;
+                        
+                        const denomObj = cashSlice.denominations || denominations;
+                        const received = denomObj.received || {};
+                        const change = denomObj.change || {};
+                        
+                        const denominationsKeys = ["500", "200", "100", "50", "20", "10", "5", "2", "1"];
+                        const updatedDenominations: Record<string, number> = {};
+                        for (const k of denominationsKeys) {
+                            const currentCount = Number(shiftDenominations[k] || 0);
+                            const receivedCount = Number(received[k] || 0);
+                            const changeCount = Number(change[k] || 0);
+                            updatedDenominations[k] = Math.max(0, currentCount + receivedCount - changeCount);
+                        }
+                        
+                        await tx.cashierShift.update({
+                            where: { id: activeShift.id },
+                            data: { currentDenominations: updatedDenominations }
+                        });
+                    }
+                } catch (shiftErr: any) {
+                    console.warn("[POS Bill Settle] Cashier shift denomination update notice:", shiftErr.message);
+                }
+            }
         });
 
-        res.json({ message: "Payment recorded successfully", isFull });
+        // ── WhatsApp Notification Dispatch ────────────────────────────────
+        if (order.user?.phone) {
+            try {
+                const user = order.user;
+                const totalAmount = orderTotal;
+                const remainingDueAfter = Math.max(0, orderTotal - newTotalPaid);
+                const paymentModeDesc = paymentSlices.map(p => `${p.method}: ₹${p.amount}`).join(", ");
+                const { sendInvoicePaidViaWhatsapp, sendInvoiceDueViaWhatsapp } = require("../services/mbgcard");
+
+                if (isFull) {
+                    sendInvoicePaidViaWhatsapp(user.phone, user.name || "Customer", orderId, totalAmount, paymentModeDesc, orderId).catch((err: any) => {
+                        console.error("[POS Bill Settle] WhatsApp Invoice Paid dispatch failure:", err.message);
+                    });
+                } else {
+                    sendInvoiceDueViaWhatsapp(user.phone, user.name || "Customer", orderId, totalAmount, paymentModeDesc, remainingDueAfter, customerId, orderId).catch((err: any) => {
+                        console.error("[POS Bill Settle] WhatsApp Invoice Due dispatch failure:", err.message);
+                    });
+                }
+            } catch (wErr: any) {
+                console.warn("[POS Bill Settle] WhatsApp notification dispatch warning:", wErr.message);
+            }
+        }
+
+        res.json({ 
+            success: true, 
+            message: isFull ? "Bill fully settled and cleared" : `Partial settlement of ₹${totalPayingNow} recorded`, 
+            isFull,
+            settledAmount: totalPayingNow,
+            order: {
+                id: order.id,
+                totalAmount: orderTotal,
+                paidAmount: newTotalPaid,
+                dueAmount: Math.max(0, orderTotal - newTotalPaid),
+                paymentStatus: isFull ? "COMPLETED" : "PARTIAL",
+                isPaid: isFull
+            }
+        });
     } catch (error) { next(error); }
 };
 

@@ -215,8 +215,17 @@ export default function POSOperator() {
         }
     }, [showExpenseDialog]);
 
-    // History
+    // History & Bill-wise Settlement
     const [customerHistory, setCustomerHistory] = useState<any>(null);
+    const [showBillSettleModal, setShowBillSettleModal] = useState(false);
+    const [settlingBill, setSettlingBill] = useState<any>(null);
+    const [billSettleAmount, setBillSettleAmount] = useState<number | string>("");
+    const [billSettleMethod, setBillSettleMethod] = useState<"CASH" | "EASEBUZZ" | "WALLET" | "SPLIT">("CASH");
+    const [billSettleSplit, setBillSettleSplit] = useState<{ cash: number | string; online: number | string }>({ cash: "", online: "" });
+    const [billSettleSplitRatio, setBillSettleSplitRatio] = useState<string>("50/50");
+    const [billSettleUseWallet, setBillSettleUseWallet] = useState(false);
+    const [billSettleDenoms, setBillSettleDenoms] = useState<Record<number, number>>({ 500: 0, 200: 0, 100: 0, 50: 0, 20: 0, 10: 0, 5: 0, 2: 0, 1: 0 });
+    const [isSubmittingBillSettle, setIsSubmittingBillSettle] = useState(false);
 
     // Receipt
     const [lastReceipt, setLastReceipt] = useState<any>(null);
@@ -562,6 +571,73 @@ export default function POSOperator() {
             toast.error(err.response?.data?.message || "WhatsApp dispatch error");
         } finally {
             setIsSendingCustomWhatsApp(false);
+        }
+    };
+
+    const handleSettleIndividualBill = async () => {
+        if (!settlingBill) return;
+        const totalDueOnBill = settlingBill.dueAmount !== undefined ? settlingBill.dueAmount : Math.max(0, Number(settlingBill.totalAmount) - (Number(settlingBill.paidAmount) || 0));
+        const amountToPay = Number(billSettleAmount);
+
+        if (!amountToPay || amountToPay <= 0) {
+            toast.error("Please enter a valid settlement amount");
+            return;
+        }
+
+        if (amountToPay > totalDueOnBill + 0.01) {
+            toast.error(`Amount cannot exceed remaining bill due of ₹${totalDueOnBill.toFixed(2)}`);
+            return;
+        }
+
+        setIsSubmittingBillSettle(true);
+        try {
+            let payload: any = {
+                amount: amountToPay,
+                method: billSettleMethod,
+                useWalletBalance: billSettleUseWallet
+            };
+
+            if (billSettleMethod === "SPLIT") {
+                const cashAmt = Number(billSettleSplit.cash || 0);
+                const onlineAmt = Number(billSettleSplit.online || 0);
+                if (Math.abs((cashAmt + onlineAmt) - amountToPay) > 0.01) {
+                    toast.error(`Split amounts (₹${cashAmt} Cash + ₹${onlineAmt} Online) must equal total ₹${amountToPay}`);
+                    setIsSubmittingBillSettle(false);
+                    return;
+                }
+                payload.splitPayments = [
+                    { method: "CASH", amount: cashAmt },
+                    { method: "EASEBUZZ", amount: onlineAmt }
+                ];
+            } else if (billSettleMethod === "CASH") {
+                const totalDenoms = Object.entries(billSettleDenoms).reduce((sum, [d, q]) => sum + (Number(d) * q), 0);
+                if (totalDenoms > 0) {
+                    payload.denominations = {
+                        received: billSettleDenoms,
+                        change: {}
+                    };
+                }
+            }
+
+            const token = localStorage.getItem("token") || "";
+            const res = await api.post(`/pos/orders/${settlingBill.id}/collect-due`, payload);
+
+            if (res.data?.success || res.status === 200) {
+                toast.success(res.data?.message || `Bill #${settlingBill.id.slice(0, 8).toUpperCase()} settled with ₹${amountToPay}!`);
+                setShowBillSettleModal(false);
+                setSettlingBill(null);
+                // Refresh customer history
+                if (selectedCustomer?.id) {
+                    await fetchCustomerHistory(selectedCustomer.id, false);
+                }
+                fetchTodaySales(false);
+            } else {
+                toast.error(res.data?.message || "Failed to settle bill");
+            }
+        } catch (err: any) {
+            toast.error(err.response?.data?.message || err.message || "Failed to settle bill");
+        } finally {
+            setIsSubmittingBillSettle(false);
         }
     };
 
@@ -2728,7 +2804,7 @@ export default function POSOperator() {
                                             </div>
                                             <div className="text-right">
                                                 <p className="text-lg font-black text-slate-900 tabular-nums">₹{Number(order.totalAmount).toFixed(0)}</p>
-                                                <div className="flex flex-col items-end gap-1.5 mt-1">
+                                                <div className="flex flex-col items-end gap-1 mt-1">
                                                     {isCancelled ? (
                                                         <div className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-slate-100 text-slate-600 border border-slate-200">
                                                             Cancelled
@@ -2746,6 +2822,25 @@ export default function POSOperator() {
                                                             Unpaid Due
                                                         </div>
                                                     )}
+
+                                                    {!isPaid && !isCancelled && Number(dueAmt) > 0 && (
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setSettlingBill(order);
+                                                                setBillSettleAmount(dueAmt);
+                                                                setBillSettleMethod("CASH");
+                                                                setBillSettleSplit({ cash: dueAmt, online: 0 });
+                                                                setBillSettleSplitRatio("50/50");
+                                                                setBillSettleUseWallet(false);
+                                                                setShowBillSettleModal(true);
+                                                            }}
+                                                            className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-lg text-[9px] font-black uppercase tracking-wider flex items-center gap-1 shadow-sm transition-all"
+                                                        >
+                                                            <Banknote className="h-3 w-3" /> Settle Bill
+                                                        </button>
+                                                    )}
+
                                                     <span className="text-[9px] font-black text-teal-500 uppercase flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                                         <Receipt className="h-2.5 w-2.5" /> View Bill
                                                     </span>
@@ -4397,6 +4492,337 @@ export default function POSOperator() {
                     )}
                 </DialogContent>
             </Dialog>
+            {/* ── BILL-WISE SETTLEMENT MODAL ── */}
+            <Dialog open={showBillSettleModal} onOpenChange={setShowBillSettleModal}>
+                <DialogContent className="max-w-md bg-white rounded-3xl p-0 overflow-hidden shadow-2xl border-none font-sans text-slate-900">
+                    <DialogHeader className="sr-only">
+                        <DialogTitle>Settle Bill #{settlingBill?.id?.slice(0, 8)?.toUpperCase()}</DialogTitle>
+                        <DialogDescription>Process bill-wise settlement with multi-mode payment options.</DialogDescription>
+                    </DialogHeader>
+
+                    {settlingBill && (() => {
+                        const billTotal = Number(settlingBill.totalAmount || 0);
+                        const paidAlready = Number(settlingBill.paidAmount || (billTotal - (settlingBill.dueAmount ?? billTotal)));
+                        const dueAmount = settlingBill.dueAmount !== undefined ? Number(settlingBill.dueAmount) : Math.max(0, billTotal - paidAlready);
+                        const customerWalletBal = Number(customerHistory?.customer?.accountBalance || customerHistory?.summary?.accountBalance || selectedCustomer?.accountBalance || 0);
+                        const currentSettleAmt = Number(billSettleAmount) || 0;
+
+                        return (
+                            <div className="p-6 space-y-5 max-h-[90vh] overflow-y-auto">
+                                {/* Header */}
+                                <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-2xl bg-emerald-100 flex items-center justify-center text-emerald-600 shadow-sm">
+                                            <Receipt className="h-5 w-5" />
+                                        </div>
+                                        <div>
+                                            <h3 className="font-black text-slate-900 uppercase text-sm tracking-wider">
+                                                Bill Settlement
+                                            </h3>
+                                            <p className="text-[10px] text-teal-600 font-black uppercase tracking-widest">
+                                                #{settlingBill.id.slice(0, 8).toUpperCase()} · {new Date(settlingBill.createdAt).toLocaleDateString()}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <button 
+                                        onClick={() => setShowBillSettleModal(false)}
+                                        className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center transition-colors"
+                                    >
+                                        <X className="h-4 w-4" />
+                                    </button>
+                                </div>
+
+                                {/* Bill Stats Card */}
+                                <div className="grid grid-cols-3 gap-2.5 bg-slate-50 p-3.5 rounded-2xl border border-slate-100">
+                                    <div className="text-center">
+                                        <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Total Bill</p>
+                                        <p className="text-base font-black text-slate-800 tabular-nums">₹{billTotal.toFixed(0)}</p>
+                                    </div>
+                                    <div className="text-center border-x border-slate-200">
+                                        <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Paid So Far</p>
+                                        <p className="text-base font-black text-teal-600 tabular-nums">₹{paidAlready.toFixed(0)}</p>
+                                    </div>
+                                    <div className="text-center">
+                                        <p className="text-[9px] font-black uppercase tracking-wider text-red-500">Remaining Due</p>
+                                        <p className="text-base font-black text-red-600 tabular-nums">₹{dueAmount.toFixed(0)}</p>
+                                    </div>
+                                </div>
+
+                                {/* Customer Advance Balance Pill if available */}
+                                {customerWalletBal > 0 && (
+                                    <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                            <Wallet className="h-4 w-4 text-emerald-600" />
+                                            <div>
+                                                <p className="text-[9px] font-black uppercase tracking-wider text-emerald-700">Advance Balance Available</p>
+                                                <p className="text-sm font-black text-emerald-900 tabular-nums">₹{customerWalletBal.toFixed(2)}</p>
+                                            </div>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setBillSettleMethod("WALLET");
+                                                setBillSettleAmount(Math.min(dueAmount, customerWalletBal));
+                                            }}
+                                            className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[9px] uppercase tracking-wider rounded-lg shadow-sm active:scale-95 transition-all"
+                                        >
+                                            Use Advance
+                                        </button>
+                                    </div>
+                                )}
+
+                                {/* Amount to Settle Input */}
+                                <div className="space-y-1.5">
+                                    <div className="flex items-center justify-between">
+                                        <label className="text-[10px] text-slate-500 font-black uppercase tracking-widest">
+                                            Settlement Amount (₹)
+                                        </label>
+                                        <div className="flex items-center gap-1.5">
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setBillSettleAmount(dueAmount);
+                                                    if (billSettleMethod === "SPLIT") {
+                                                        const half = Number((dueAmount / 2).toFixed(0));
+                                                        setBillSettleSplit({ cash: half, online: dueAmount - half });
+                                                    }
+                                                }}
+                                                className="px-2 py-0.5 bg-slate-100 hover:bg-teal-100 text-slate-600 hover:text-teal-700 text-[9px] font-black uppercase rounded tracking-wider transition-colors"
+                                            >
+                                                Full (₹{dueAmount.toFixed(0)})
+                                            </button>
+                                            {dueAmount >= 500 && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setBillSettleAmount(500)}
+                                                    className="px-2 py-0.5 bg-slate-100 hover:bg-teal-100 text-slate-600 hover:text-teal-700 text-[9px] font-black uppercase rounded tracking-wider transition-colors"
+                                                >
+                                                    ₹500
+                                                </button>
+                                            )}
+                                            {dueAmount >= 200 && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setBillSettleAmount(200)}
+                                                    className="px-2 py-0.5 bg-slate-100 hover:bg-teal-100 text-slate-600 hover:text-teal-700 text-[9px] font-black uppercase rounded tracking-wider transition-colors"
+                                                >
+                                                    ₹200
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <div className="relative">
+                                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-lg font-black text-slate-300">₹</span>
+                                        <input
+                                            type="number"
+                                            value={billSettleAmount}
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                setBillSettleAmount(val);
+                                                if (billSettleMethod === "SPLIT" && val) {
+                                                    const num = Number(val);
+                                                    const half = Number((num / 2).toFixed(0));
+                                                    setBillSettleSplit({ cash: half, online: num - half });
+                                                }
+                                            }}
+                                            max={dueAmount}
+                                            className="w-full h-13 pl-10 pr-4 bg-slate-50 border-2 border-slate-200 focus:border-emerald-500 rounded-2xl outline-none text-xl font-black transition-all tabular-nums text-slate-900"
+                                            placeholder={`Max ₹${dueAmount}`}
+                                        />
+                                    </div>
+                                </div>
+
+                                {/* Payment Method Selection */}
+                                <div className="space-y-2">
+                                    <label className="text-[10px] text-slate-500 font-black uppercase tracking-widest">
+                                        Payment Mode
+                                    </label>
+                                    <div className="grid grid-cols-4 gap-1.5">
+                                        {[
+                                            { id: "CASH", label: "Cash", icon: Banknote, color: "emerald" },
+                                            { id: "EASEBUZZ", label: "Easebuzz", icon: Smartphone, color: "teal" },
+                                            { id: "WALLET", label: "Advance", icon: Wallet, color: "indigo" },
+                                            { id: "SPLIT", label: "Split", icon: Layers, color: "purple" }
+                                        ].map((m) => (
+                                            <button
+                                                key={m.id}
+                                                type="button"
+                                                onClick={() => {
+                                                    setBillSettleMethod(m.id as any);
+                                                    if (m.id === "SPLIT") {
+                                                        const num = currentSettleAmt || dueAmount;
+                                                        const half = Number((num / 2).toFixed(0));
+                                                        setBillSettleSplit({ cash: half, online: num - half });
+                                                    }
+                                                }}
+                                                className={cn(
+                                                    "h-12 rounded-xl border flex flex-col items-center justify-center gap-1 transition-all active:scale-95",
+                                                    billSettleMethod === m.id
+                                                        ? "bg-slate-900 text-white border-slate-900 shadow-md"
+                                                        : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"
+                                                )}
+                                            >
+                                                <m.icon className="h-3.5 w-3.5" />
+                                                <span className="font-black text-[9px] uppercase tracking-wider">{m.label}</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Method Specific Panels */}
+                                {billSettleMethod === "CASH" && (
+                                    <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
+                                        <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Quick Cash Preset</p>
+                                        <div className="grid grid-cols-3 gap-2">
+                                            {[500, 200, 100, 50, 20, 10].map(den => (
+                                                <button
+                                                    key={den}
+                                                    type="button"
+                                                    onClick={() => {
+                                                        const cur = billSettleDenoms[den] || 0;
+                                                        const updated = { ...billSettleDenoms, [den]: cur + 1 };
+                                                        setBillSettleDenoms(updated);
+                                                        const total = Object.entries(updated).reduce((s, [d, q]) => s + (Number(d) * q), 0);
+                                                        setBillSettleAmount(Math.min(total, dueAmount));
+                                                    }}
+                                                    className="h-8 rounded-lg bg-white border border-slate-200 font-black text-slate-700 text-xs hover:bg-emerald-50 hover:border-emerald-300 transition-all shadow-sm flex items-center justify-center"
+                                                >
+                                                    +₹{den}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {billSettleMethod === "EASEBUZZ" && (
+                                    <div className="p-4 bg-teal-50 rounded-2xl border border-teal-100 flex flex-col items-center text-center gap-3">
+                                        <div className="w-32 h-32 bg-white rounded-xl p-2 shadow-md border border-teal-100">
+                                            <img
+                                                src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(
+                                                    `upi://pay?pa=${storeConfig?.upiId || 'bookmyveg@upi'}&pn=${encodeURIComponent(storeConfig?.name || 'BookMyVeg')}&am=${currentSettleAmt.toFixed(2)}&tn=${encodeURIComponent(`SETTLE_BILL_${settlingBill.id.slice(0, 8)}`)}&cu=INR`
+                                                )}`}
+                                                alt="UPI QR"
+                                                className="w-full h-full object-contain"
+                                            />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <p className="text-[10px] font-black text-teal-800 uppercase tracking-wider">UPI / Easebuzz Online Payment</p>
+                                            <p className="text-xs font-bold text-teal-600">Scan QR to pay ₹{currentSettleAmt.toFixed(2)}</p>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {billSettleMethod === "WALLET" && (
+                                    <div className="p-4 bg-indigo-50 rounded-2xl border border-indigo-100 space-y-2 text-center">
+                                        <p className="text-[10px] font-black text-indigo-700 uppercase tracking-wider">Deduct From Customer Advance Deposit</p>
+                                        <p className="text-xl font-black text-indigo-900 tabular-nums">₹{currentSettleAmt.toFixed(2)}</p>
+                                        <p className="text-[10px] text-indigo-500 font-bold">
+                                            Remaining Balance after settlement: ₹{Math.max(0, customerWalletBal - currentSettleAmt).toFixed(2)}
+                                        </p>
+                                    </div>
+                                )}
+
+                                {billSettleMethod === "SPLIT" && (
+                                    <div className="p-4 bg-purple-50 rounded-2xl border border-purple-100 space-y-3">
+                                        <div className="flex items-center justify-between">
+                                            <p className="text-[9px] font-black text-purple-700 uppercase tracking-widest">Split Ratio Preset</p>
+                                            <div className="flex gap-1">
+                                                {["10/90", "20/80", "50/50", "70/30", "90/10"].map((ratio) => {
+                                                    const [cPercent] = ratio.split("/").map(Number);
+                                                    return (
+                                                        <button
+                                                            key={ratio}
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setBillSettleSplitRatio(ratio);
+                                                                const cashPart = Number(((currentSettleAmt * cPercent) / 100).toFixed(0));
+                                                                setBillSettleSplit({
+                                                                    cash: cashPart,
+                                                                    online: currentSettleAmt - cashPart
+                                                                });
+                                                            }}
+                                                            className={cn(
+                                                                "px-2 py-0.5 text-[8px] font-black uppercase rounded tracking-wider transition-all",
+                                                                billSettleSplitRatio === ratio
+                                                                    ? "bg-purple-600 text-white shadow-sm"
+                                                                    : "bg-white text-purple-600 border border-purple-200 hover:bg-purple-100"
+                                                            )}
+                                                        >
+                                                            {ratio}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <div>
+                                                <label className="text-[9px] font-black uppercase tracking-wider text-emerald-700 mb-1 block">💵 Cash Portion (₹)</label>
+                                                <input
+                                                    type="number"
+                                                    value={billSettleSplit.cash}
+                                                    onChange={(e) => {
+                                                        const cVal = Number(e.target.value) || 0;
+                                                        setBillSettleSplit({
+                                                            cash: e.target.value,
+                                                            online: Math.max(0, currentSettleAmt - cVal)
+                                                        });
+                                                    }}
+                                                    className="w-full h-10 px-3 bg-white border border-emerald-200 rounded-xl text-sm font-black text-emerald-900 outline-none focus:border-emerald-500"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="text-[9px] font-black uppercase tracking-wider text-teal-700 mb-1 block">⚡ Easebuzz Portion (₹)</label>
+                                                <input
+                                                    type="number"
+                                                    value={billSettleSplit.online}
+                                                    onChange={(e) => {
+                                                        const oVal = Number(e.target.value) || 0;
+                                                        setBillSettleSplit({
+                                                            online: e.target.value,
+                                                            cash: Math.max(0, currentSettleAmt - oVal)
+                                                        });
+                                                    }}
+                                                    className="w-full h-10 px-3 bg-white border border-teal-200 rounded-xl text-sm font-black text-teal-900 outline-none focus:border-teal-500"
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Action Buttons */}
+                                <div className="flex gap-3 pt-2">
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        onClick={() => setShowBillSettleModal(false)}
+                                        className="flex-1 h-13 rounded-2xl border-slate-200 text-slate-600 font-black uppercase text-xs"
+                                    >
+                                        Cancel
+                                    </Button>
+                                    <Button
+                                        type="button"
+                                        disabled={isSubmittingBillSettle || currentSettleAmt <= 0}
+                                        onClick={handleSettleIndividualBill}
+                                        className="flex-[2] h-13 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-black text-xs uppercase tracking-wider rounded-2xl shadow-lg shadow-emerald-500/20 transition-all flex items-center justify-center gap-2"
+                                    >
+                                        {isSubmittingBillSettle ? (
+                                            <>
+                                                <Loader2 className="h-4 w-4 animate-spin" /> Settling Bill...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <CheckCircle2 className="h-4 w-4" /> Confirm & Settle ₹{currentSettleAmt.toFixed(0)}
+                                            </>
+                                        )}
+                                    </Button>
+                                </div>
+                            </div>
+                        );
+                    })()}
+                </DialogContent>
+            </Dialog>
+
             {showScanner && (
                 <QRScanner
                     onScan={handleQRScan}
