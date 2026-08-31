@@ -108,18 +108,65 @@ export const createUserAdmin = async (req: AuthenticatedRequest, res: Response) 
             }
         }
 
-        const hashedPassword = password ? await bcrypt.hash(password, 10) : undefined;
+        const cleanPhone = phone ? String(phone).trim().replace(/\D/g, "") : "";
+        if (!cleanPhone) {
+            return res.status(400).json({ message: "A valid mobile phone number is required." });
+        }
+
+        const cleanEmail = (email && String(email).trim().length > 0) ? String(email).trim().toLowerCase() : null;
+
+        const hashedPassword = password && String(password).trim().length > 0 
+            ? await bcrypt.hash(String(password).trim(), 10) 
+            : undefined;
+
+        // Check if user with phone already exists
+        const existingByPhone = await prisma.user.findUnique({
+            where: { phone: cleanPhone },
+            include: { location: { select: { id: true, name: true } } }
+        });
+
+        if (existingByPhone) {
+            // Update and elevate existing user profile
+            const user = await prisma.user.update({
+                where: { id: existingByPhone.id },
+                data: {
+                    name: name ? String(name).trim() : existingByPhone.name,
+                    email: cleanEmail !== undefined ? cleanEmail : existingByPhone.email,
+                    role: role || existingByPhone.role,
+                    locationId: targetLocationId || existingByPhone.locationId,
+                    ...(hashedPassword ? { password: hashedPassword } : {}),
+                    isActive: true,
+                    baseSalary: baseSalary ? parseFloat(String(baseSalary)) : existingByPhone.baseSalary,
+                    joiningDate: joiningDate ? new Date(joiningDate) : existingByPhone.joiningDate
+                },
+                include: {
+                    location: { select: { id: true, name: true } }
+                }
+            });
+
+            return res.status(200).json(user);
+        }
+
+        // Check if email already used by another account
+        if (cleanEmail) {
+            const existingByEmail = await prisma.user.findUnique({
+                where: { email: cleanEmail }
+            });
+            if (existingByEmail) {
+                return res.status(409).json({ message: "Email address already registered with another user." });
+            }
+        }
 
         const user = await prisma.user.create({
             data: {
-                phone,
-                name,
-                email,
-                role,
+                phone: cleanPhone,
+                name: name ? String(name).trim() : null,
+                email: cleanEmail,
+                role: role || "USER",
                 locationId: targetLocationId,
                 password: hashedPassword,
                 isActive: true,
-                baseSalary: baseSalary ? parseFloat(baseSalary) : null,
+                baseSalary: baseSalary ? parseFloat(String(baseSalary)) : null,
                 joiningDate: joiningDate ? new Date(joiningDate) : null
             },
             include: {
@@ -129,7 +176,10 @@ export const createUserAdmin = async (req: AuthenticatedRequest, res: Response) 
 
         res.status(201).json(user);
     } catch (error: any) {
-        if (error.code === 'P2002') return res.status(409).json({ message: "Phone number already registered in merchandise grid." });
+        if (error.code === 'P2002') {
+            const targetField = error.meta?.target ? ` (${Array.isArray(error.meta.target) ? error.meta.target.join(", ") : error.meta.target})` : "";
+            return res.status(409).json({ message: `Unique constraint conflict on user registry${targetField}.` });
+        }
         res.status(500).json({ error: error.message });
     }
 };

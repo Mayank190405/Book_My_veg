@@ -188,6 +188,7 @@ server.listen(PORT, () => __awaiter(void 0, void 0, void 0, function* () {
             ADD COLUMN IF NOT EXISTS "returnReason" TEXT,
             ADD COLUMN IF NOT EXISTS "returnStatus" TEXT;
         `);
+        yield prisma_1.default.$executeRawUnsafe(`UPDATE "User" SET "email" = NULL WHERE "email" = '' OR "email" = ' ';`).catch(() => null);
         logger_1.default.info("✅ PostgreSQL 'Order' delivery/packer columns synchronized");
     }
     catch (e) {

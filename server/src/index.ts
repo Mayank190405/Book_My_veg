@@ -195,6 +195,7 @@ server.listen(PORT, async () => {
             ADD COLUMN IF NOT EXISTS "returnReason" TEXT,
             ADD COLUMN IF NOT EXISTS "returnStatus" TEXT;
         `);
+        await prisma.$executeRawUnsafe(`UPDATE "User" SET "email" = NULL WHERE "email" = '' OR "email" = ' ';`).catch(() => null);
         logger.info("✅ PostgreSQL 'Order' delivery/packer columns synchronized");
     } catch (e: any) {
         logger.warn("Order table column sync warning: " + e.message);
