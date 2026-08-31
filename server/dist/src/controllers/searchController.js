@@ -73,34 +73,32 @@ const clearSearchHistory = (req, res) => __awaiter(void 0, void 0, void 0, funct
     }
 });
 exports.clearSearchHistory = clearSearchHistory;
-// Get popular searches (aggregated) - basic implementation
-// Ideally this would be cached or use Redis for heavy load
 const getPopularSearches = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    const DEFAULT_POPULAR = [
+        "Organic Potato",
+        "Fresh Onion",
+        "Alphonso Mango",
+        "Mint Leaves",
+        "Green Chili",
+        "Desi Ghee",
+        "Fresh Tomato",
+        "Coriander"
+    ];
     try {
-        // Simple distinct aggregation for MVP
-        // In real app, use Redis sorted set
-        const popular = yield prisma_1.default.searchHistory.groupBy({
-            by: ["query"],
-            _sum: { count: true },
-            orderBy: { _sum: { count: "desc" } },
+        const popular = yield prisma_1.default.searchHistory.findMany({
+            orderBy: { count: "desc" },
             take: 10,
+            select: { query: true }
         });
-        // Map to simple array of strings
-        let results = popular.map(p => p.query);
+        const results = Array.from(new Set(popular.map(p => p.query))).filter(Boolean);
         if (results.length === 0) {
-            results = [
-                "Organic Potato",
-                "Fresh Onion",
-                "Alphonso Mango",
-                "Mint Leaves",
-                "Green Chili",
-                "Desi Ghee"
-            ];
+            return res.json(DEFAULT_POPULAR);
         }
         res.json(results);
     }
     catch (error) {
-        res.status(500).json({ message: "Error fetching popular searches" });
+        console.warn("[SearchController] Popular search fallback notice");
+        res.json(DEFAULT_POPULAR);
     }
 });
 exports.getPopularSearches = getPopularSearches;

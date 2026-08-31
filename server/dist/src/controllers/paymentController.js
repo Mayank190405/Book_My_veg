@@ -301,7 +301,7 @@ const initiatePayment = (req, res) => __awaiter(void 0, void 0, void 0, function
 });
 exports.initiatePayment = initiatePayment;
 const generatePaymentLink = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a, _b, _c, _d;
+    var _a, _b, _c, _d, _e, _f;
     const { orderId } = req.params;
     try {
         const order = yield prisma_1.default.order.findUnique({
@@ -324,19 +324,20 @@ const generatePaymentLink = (req, res) => __awaiter(void 0, void 0, void 0, func
             const pendingOnlinePayment = yield prisma_1.default.payment.findFirst({
                 where: { orderId: order.id, method: "ONLINE", status: "PENDING" }
             });
-            const amountToCharge = pendingOnlinePayment
-                ? Number(pendingOnlinePayment.amount).toFixed(2)
-                : Number(order.totalAmount).toFixed(2);
+            const requestedAmount = ((_a = req.body) === null || _a === void 0 ? void 0 : _a.amount) ? Number(req.body.amount) : (((_b = req.query) === null || _b === void 0 ? void 0 : _b.amount) ? Number(req.query.amount) : null);
+            const amountToCharge = requestedAmount
+                ? requestedAmount.toFixed(2)
+                : (pendingOnlinePayment ? Number(pendingOnlinePayment.amount).toFixed(2) : Number(order.totalAmount).toFixed(2));
             try {
                 const protocol = req.headers["x-forwarded-proto"] || (req.secure ? "https" : "http");
                 const callbackUrl = `${protocol}://${req.headers.host}/api/v1/payments/easebuzz/callback`;
                 const addressObj = order.shippingAddress;
                 const customerName = (addressObj === null || addressObj === void 0 ? void 0 : addressObj.name) || order.user.name || "Customer";
                 const customerPhone = (addressObj === null || addressObj === void 0 ? void 0 : addressObj.phone) || order.user.phone || "9999999999";
-                const useIframe = process.env.EASEBUZZ_IFRAME === "1";
+                const useIframe = process.env.EASEBUZZ_IFRAME !== "0";
                 const apiName = useIframe ? "initiate_payment_iframe" : "initiate_payment";
                 const easebuzzRes = yield axios_1.default.post(`${process.env.EASEBUZZ_SERVICE_URL.replace(/\/$/, "")}/easebuzz?api_name=${apiName}`, {
-                    txnid: order.id,
+                    txnid: requestedAmount ? `${order.id}_P${Date.now()}` : order.id,
                     amount: amountToCharge,
                     firstname: customerName,
                     email: order.user.email || "customer@example.com",
@@ -357,20 +358,23 @@ const generatePaymentLink = (req, res) => __awaiter(void 0, void 0, void 0, func
                             key: easebuzzRes.data.data.key,
                             accessKey: easebuzzRes.data.data.access_key,
                             env: easebuzzRes.data.data.env,
+                            amount: amountToCharge
                         });
                     }
                     else if (easebuzzRes.data.paymentLink) {
                         return res.json({
                             paymentLink: easebuzzRes.data.paymentLink,
+                            amount: amountToCharge
                         });
                     }
                 }
-                throw new Error(((_a = easebuzzRes.data) === null || _a === void 0 ? void 0 : _a.message) || "Failed to initiate payment with Easebuzz");
+                throw new Error(((_c = easebuzzRes.data) === null || _c === void 0 ? void 0 : _c.message) || "Failed to initiate payment with Easebuzz");
             }
             catch (easebuzzError) {
-                logger_1.default.error(`[Payment] Easebuzz generation failed, falling back to mock gateway. Error: ${easebuzzError.message}, Data: ${JSON.stringify((_b = easebuzzError.response) === null || _b === void 0 ? void 0 : _b.data)}`);
+                logger_1.default.error(`[Payment] Easebuzz generation failed, falling back to mock gateway. Error: ${easebuzzError.message}, Data: ${JSON.stringify((_d = easebuzzError.response) === null || _d === void 0 ? void 0 : _d.data)}`);
                 return res.json({
                     paymentLink: `${baseUrl.replace(/\/$/, "")}/payment/mock-gateway?orderId=${orderId}&amount=${amountToCharge}`,
+                    amount: amountToCharge
                 });
             }
         }
@@ -405,7 +409,7 @@ const generatePaymentLink = (req, res) => __awaiter(void 0, void 0, void 0, func
             });
         }
         res.json({
-            paymentLink: ((_c = session.payment_links) === null || _c === void 0 ? void 0 : _c.web) || ((_d = session.payment_links) === null || _d === void 0 ? void 0 : _d.mobile),
+            paymentLink: ((_e = session.payment_links) === null || _e === void 0 ? void 0 : _e.web) || ((_f = session.payment_links) === null || _f === void 0 ? void 0 : _f.mobile),
         });
     }
     catch (error) {

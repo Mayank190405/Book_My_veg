@@ -16,7 +16,7 @@ exports.sendRegistrationThankYouViaWhatsapp = exports.sendOrderStatusUpdateViaWh
 const axios_1 = __importDefault(require("axios"));
 const dotenv_1 = __importDefault(require("dotenv"));
 dotenv_1.default.config();
-const MBGCARD_API_URL = process.env.MBGCARD_API_URL || "https://chatbot.digitalmbg.com/v1/whatsapp/send_meta_templet";
+const MBGCARD_API_URL = process.env.MBGCARD_API_URL || "https://chatbot.digitalmbg.com/v1/whatsapp/send_templet";
 const MBGCARD_API_TOKEN = process.env.MBGCARD_API_TOKEN || "91edd77281c02b04c4bdfb36aa5e4978";
 const MBGCARD_TEMPLATE_ID = process.env.MBGCARD_TEMPLATE_ID || "login";
 const MBGCARD_OTP_FLOW_ID = process.env.MBGCARD_OTP_FLOW_ID || "flow_1782732506015";
@@ -31,8 +31,10 @@ const sendOtpViaWhatsapp = (phone, otp) => __awaiter(void 0, void 0, void 0, fun
     const formattedPhone = cleanPhone.startsWith("91") ? cleanPhone : `91${cleanPhone}`;
     const payload = {
         templateName: MBGCARD_TEMPLATE_ID, // defaults to "login"
-        to: formattedPhone, // "to" field as required by send_meta_templet
+        senderId: formattedPhone,
+        to: formattedPhone,
         variables: {
+            header: [],
             body: [otp]
         }
     };
@@ -50,7 +52,8 @@ const sendOtpViaWhatsapp = (phone, otp) => __awaiter(void 0, void 0, void 0, fun
                 headers: {
                     'Content-Type': 'application/json',
                     'accept': '*/*',
-                    'x-api-key': MBGCARD_API_TOKEN
+                    'x-api-key': MBGCARD_API_TOKEN,
+                    'User-Agent': 'BookMyVeg-Server/1.0'
                 }
             });
             console.log("MBG Card OTP Response:", response.data);
@@ -102,7 +105,7 @@ const sendFlowViaChatHub = (phone, flowId, name, customFields) => __awaiter(void
         name: name || "Customer",
         actions
     };
-    const url = "https://chatbot.digitalmbg.com/v1/contacts/send_flow";
+    const url = process.env.MBGCARD_FLOW_URL || "https://chatbot.digitalmbg.com/v1/contacts/send_flow";
     try {
         console.log(`[ChatHub Flow] Sending flow ${flowId} to ${formattedPhone} with custom fields:`, customFields);
         if (!MBGCARD_API_TOKEN) {
@@ -113,7 +116,8 @@ const sendFlowViaChatHub = (phone, flowId, name, customFields) => __awaiter(void
             timeout: 10000,
             headers: {
                 'Content-Type': 'application/json',
-                'x-api-key': MBGCARD_API_TOKEN
+                'x-api-key': MBGCARD_API_TOKEN,
+                'User-Agent': 'BookMyVeg-Server/1.0'
             }
         });
         console.log("[ChatHub Flow] Response:", response.data);
@@ -132,24 +136,23 @@ exports.sendFlowViaChatHub = sendFlowViaChatHub;
  * Fetch approved WhatsApp templates from MBG Card.
  */
 const getMyMetaTemplates = () => __awaiter(void 0, void 0, void 0, function* () {
-    var _a;
+    const url = process.env.MBGCARD_TEMPLATES_URL || "https://chatbot.digitalmbg.com/v1/whatsapp/get_my_meta_templets";
     try {
-        console.log("Fetching Meta templates from MBG Card...");
-        const response = yield axios_1.default.get("https://chatbot.digitalmbg.com/v1/whatsapp/get_my_meta_templets", {
+        console.log(`Fetching Meta templates from MBG Card (${url})...`);
+        const response = yield axios_1.default.get(url, {
             headers: {
                 'accept': 'application/json',
-                'x-api-key': MBGCARD_API_TOKEN
-            }
+                'Content-Type': 'application/json',
+                'x-api-key': MBGCARD_API_TOKEN,
+                'User-Agent': 'BookMyVeg-Server/1.0'
+            },
+            timeout: 8000
         });
         return response.data;
     }
     catch (error) {
-        console.error("Error fetching MBG Card Meta templates:", {
-            code: error.code,
-            message: error.message,
-            response: (_a = error.response) === null || _a === void 0 ? void 0 : _a.data
-        });
-        throw error;
+        console.warn("MBG Card Meta templates fetch notice:", error.message);
+        return { success: false, data: [] };
     }
 });
 exports.getMyMetaTemplates = getMyMetaTemplates;
@@ -176,21 +179,24 @@ const sendTemplateViaChatHub = (phone, templateName, variables, dynamicMedia) =>
     const formattedPhone = cleanPhone.startsWith("91") ? cleanPhone : `91${cleanPhone}`;
     const payload = {
         templateName,
+        senderId: formattedPhone,
         to: formattedPhone,
         variables: {
+            header: (variables === null || variables === void 0 ? void 0 : variables.header) || [],
             body: (variables === null || variables === void 0 ? void 0 : variables.body) || []
         },
         dynamicMedia
     };
-    const url = "https://chatbot.digitalmbg.com/v1/whatsapp/send_meta_templet";
+    const url = MBGCARD_API_URL;
     try {
-        console.log(`[ChatHub Template] Sending template ${templateName} to ${formattedPhone}`);
+        console.log(`[ChatHub Template] Sending template ${templateName} to ${formattedPhone} via ${url}`);
         const response = yield axios_1.default.post(url, payload, {
             timeout: 10000,
             headers: {
                 'Content-Type': 'application/json',
                 'accept': '*/*',
-                'x-api-key': MBGCARD_API_TOKEN
+                'x-api-key': MBGCARD_API_TOKEN,
+                'User-Agent': 'BookMyVeg-Server/1.0'
             }
         });
         console.log("[ChatHub Template] Response:", response.data);
@@ -224,7 +230,7 @@ exports.sendInvoicePaidViaWhatsapp = sendInvoicePaidViaWhatsapp;
 const sendInvoiceDueViaWhatsapp = (phone, customerName, invoiceNo, totalAmount, paymentMode, dueAmount, userId, orderId) => __awaiter(void 0, void 0, void 0, function* () {
     const origin = process.env.CLIENT_URL || "https://bookmyveg.co.in";
     const invoicePdfLink = `${origin}/invoice/${orderId}`;
-    const publicPayLink = `${origin}/pay?userid=${userId}&number=${phone}&billid=${orderId}`;
+    const publicPayLink = `${origin}/pay?userid=${userId}&number=${phone}&billid=${orderId}&amount=${dueAmount}&lockAmount=true`;
     return (0, exports.sendTemplateViaChatHub)(phone, "bill_created_due", {
         body: [customerName, invoiceNo, String(totalAmount), String(dueAmount), invoicePdfLink, publicPayLink]
     });
@@ -232,7 +238,7 @@ const sendInvoiceDueViaWhatsapp = (phone, customerName, invoiceNo, totalAmount, 
 exports.sendInvoiceDueViaWhatsapp = sendInvoiceDueViaWhatsapp;
 const sendPaymentReminderViaWhatsapp = (phone, customerName, dueAmount, invoiceNo, userId, orderId) => __awaiter(void 0, void 0, void 0, function* () {
     const origin = process.env.CLIENT_URL || "https://bookmyveg.co.in";
-    const publicPayLink = `${origin}/pay?userid=${userId}&number=${phone}&billid=${orderId}`;
+    const publicPayLink = `${origin}/pay?userid=${userId}&number=${phone}&billid=${orderId}&amount=${dueAmount}&lockAmount=true`;
     return (0, exports.sendTemplateViaChatHub)(phone, "due_payment_reminder", {
         body: [customerName, String(dueAmount), invoiceNo, publicPayLink]
     });

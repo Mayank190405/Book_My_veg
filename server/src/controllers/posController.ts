@@ -440,6 +440,8 @@ export const processPOSOrder = async (req: AuthenticatedRequest, res: Response, 
         discountAmount, 
         couponId,
         packerId,
+        isDelivery = false,
+        deliveryAddress,
         duePaymentAmount = 0,
         paidAmount = 0,
         splitPayments, // Array of { method: "CASH" | "EASEBUZZ" | "WALLET", amount: number, transactionId?: string, denominations?: any }
@@ -453,6 +455,10 @@ export const processPOSOrder = async (req: AuthenticatedRequest, res: Response, 
 
     if (!staffId || !locationId) {
         return next(new AppError("Operational context missing (Staff/Location)", 401));
+    }
+
+    if (!packerId && !suspend) {
+        return next(new AppError("Packer selection is compulsory for every bill. Please select a packer before checkout.", 400));
     }
 
     try {
@@ -551,6 +557,15 @@ export const processPOSOrder = async (req: AuthenticatedRequest, res: Response, 
                     where: { orderId: existingOrder.id }
                 });
 
+                let calculatedAddress: any = { type: "IN_STORE", note: "Handover at Counter / In-Store Pickup" };
+                if (isDelivery) {
+                    const cust = await tx.user.findUnique({
+                        where: { id: customerId },
+                        include: { addresses: { where: { isDefault: true }, take: 1 } }
+                    });
+                    calculatedAddress = deliveryAddress || (cust?.addresses?.[0] ? cust.addresses[0] : (cust?.profileAddress ? { fullAddress: cust.profileAddress } : { type: "DELIVERY", note: "Customer Delivery" }));
+                }
+
                 order = await tx.order.update({
                     where: { id: existingOrder.id },
                     data: {
@@ -560,6 +575,8 @@ export const processPOSOrder = async (req: AuthenticatedRequest, res: Response, 
                         paymentStatus: pStatus,
                         isPaid: isFull,
                         isCredit: isCredit,
+                        isDelivery: Boolean(isDelivery),
+                        shippingAddress: calculatedAddress,
                         packerId,
                         staffId: validatedStaffId,
                         items: {
@@ -574,6 +591,15 @@ export const processPOSOrder = async (req: AuthenticatedRequest, res: Response, 
                     }
                 });
             } else {
+                let calculatedAddress: any = { type: "IN_STORE", note: "Handover at Counter / In-Store Pickup" };
+                if (isDelivery) {
+                    const cust = await tx.user.findUnique({
+                        where: { id: customerId },
+                        include: { addresses: { where: { isDefault: true }, take: 1 } }
+                    });
+                    calculatedAddress = deliveryAddress || (cust?.addresses?.[0] ? cust.addresses[0] : (cust?.profileAddress ? { fullAddress: cust.profileAddress } : { type: "DELIVERY", note: "Customer Delivery" }));
+                }
+
                 order = await tx.order.create({
                     data: {
                         id: generateOrderId(),
@@ -585,9 +611,10 @@ export const processPOSOrder = async (req: AuthenticatedRequest, res: Response, 
                         paymentStatus: pStatus,
                         isPaid: isFull,
                         isCredit: isCredit,
-                        shippingAddress: { type: "POS_IN_STORE", note: "Handover at Counter" } as any,
+                        isDelivery: Boolean(isDelivery),
+                        shippingAddress: calculatedAddress,
                         channel: Channel.POS,
-                        notes: `POS Transaction by ${staffId}${paymentSlices.length > 1 ? " (SPLIT_PAYMENT)" : ""}`,
+                        notes: `POS Transaction by ${staffId} [${isDelivery ? "DELIVERY" : "IN_STORE"}]${paymentSlices.length > 1 ? " (SPLIT_PAYMENT)" : ""}`,
                         packerId,
                         staffId: validatedStaffId,
                         items: {
@@ -602,7 +629,7 @@ export const processPOSOrder = async (req: AuthenticatedRequest, res: Response, 
                         statusHistory: {
                             create: {
                                 status: (suspend ? "PENDING" : "CONFIRMED") as OrderStatus,
-                                remark: `POS Checkout (${pStatus}) - Paid: ₹${effectivePaid}`,
+                                remark: `POS Checkout (${pStatus}) [${isDelivery ? "DELIVERY" : "IN_STORE"}] - Paid: ₹${effectivePaid}`,
                                 changedBy: staffId
                             }
                         }

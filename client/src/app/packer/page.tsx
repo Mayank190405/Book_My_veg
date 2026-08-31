@@ -2,294 +2,475 @@
 
 import { useState, useEffect } from "react";
 import api from "@/services/api";
-import { Toaster, toast } from "sonner";
+import { toast } from "sonner";
 import { 
     Package, 
     CheckCircle2, 
-    Camera, 
+    PlusCircle,
+    QrCode, 
     ClipboardList, 
-    History, 
-    AlertCircle, 
-    ChevronDown, 
-    ChevronUp, 
-    Image as ImageIcon,
-    FileText,
-    Send
+    Search, 
+    Trash2, 
+    Phone, 
+    AlertTriangle, 
+    Check, 
+    X,
+    Clock,
+    Loader2
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { initSocket, getSocket } from "@/services/socketService";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import QRScanner from "@/components/ui/qr-scanner";
 import { useUserStore } from "@/store/useUserStore";
-import { Volume2, VolumeX } from "lucide-react";
 
 export default function PackerDashboard() {
     const { user } = useUserStore();
     const [assignments, setAssignments] = useState<any[]>([]);
-    const [packedCount, setPackedCount] = useState(0);
     const [loading, setLoading] = useState(true);
-    const [updatingId, setUpdatingId] = useState<string | null>(null);
-    const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
-    
-    // Form states for individual order
-    const [photoUrl, setPhotoUrl] = useState<string>("");
-    const [notes, setNotes] = useState<string>("");
-    const [verifiedItems, setVerifiedItems] = useState<Record<string, boolean>>({});
 
-    const fetchData = async () => {
+    // Modals
+    const [showCreateModal, setShowCreateModal] = useState(false);
+    const [showQrScanner, setShowQrScanner] = useState(false);
+    const [manualBillId, setManualBillId] = useState("");
+    const [validatingQr, setValidatingQr] = useState(false);
+    const [validationResult, setValidationResult] = useState<{ success: boolean; message: string; order?: any } | null>(null);
+
+    // Order Creation Form State
+    const [customerQuery, setCustomerQuery] = useState("");
+    const [customerResults, setCustomerResults] = useState<any[]>([]);
+    const [searchingCustomer, setSearchingCustomer] = useState(false);
+    const [selectedCustomer, setSelectedCustomer] = useState<any>(null);
+    const [isNewCustomer, setIsNewCustomer] = useState(false);
+    const [newCustName, setNewCustName] = useState("");
+    const [newCustPhone, setNewCustPhone] = useState("");
+    const [newCustAddress, setNewCustAddress] = useState("");
+
+    // Product Search & Packing Items
+    const [productQuery, setProductQuery] = useState("");
+    const [productResults, setProductResults] = useState<any[]>([]);
+    const [searchingProduct, setSearchingProduct] = useState(false);
+    const [packingList, setPackingList] = useState<Array<{
+        productId: string;
+        code: string;
+        name: string;
+        variantId?: string;
+        variantName?: string;
+        sellingPrice: number;
+        quantity: number;
+        unit: string;
+        instructions?: string;
+    }>>([]);
+    const [orderNotes, setOrderNotes] = useState("");
+    const [submittingOrder, setSubmittingOrder] = useState(false);
+
+    const fetchOrders = async () => {
         setLoading(true);
         try {
-            const [ordersRes, countRes] = await Promise.all([
-                api.get("/orders/packing/assignments"),
-                api.get("/orders/packing/count")
-            ]);
-            setAssignments(ordersRes.data.data || []);
-            setPackedCount(countRes.data.count || 0);
+            const res = await api.get("/orders/packing/assignments");
+            setAssignments(res.data.data || []);
         } catch (error) {
-            toast.error("Cloud synchronization failed");
+            toast.error("Failed to load warehouse packing registry");
         } finally {
             setLoading(false);
         }
     };
 
     useEffect(() => {
-        fetchData();
+        fetchOrders();
     }, []);
 
-    const toggleItem = (itemId: string) => {
-        setVerifiedItems(prev => ({
-            ...prev,
-            [itemId]: !prev[itemId]
-        }));
+    // Search Customers by Name or Phone
+    useEffect(() => {
+        if (!customerQuery.trim() || selectedCustomer) {
+            setCustomerResults([]);
+            return;
+        }
+        const timer = setTimeout(async () => {
+            setSearchingCustomer(true);
+            try {
+                const res = await api.get(`/users/admin/all?search=${encodeURIComponent(customerQuery.trim())}&limit=5`);
+                setCustomerResults(res.data.users || res.data || []);
+            } catch (err) {
+                // Ignore silent search errors
+            } finally {
+                setSearchingCustomer(false);
+            }
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [customerQuery, selectedCustomer]);
+
+    // Search Products by Code / Name
+    useEffect(() => {
+        if (!productQuery.trim()) {
+            setProductResults([]);
+            return;
+        }
+        const timer = setTimeout(async () => {
+            setSearchingProduct(true);
+            try {
+                const res = await api.get(`/products?search=${encodeURIComponent(productQuery.trim())}&limit=8`);
+                setProductResults(res.data.products || res.data || []);
+            } catch (err) {
+                // Ignore silent errors
+            } finally {
+                setSearchingProduct(false);
+            }
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [productQuery]);
+
+    // Add Product to Packing List
+    const addProductToPackingList = (product: any, variant?: any) => {
+        const existingIdx = packingList.findIndex(
+            item => item.productId === product.id && (variant ? item.variantId === variant.id : !item.variantId)
+        );
+
+        if (existingIdx > -1) {
+            const updated = [...packingList];
+            updated[existingIdx].quantity += 1;
+            setPackingList(updated);
+            toast.info(`Updated quantity for ${product.name}`);
+        } else {
+            const price = variant ? Number(variant.price) : Number(product.basePrice || 0);
+            const unit = variant?.weightUnit || product.weightUnit || "KG";
+            const code = product.barcode || product.sku || product.id.slice(0, 6).toUpperCase();
+            
+            setPackingList(prev => [
+                ...prev,
+                {
+                    productId: product.id,
+                    code,
+                    name: product.name,
+                    variantId: variant?.id,
+                    variantName: variant?.name,
+                    sellingPrice: price,
+                    quantity: 1,
+                    unit,
+                    instructions: ""
+                }
+            ]);
+            toast.success(`Added ${product.name} to packing list`);
+        }
+        setProductQuery("");
+        setProductResults([]);
     };
 
-    const submitPacking = async (orderId: string) => {
-        const order = assignments.find(a => a.id === orderId);
-        const allVerified = order.items.every((item: any) => verifiedItems[item.id]);
-        
-        if (!allVerified && !notes) {
-            toast.error("Please provide a reason why some items are not packed");
+    const updateItemQty = (index: number, newQty: number) => {
+        if (newQty <= 0) {
+            removeItem(index);
+            return;
+        }
+        const updated = [...packingList];
+        updated[index].quantity = newQty;
+        setPackingList(updated);
+    };
+
+    const updateItemInstructions = (index: number, note: string) => {
+        const updated = [...packingList];
+        updated[index].instructions = note;
+        setPackingList(updated);
+    };
+
+    const removeItem = (index: number) => {
+        setPackingList(prev => prev.filter((_, i) => i !== index));
+    };
+
+    const handleCreateOrder = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (packingList.length === 0) {
+            toast.error("Please add at least one product to the packing list");
             return;
         }
 
-        setUpdatingId(orderId);
+        let customerIdVal = selectedCustomer?.id;
+        let custNameVal = selectedCustomer?.name || newCustName;
+        let custPhoneVal = selectedCustomer?.phone || newCustPhone;
+        let custAddrVal = selectedCustomer?.addresses?.[0]?.fullAddress || selectedCustomer?.profileAddress || newCustAddress;
+
+        if (!customerIdVal && !custPhoneVal) {
+            toast.error("Customer phone or tagged customer is required");
+            return;
+        }
+
+        setSubmittingOrder(true);
         try {
-            await api.patch(`/orders/packing/${orderId}/details`, {
-                packerPhoto: photoUrl,
-                packerNotes: notes,
-                status: "PACKED"
+            const res = await api.post("/orders/packing/create-order", {
+                customerId: customerIdVal,
+                customerName: custNameVal,
+                customerPhone: custPhoneVal,
+                customerAddress: custAddrVal,
+                items: packingList.map(item => ({
+                    productId: item.productId,
+                    variantId: item.variantId,
+                    quantity: item.quantity,
+                    sellingPrice: item.sellingPrice,
+                    notes: item.instructions
+                })),
+                notes: orderNotes,
+                isDelivery: true
             });
-            toast.success("Order verified and packed");
-            
-            // Reset local states
-            setPhotoUrl("");
-            setNotes("");
-            setVerifiedItems({});
-            setExpandedOrder(null);
-            
-            fetchData();
-        } catch (error) {
-            toast.error("Protocol submission failed");
+
+            toast.success("Order marked as PACKED and registered for billing!", {
+                description: `Order ID: #${res.data.order?.id?.slice(-6).toUpperCase()}`
+            });
+
+            // Reset Form
+            setShowCreateModal(false);
+            setSelectedCustomer(null);
+            setIsNewCustomer(false);
+            setCustomerQuery("");
+            setNewCustName("");
+            setNewCustPhone("");
+            setNewCustAddress("");
+            setPackingList([]);
+            setOrderNotes("");
+            fetchOrders();
+        } catch (error: any) {
+            toast.error(error.response?.data?.message || "Failed to create packed order");
         } finally {
-            setUpdatingId(null);
+            setSubmittingOrder(false);
         }
     };
 
-    if (loading) {
-        return (
-            <div className="flex flex-col items-center justify-center p-12 gap-4">
-                <div className="w-8 h-8 border-4 border-slate-200 border-t-blue-600 rounded-full animate-spin" />
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest animate-pulse">Accessing Warehouse Logs...</p>
-            </div>
-        );
-    }
+    // QR Validation Trigger
+    const handleScanQr = async (scannedText: string) => {
+        setShowQrScanner(false);
+        if (!scannedText.trim()) return;
+
+        setValidatingQr(true);
+        setValidationResult(null);
+
+        try {
+            const res = await api.post("/orders/packing/validate-qr", {
+                qrData: scannedText.trim()
+            });
+
+            setValidationResult({
+                success: true,
+                message: res.data.message || "Bill Validated Successfully",
+                order: res.data.order
+            });
+            toast.success("Bill Validated Successfully");
+            fetchOrders();
+        } catch (error: any) {
+            const errMsg = error.response?.data?.message || "This bill was not packed by you. Please verify the order.";
+            setValidationResult({
+                success: false,
+                message: errMsg
+            });
+            toast.error(errMsg);
+        } finally {
+            setValidatingQr(false);
+        }
+    };
+
+    const handleManualQrSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!manualBillId.trim()) return;
+        handleScanQr(manualBillId.trim());
+        setManualBillId("");
+    };
 
     return (
-        <div className="space-y-6 animate-in fade-in duration-500 pb-10">
-            {/* Stats Header */}
-            <div className="grid grid-cols-2 gap-3">
-                <div className="bg-white p-4 rounded-3xl shadow-sm border border-slate-100 flex items-center gap-4">
-                    <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center shadow-inner">
-                        <ClipboardList className="h-5 w-5" />
-                    </div>
+        <div className="space-y-6 pb-24 animate-in fade-in duration-500 max-w-2xl mx-auto">
+            {/* Header Action Bar */}
+            <div className="bg-white p-6 rounded-[2.5rem] shadow-xl border border-blue-50 relative overflow-hidden">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                     <div>
-                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Backlog</p>
-                        <p className="text-lg font-bold text-slate-900 leading-none">{assignments.length}</p>
+                        <h2 className="text-xl font-black text-slate-900 tracking-tight">Packer Control Hub</h2>
+                        <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-0.5">
+                            Operator: <span className="text-blue-600 font-black">{user?.name || "Active Packer"}</span>
+                        </p>
                     </div>
-                </div>
-                <div className="bg-white p-4 rounded-3xl shadow-sm border border-slate-100 flex items-center gap-4">
-                    <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center shadow-inner">
-                        <History className="h-5 w-5" />
-                    </div>
-                    <div>
-                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Log Cycle</p>
-                        <p className="text-lg font-bold text-slate-900 leading-none">{packedCount}</p>
+
+                    <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto">
+                        <Button 
+                            onClick={() => setShowCreateModal(true)}
+                            className="flex-1 sm:flex-initial h-13 px-5 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-black text-xs uppercase tracking-wider shadow-lg shadow-blue-200 flex items-center gap-2 active:scale-95"
+                        >
+                            <PlusCircle className="h-4 w-4" />
+                            Create Order
+                        </Button>
+                        <Button 
+                            onClick={() => setShowQrScanner(true)}
+                            variant="outline"
+                            className="flex-1 sm:flex-initial h-13 px-5 rounded-2xl border-2 border-slate-900 bg-slate-900 hover:bg-black text-white font-black text-xs uppercase tracking-wider shadow-lg shadow-slate-200 flex items-center gap-2 active:scale-95"
+                        >
+                            <QrCode className="h-4 w-4 text-emerald-400" />
+                            Validate Bill QR
+                        </Button>
                     </div>
                 </div>
             </div>
 
-            {assignments.length === 0 ? (
-                <div className="text-center p-12 bg-white rounded-3xl shadow-sm border border-slate-100">
-                    <div className="w-16 h-16 bg-slate-50 text-slate-300 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                        <CheckCircle2 className="h-8 w-8" />
+            {/* Validation Result Banner */}
+            {validationResult && (
+                <div className={cn(
+                    "p-6 rounded-[2rem] border shadow-xl animate-in zoom-in-95 duration-300 flex items-start gap-4",
+                    validationResult.success 
+                        ? "bg-emerald-50 border-emerald-200 text-emerald-950" 
+                        : "bg-rose-50 border-rose-200 text-rose-950"
+                )}>
+                    <div className={cn(
+                        "w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 shadow-sm",
+                        validationResult.success ? "bg-emerald-600 text-white" : "bg-rose-600 text-white"
+                    )}>
+                        {validationResult.success ? <CheckCircle2 className="h-6 w-6" /> : <AlertTriangle className="h-6 w-6" />}
                     </div>
-                    <h3 className="text-xl font-bold tracking-tight text-slate-900">Queue Empty</h3>
-                    <p className="text-slate-500 text-sm mt-2">All inventory reconciliations are current.</p>
+                    <div className="flex-1 min-w-0">
+                        <h4 className="text-base font-black uppercase tracking-tight">
+                            {validationResult.success ? "Bill Validated Successfully" : "Validation Rejected"}
+                        </h4>
+                        <p className="text-xs font-bold mt-1 leading-relaxed opacity-90">
+                            {validationResult.message}
+                        </p>
+                        {validationResult.order && (
+                            <div className="mt-3 p-3 bg-white/70 rounded-xl text-[11px] font-bold space-y-1">
+                                <div>Order ID: <span className="font-black text-slate-900">#{validationResult.order.id}</span></div>
+                                <div>Customer: <span className="text-slate-700">{validationResult.order.user?.name} ({validationResult.order.user?.phone})</span></div>
+                            </div>
+                        )}
+                    </div>
+                    <button 
+                        onClick={() => setValidationResult(null)}
+                        className="p-1 rounded-full text-slate-400 hover:text-slate-700"
+                    >
+                        <X className="h-5 w-5" />
+                    </button>
                 </div>
-            ) : (
-                <div className="space-y-4">
-                    <div className="flex items-center justify-between px-2">
-                        <h2 className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 flex items-center gap-2">
-                            <Send className="h-3 w-3" /> Active Logistics Registry
-                        </h2>
+            )}
+
+            {/* Quick Bill ID Input Option */}
+            <div className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm">
+                <form onSubmit={handleManualQrSubmit} className="flex gap-2">
+                    <Input 
+                        type="text" 
+                        placeholder="Scan or enter POS Bill / Order ID to validate..."
+                        value={manualBillId}
+                        onChange={(e) => setManualBillId(e.target.value)}
+                        className="h-13 rounded-2xl bg-slate-50 border-none text-xs font-bold pl-4 shadow-inner"
+                    />
+                    <Button 
+                        type="submit" 
+                        disabled={!manualBillId.trim() || validatingQr}
+                        className="h-13 px-6 rounded-2xl bg-slate-900 text-white font-black text-xs uppercase tracking-wider shrink-0"
+                    >
+                        {validatingQr ? <Loader2 className="h-4 w-4 animate-spin" /> : "Verify Bill"}
+                    </Button>
+                </form>
+            </div>
+
+            {/* Active Packing Queue */}
+            <div className="space-y-4">
+                <div className="flex items-center justify-between px-2">
+                    <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 flex items-center gap-2">
+                        <ClipboardList className="h-4 w-4 text-blue-600" />
+                        Warehouse Packing Log ({assignments.length})
+                    </h3>
+                    <Button variant="ghost" size="sm" onClick={fetchOrders} className="text-xs font-bold text-slate-500">
+                        Refresh
+                    </Button>
+                </div>
+
+                {loading ? (
+                    <div className="p-12 text-center bg-white rounded-3xl border border-slate-100 shadow-sm">
+                        <Loader2 className="h-8 w-8 animate-spin mx-auto text-blue-600 mb-3" />
+                        <p className="text-xs font-black uppercase tracking-widest text-slate-400">Loading Warehouse Logs...</p>
                     </div>
-                    {assignments.map((order) => {
-                        const isExpanded = expandedOrder === order.id;
+                ) : assignments.length === 0 ? (
+                    <div className="p-12 text-center bg-white rounded-[2.5rem] border border-slate-100 shadow-sm space-y-3">
+                        <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-3xl flex items-center justify-center mx-auto shadow-inner">
+                            <Package className="h-8 w-8" />
+                        </div>
+                        <h4 className="text-base font-bold text-slate-900">No Orders in Queue</h4>
+                        <p className="text-xs text-slate-400 max-w-xs mx-auto font-medium">
+                            Create a WhatsApp order above or wait for store orders to be dispatched.
+                        </p>
+                    </div>
+                ) : (
+                    assignments.map((order) => {
+                        const isValidated = Boolean(order.packerValidatedAt);
                         return (
-                            <div key={order.id} className={cn(
-                                "bg-white rounded-[2rem] overflow-hidden transition-all duration-500",
-                                isExpanded ? "shadow-2xl ring-1 ring-blue-500/20 translate-y-[-4px]" : "shadow-sm border border-slate-100"
-                            )}>
-                                <div 
-                                    className={cn("p-5 cursor-pointer flex items-center gap-4 transition-colors", isExpanded ? "bg-slate-50/50" : "hover:bg-slate-50/30")}
-                                    onClick={() => {
-                                        setExpandedOrder(isExpanded ? null : order.id);
-                                        setVerificationFor(order.id);
-                                    }}
-                                >
-                                    <div className="w-12 h-12 rounded-2xl bg-blue-100 text-blue-600 flex items-center justify-center flex-shrink-0">
-                                        <Package className="h-6 w-6" />
-                                    </div>
-                                    <div className="flex-1 min-w-0">
+                            <div 
+                                key={order.id}
+                                className={cn(
+                                    "bg-white rounded-[2rem] p-6 border transition-all duration-300 shadow-sm hover:shadow-md",
+                                    isValidated ? "border-emerald-200 bg-emerald-50/20" : "border-slate-100"
+                                )}
+                            >
+                                <div className="flex items-start justify-between gap-4">
+                                    <div className="space-y-1 min-w-0">
                                         <div className="flex items-center gap-2">
-                                            <h3 className="font-bold text-slate-900 truncate">#{order.id.split('-')[0].toUpperCase()}</h3>
-                                            <span className="px-2 py-0.5 bg-blue-50 text-blue-600 text-[10px] font-black uppercase tracking-widest rounded-full">
-                                                {order.status}
+                                            <span className="text-xs font-black uppercase text-slate-900 tracking-wider">
+                                                #{order.id.slice(-8).toUpperCase()}
                                             </span>
+                                            {isValidated ? (
+                                                <span className="px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-emerald-100 text-emerald-700 flex items-center gap-1">
+                                                    <Check className="h-3 w-3" /> Bill Validated
+                                                </span>
+                                            ) : (
+                                                <span className="px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-amber-100 text-amber-700">
+                                                    Awaiting Bill QR Scan
+                                                </span>
+                                            )}
                                         </div>
-                                        <p className="text-xs text-slate-500 mt-1">{order.items?.length || 0} Logistic Units</p>
+                                        <h4 className="text-base font-black text-slate-800 truncate">
+                                            {order.user?.name || "WhatsApp Client"}
+                                        </h4>
+                                        <p className="text-xs text-slate-500 font-medium flex items-center gap-1.5">
+                                            <Phone className="h-3 w-3 text-slate-400" /> {order.user?.phone}
+                                        </p>
                                     </div>
-                                    <div className="p-2 text-slate-300">
-                                        {isExpanded ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
+
+                                    <div className="text-right shrink-0">
+                                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total Bill</p>
+                                        <p className="text-base font-black text-slate-900">₹{Number(order.totalAmount).toFixed(2)}</p>
                                     </div>
                                 </div>
 
-                                {isExpanded && (
-                                    <div className="p-6 border-t border-slate-100 bg-white space-y-8 animate-in slide-in-from-top-4 duration-500">
-                                        {/* Verification Registry */}
-                                        <div className="space-y-4">
-                                            <div className="flex items-center justify-between">
-                                                <h4 className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-400">Verification Registry</h4>
-                                                <p className="text-[10px] font-bold text-blue-600">
-                                                    {Object.values(verifiedItems).filter(Boolean).length} / {order.items.length} Checked
-                                                </p>
-                                            </div>
-                                            <div className="space-y-2">
-                                                {order.items.map((item: any) => (
-                                                    <div 
-                                                        key={item.id} 
-                                                        onClick={() => toggleItem(item.id)}
-                                                        className={cn(
-                                                            "p-4 rounded-2xl flex items-center justify-between transition-all cursor-pointer border",
-                                                            verifiedItems[item.id] 
-                                                                ? "bg-emerald-50 border-emerald-100 text-emerald-900" 
-                                                                : "bg-slate-50 border-slate-100 text-slate-700"
-                                                        )}
-                                                    >
-                                                        <div className="flex items-center gap-3">
-                                                            <div className={cn(
-                                                                "w-6 h-6 rounded-lg flex items-center justify-center transition-colors",
-                                                                verifiedItems[item.id] ? "bg-emerald-500 text-white" : "bg-white border-2 border-slate-200"
-                                                            )}>
-                                                                {verifiedItems[item.id] && <CheckCircle2 className="h-4 w-4" />}
-                                                            </div>
-                                                            <div className="font-bold text-sm">
-                                                                {item.quantity}x {item.product?.name}
-                                                            </div>
-                                                        </div>
-                                                        <div className="text-[10px] font-black uppercase tracking-widest opacity-50">
-                                                            {item.product?.sku || 'GENERIC'}
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-
-                                        {/* Photo Capture Mock */}
-                                        <div className="space-y-4">
-                                            <h4 className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-400">Visual Evidence Protocol</h4>
-                                            <div 
-                                                className={cn(
-                                                    "h-48 rounded-3xl border-2 border-dashed flex flex-col items-center justify-center gap-3 transition-all cursor-pointer group hover:bg-slate-50",
-                                                    photoUrl ? "border-emerald-500 bg-emerald-50/10" : "border-slate-200"
-                                                )}
-                                                onClick={() => {
-                                                    // Simulated camera logic
-                                                    const fakeLink = "https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?q=80&w=2070&auto=format&fit=crop";
-                                                    setPhotoUrl(fakeLink);
-                                                    toast.info("Image captured successfully");
-                                                }}
-                                            >
-                                                {photoUrl ? (
-                                                    <div className="relative w-full h-full p-2">
-                                                        <img src={photoUrl} className="w-full h-full object-cover rounded-2xl" alt="Registry evidence" />
-                                                        <div className="absolute inset-0 bg-emerald-600/20 rounded-2xl flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                                            <Camera className="h-8 w-8 text-white" />
-                                                        </div>
-                                                    </div>
-                                                ) : (
-                                                    <>
-                                                        <div className="p-4 bg-white rounded-2xl shadow-sm border border-slate-100 group-hover:scale-110 transition-transform">
-                                                            <Camera className="h-6 w-6 text-slate-400 group-hover:text-blue-600" />
-                                                        </div>
-                                                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 group-hover:text-slate-600">Initialize Camera Module</p>
-                                                    </>
-                                                )}
-                                            </div>
-                                        </div>
-
-                                        {/* Exceptional Notes */}
-                                        <div className="space-y-4">
-                                            <div className="flex items-center justify-between">
-                                                <h4 className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-400">Logistical Variance Notes</h4>
-                                                <AlertCircle className="h-4 w-4 text-orange-400" />
-                                            </div>
-                                            <div className="relative group">
-                                                <div className="absolute top-4 left-4">
-                                                    <FileText className="h-4 w-4 text-slate-300 group-focus-within:text-blue-500 transition-colors" />
+                                {/* Items packing list */}
+                                <div className="mt-4 pt-4 border-t border-slate-100 space-y-2">
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                                        Packing List ({order.items?.length || 0} Items)
+                                    </p>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                        {order.items?.map((item: any, idx: number) => (
+                                            <div key={idx} className="p-2.5 bg-slate-50 rounded-xl text-xs font-bold flex justify-between items-center">
+                                                <div className="truncate pr-2">
+                                                    <span className="text-[9px] text-blue-600 font-black block uppercase">
+                                                        [{item.product?.barcode || item.product?.sku || item.productId.slice(0, 5).toUpperCase()}]
+                                                    </span>
+                                                    <span className="text-slate-800">{item.product?.name}</span>
                                                 </div>
-                                                <textarea 
-                                                    value={notes}
-                                                    onChange={(e) => setNotes(e.target.value)}
-                                                    placeholder="Document why items were excluded from shipment container..."
-                                                    className="w-full bg-slate-50 rounded-2xl border-none p-4 pl-12 text-sm text-slate-900 placeholder:text-slate-300 focus:ring-2 focus:ring-blue-500/20 min-h-[100px] resize-none transition-all"
-                                                />
+                                                <span className="px-2 py-1 bg-white rounded-lg text-slate-900 font-black text-[11px] shrink-0 border border-slate-100">
+                                                    {Number(item.quantity)} {item.variant?.weightUnit || item.product?.weightUnit || "KG"}
+                                                </span>
                                             </div>
-                                        </div>
+                                        ))}
+                                    </div>
+                                </div>
 
-                                        <Button 
-                                            disabled={updatingId === order.id}
-                                            onClick={() => submitPacking(order.id)}
-                                            className="w-full h-16 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-black uppercase tracking-widest shadow-xl shadow-blue-200 active:scale-95 transition-all"
+                                {!isValidated && (
+                                    <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between">
+                                        <p className="text-[10px] font-bold text-amber-700 flex items-center gap-1">
+                                            <Clock className="h-3.5 w-3.5" /> Please scan the printed bill QR to complete validation
+                                        </p>
+                                        <Button
+                                            size="sm"
+                                            onClick={() => handleScanQr(order.id)}
+                                            className="h-10 px-4 rounded-xl bg-slate-900 hover:bg-black text-white text-[10px] font-black uppercase tracking-wider"
                                         >
-                                            {updatingId === order.id ? (
-                                                <div className="w-6 h-6 border-2 border-white/20 border-t-white rounded-full animate-spin" />
-                                            ) : (
-                                                "Finalize Reconciled Shipment"
-                                            )}
+                                            Validate Now
                                         </Button>
                                     </div>
                                 )}
                             </div>
                         );
-                    })}
-                </div>
-            )}
+                    })
+                )}
+            </div>
         </div>
     );
-
-    function setVerificationFor(orderId: string) {
-        setVerifiedItems({});
-        setPhotoUrl("");
-        setNotes("");
-    }
 }

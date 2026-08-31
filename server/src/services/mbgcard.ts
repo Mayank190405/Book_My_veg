@@ -3,7 +3,7 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-const MBGCARD_API_URL = process.env.MBGCARD_API_URL || "https://chatbotbe.digitalmbg.com/v1/whatsapp/send_meta_templet";
+const MBGCARD_API_URL = process.env.MBGCARD_API_URL || "https://chatbot.digitalmbg.com/v1/whatsapp/send_templet";
 const MBGCARD_API_TOKEN = process.env.MBGCARD_API_TOKEN || "91edd77281c02b04c4bdfb36aa5e4978";
 const MBGCARD_TEMPLATE_ID = process.env.MBGCARD_TEMPLATE_ID || "login";
 const MBGCARD_OTP_FLOW_ID = process.env.MBGCARD_OTP_FLOW_ID || "flow_1782732506015";
@@ -20,8 +20,10 @@ export const sendOtpViaWhatsapp = async (phone: string, otp: string) => {
 
     const payload = {
         templateName: MBGCARD_TEMPLATE_ID, // defaults to "login"
-        to: formattedPhone,                 // "to" field as required by send_meta_templet
+        senderId: formattedPhone,
+        to: formattedPhone,
         variables: {
+            header: [],
             body: [otp]
         }
     };
@@ -105,7 +107,7 @@ export const sendFlowViaChatHub = async (
         actions
     };
 
-    const url = "https://chatbotbe.digitalmbg.com/v1/contacts/send_flow";
+    const url = process.env.MBGCARD_FLOW_URL || "https://chatbot.digitalmbg.com/v1/contacts/send_flow";
 
     try {
         console.log(`[ChatHub Flow] Sending flow ${flowId} to ${formattedPhone} with custom fields:`, customFields);
@@ -139,9 +141,10 @@ export const sendFlowViaChatHub = async (
  * Fetch approved WhatsApp templates from MBG Card.
  */
 export const getMyMetaTemplates = async () => {
+    const url = process.env.MBGCARD_TEMPLATES_URL || "https://chatbot.digitalmbg.com/v1/whatsapp/get_my_meta_templets";
     try {
-        console.log("Fetching Meta templates from MBG Card (https://chatbotbe.digitalmbg.com/v1/whatsapp/get_my_meta_templets)...");
-        const response = await axios.get("https://chatbotbe.digitalmbg.com/v1/whatsapp/get_my_meta_templets", {
+        console.log(`Fetching Meta templates from MBG Card (${url})...`);
+        const response = await axios.get(url, {
             headers: {
                 'accept': 'application/json',
                 'Content-Type': 'application/json',
@@ -185,17 +188,19 @@ export const sendTemplateViaChatHub = async (
 
     const payload = {
         templateName,
+        senderId: formattedPhone,
         to: formattedPhone,
         variables: {
+            header: variables?.header || [],
             body: variables?.body || []
         },
         dynamicMedia
     };
 
-    const url = "https://chatbotbe.digitalmbg.com/v1/whatsapp/send_meta_templet";
+    const url = MBGCARD_API_URL;
 
     try {
-        console.log(`[ChatHub Template] Sending template ${templateName} to ${formattedPhone}`);
+        console.log(`[ChatHub Template] Sending template ${templateName} to ${formattedPhone} via ${url}`);
 
         const response = await axios.post(url, payload, {
             timeout: 10000,

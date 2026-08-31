@@ -339,9 +339,10 @@ export const generatePaymentLink = async (req: AuthenticatedRequest, res: Respon
             const pendingOnlinePayment = await prisma.payment.findFirst({
                 where: { orderId: order.id, method: "ONLINE", status: "PENDING" }
             });
-            const amountToCharge = pendingOnlinePayment 
-                ? Number(pendingOnlinePayment.amount).toFixed(2)
-                : Number(order.totalAmount).toFixed(2);
+            const requestedAmount = req.body?.amount ? Number(req.body.amount) : (req.query?.amount ? Number(req.query.amount) : null);
+            const amountToCharge = requestedAmount 
+                ? requestedAmount.toFixed(2)
+                : (pendingOnlinePayment ? Number(pendingOnlinePayment.amount).toFixed(2) : Number(order.totalAmount).toFixed(2));
 
             try {
                 const protocol = req.headers["x-forwarded-proto"] || (req.secure ? "https" : "http");
@@ -351,13 +352,13 @@ export const generatePaymentLink = async (req: AuthenticatedRequest, res: Respon
                 const customerName = addressObj?.name || (order as any).user.name || "Customer";
                 const customerPhone = addressObj?.phone || (order as any).user.phone || "9999999999";
 
-                const useIframe = process.env.EASEBUZZ_IFRAME === "1";
+                const useIframe = process.env.EASEBUZZ_IFRAME !== "0";
                 const apiName = useIframe ? "initiate_payment_iframe" : "initiate_payment";
 
                 const easebuzzRes = await axios.post(
                     `${process.env.EASEBUZZ_SERVICE_URL.replace(/\/$/, "")}/easebuzz?api_name=${apiName}`,
                     {
-                        txnid: order.id,
+                        txnid: requestedAmount ? `${order.id}_P${Date.now()}` : order.id,
                         amount: amountToCharge,
                         firstname: customerName,
                         email: (order as any).user.email || "customer@example.com",
@@ -381,10 +382,12 @@ export const generatePaymentLink = async (req: AuthenticatedRequest, res: Respon
                             key: easebuzzRes.data.data.key,
                             accessKey: easebuzzRes.data.data.access_key,
                             env: easebuzzRes.data.data.env,
+                            amount: amountToCharge
                         });
                     } else if (easebuzzRes.data.paymentLink) {
                         return res.json({
                             paymentLink: easebuzzRes.data.paymentLink,
+                            amount: amountToCharge
                         });
                     }
                 }
@@ -393,6 +396,7 @@ export const generatePaymentLink = async (req: AuthenticatedRequest, res: Respon
                 logger.error(`[Payment] Easebuzz generation failed, falling back to mock gateway. Error: ${easebuzzError.message}, Data: ${JSON.stringify(easebuzzError.response?.data)}`);
                 return res.json({
                     paymentLink: `${baseUrl.replace(/\/$/, "")}/payment/mock-gateway?orderId=${orderId}&amount=${amountToCharge}`,
+                    amount: amountToCharge
                 });
             }
         }

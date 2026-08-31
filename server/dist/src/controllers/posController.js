@@ -12,7 +12,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getPOSOrderById = exports.sendPOSWhatsappDueReminders = exports.getPOSDueCustomers = exports.settleAccountBalance = exports.collectDuePayment = exports.getStoreConfig = exports.cancelPOSOrder = exports.getTodayPOSSales = exports.getCustomerHistory = exports.getStoreProducts = exports.processPOSOrder = exports.createOrUpdateCustomer = exports.updateWebOrderStatus = exports.getWebOrders = exports.searchCustomer = void 0;
+exports.customerDeposit = exports.getPOSOrderById = exports.sendPOSWhatsappDueReminders = exports.getPOSDueCustomers = exports.settleAccountBalance = exports.collectDuePayment = exports.getStoreConfig = exports.cancelPOSOrder = exports.getTodayPOSSales = exports.getCustomerHistory = exports.getStoreProducts = exports.processPOSOrder = exports.createOrUpdateCustomer = exports.updateWebOrderStatus = exports.getWebOrders = exports.searchCustomer = void 0;
 const prisma_1 = __importDefault(require("../config/prisma"));
 const errors_1 = require("../utils/errors");
 const client_1 = require("@prisma/client");
@@ -29,9 +29,11 @@ const searchCustomer = (req, res, next) => __awaiter(void 0, void 0, void 0, fun
     try {
         const orConditions = [
             { name: { contains: rawQuery, mode: 'insensitive' } },
-            { phone: { contains: rawQuery } },
-            { email: { contains: rawQuery, mode: 'insensitive' } }
+            { phone: { contains: rawQuery } }
         ];
+        if (rawQuery.includes("@")) {
+            orConditions.push({ email: { contains: rawQuery, mode: 'insensitive' } });
+        }
         if (cleanDigits.length >= 3) {
             orConditions.push({ phone: { contains: cleanDigits } });
             orConditions.push({ phone: { contains: `+91${cleanDigits}` } });
@@ -46,29 +48,61 @@ const searchCustomer = (req, res, next) => __awaiter(void 0, void 0, void 0, fun
                 name: true,
                 phone: true,
                 email: true,
-                profileAddress: true,
                 addresses: {
                     where: { isDefault: true },
-                    take: 1
+                    take: 1,
+                    select: { fullAddress: true }
                 }
             }
         });
-        const mapped = customers.map(c => {
+        const mapped = customers.map((c) => {
             var _a, _b;
             return ({
                 id: c.id,
-                name: c.name,
+                name: c.name || "Customer",
                 phone: c.phone,
                 email: c.email || "",
-                profileAddress: c.profileAddress || "",
-                address: ((_b = (_a = c.addresses) === null || _a === void 0 ? void 0 : _a[0]) === null || _b === void 0 ? void 0 : _b.fullAddress) || c.profileAddress || "",
-                addresses: c.addresses
+                profileAddress: "",
+                accountBalance: Number(c.accountBalance || 0),
+                totalDue: Number(c.totalDue || 0),
+                address: ((_b = (_a = c.addresses) === null || _a === void 0 ? void 0 : _a[0]) === null || _b === void 0 ? void 0 : _b.fullAddress) || "",
+                addresses: c.addresses || []
             });
         });
         res.json(mapped);
     }
     catch (error) {
-        next(error);
+        console.warn("[POS] searchCustomer fallback notice:", error === null || error === void 0 ? void 0 : error.message);
+        try {
+            const basic = yield prisma_1.default.user.findMany({
+                where: {
+                    OR: [
+                        { name: { contains: rawQuery, mode: 'insensitive' } },
+                        { phone: { contains: rawQuery } }
+                    ]
+                },
+                take: 20,
+                select: {
+                    id: true,
+                    name: true,
+                    phone: true,
+                    email: true
+                }
+            });
+            return res.json(basic.map(b => ({
+                id: b.id,
+                name: b.name || "Customer",
+                phone: b.phone,
+                email: b.email || "",
+                accountBalance: 0,
+                totalDue: 0,
+                address: "",
+                addresses: []
+            })));
+        }
+        catch (innerErr) {
+            return res.json([]);
+        }
     }
 });
 exports.searchCustomer = searchCustomer;
@@ -307,8 +341,7 @@ const createOrUpdateCustomer = (req, res, next) => __awaiter(void 0, void 0, voi
                 data: {
                     name: name !== undefined ? String(name).trim() : existingCustomer.name,
                     phone: rawPhone ? rawPhone : existingCustomer.phone,
-                    email: sanitizedEmail,
-                    profileAddress: address !== undefined ? String(address).trim() : existingCustomer.profileAddress
+                    email: sanitizedEmail
                 },
                 include: { addresses: { where: { isDefault: true } } }
             });
@@ -320,8 +353,7 @@ const createOrUpdateCustomer = (req, res, next) => __awaiter(void 0, void 0, voi
                     phone: rawPhone,
                     email: sanitizedEmail,
                     role: "USER",
-                    password: "POS_AUTO_GENERATED_" + Math.random().toString(36).slice(-8),
-                    profileAddress: address ? String(address).trim() : null
+                    password: "POS_AUTO_GENERATED_" + Math.random().toString(36).slice(-8)
                 },
                 include: { addresses: { where: { isDefault: true } } }
             });
@@ -329,21 +361,21 @@ const createOrUpdateCustomer = (req, res, next) => __awaiter(void 0, void 0, voi
             try {
                 const { sendRegistrationThankYouViaWhatsapp } = require("../services/mbgcard");
                 sendRegistrationThankYouViaWhatsapp(customer.phone, customer.name || "Customer").catch((err) => {
-                    console.error("[POS] Welcome WhatsApp dispatch failure:", err);
+                    console.error("[POS] WhatsApp welcome dispatch error:", err.message);
                 });
             }
             catch (err) {
-                console.error("[POS] WhatsApp service module import failed:", err);
+                console.warn("[POS] Welcome dispatch trigger warning:", err.message);
             }
         }
-        // Save or update default address safely without Prisma upsert id crashes
-        if (address !== undefined && String(address).trim() !== "") {
-            const existingAddress = yield prisma_1.default.address.findFirst({
+        // Upsert default address
+        if (address && String(address).trim()) {
+            const existingAddr = yield prisma_1.default.address.findFirst({
                 where: { userId: customer.id, isDefault: true }
             });
-            if (existingAddress) {
+            if (existingAddr) {
                 yield prisma_1.default.address.update({
-                    where: { id: existingAddress.id },
+                    where: { id: existingAddr.id },
                     data: { fullAddress: String(address).trim() }
                 });
             }
@@ -366,8 +398,7 @@ const createOrUpdateCustomer = (req, res, next) => __awaiter(void 0, void 0, voi
                 name: true,
                 phone: true,
                 email: true,
-                profileAddress: true,
-                addresses: { where: { isDefault: true }, take: 1 }
+                addresses: { where: { isDefault: true }, take: 1, select: { fullAddress: true } }
             }
         });
         const formatted = {
@@ -375,8 +406,8 @@ const createOrUpdateCustomer = (req, res, next) => __awaiter(void 0, void 0, voi
             name: (fullCustomer === null || fullCustomer === void 0 ? void 0 : fullCustomer.name) || customer.name,
             phone: (fullCustomer === null || fullCustomer === void 0 ? void 0 : fullCustomer.phone) || customer.phone,
             email: (fullCustomer === null || fullCustomer === void 0 ? void 0 : fullCustomer.email) || "",
-            profileAddress: (fullCustomer === null || fullCustomer === void 0 ? void 0 : fullCustomer.profileAddress) || "",
-            address: ((_b = (_a = fullCustomer === null || fullCustomer === void 0 ? void 0 : fullCustomer.addresses) === null || _a === void 0 ? void 0 : _a[0]) === null || _b === void 0 ? void 0 : _b.fullAddress) || (fullCustomer === null || fullCustomer === void 0 ? void 0 : fullCustomer.profileAddress) || (typeof address === "string" ? address : ""),
+            profileAddress: "",
+            address: ((_b = (_a = fullCustomer === null || fullCustomer === void 0 ? void 0 : fullCustomer.addresses) === null || _a === void 0 ? void 0 : _a[0]) === null || _b === void 0 ? void 0 : _b.fullAddress) || (typeof address === "string" ? address : ""),
             addresses: (fullCustomer === null || fullCustomer === void 0 ? void 0 : fullCustomer.addresses) || []
         };
         res.json(Object.assign({ message: existingCustomer ? "Customer updated" : "Customer created", customer: formatted }, formatted));
@@ -388,14 +419,16 @@ const createOrUpdateCustomer = (req, res, next) => __awaiter(void 0, void 0, voi
 exports.createOrUpdateCustomer = createOrUpdateCustomer;
 // ─── POS Order Processing ─────────────────────────────────────────────────────
 const processPOSOrder = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a, _b, _c;
-    const { customerId, items, paymentMethod, paymentDetails, discountAmount, couponId, packerId, duePaymentAmount = 0, paidAmount = 0, // NEW: Amount paid specifically for THIS bill
-    suspend = false, denominations, orderId // NEW: Edit Bill support
-     } = req.body;
+    var _a, _b, _c, _d;
+    const { customerId, items, paymentMethod, paymentDetails, discountAmount, couponId, packerId, isDelivery = false, deliveryAddress, duePaymentAmount = 0, paidAmount = 0, splitPayments, // Array of { method: "CASH" | "EASEBUZZ" | "WALLET", amount: number, transactionId?: string, denominations?: any }
+    suspend = false, denominations, orderId } = req.body;
     const staffId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.userId;
     const locationId = (_b = req.user) === null || _b === void 0 ? void 0 : _b.locationId;
     if (!staffId || !locationId) {
         return next(new errors_1.AppError("Operational context missing (Staff/Location)", 401));
+    }
+    if (!packerId && !suspend) {
+        return next(new errors_1.AppError("Packer selection is compulsory for every bill. Please select a packer before checkout.", 400));
     }
     try {
         let existingOrder = null;
@@ -423,25 +456,55 @@ const processPOSOrder = (req, res, next) => __awaiter(void 0, void 0, void 0, fu
             include: { payments: true }
         });
         const previousDue = prevOrders.reduce((acc, o) => acc + (Number(o.totalAmount) - o.payments.reduce((pAcc, p) => pAcc + Number(p.amount), 0)), 0);
-        // 🛡️ RECOVERY: Verify Staff Existence (Avoid P2003 if DB was wiped/re-seeded)
         let validatedStaffId = staffId;
-        const staffExists = yield prisma_1.default.user.findUnique({ where: { id: staffId } });
+        const staffExists = yield prisma_1.default.user.findUnique({
+            where: { id: staffId },
+            select: { id: true, name: true, role: true }
+        });
         if (!staffExists) {
             console.warn(`[POS] Invalid Staff Session ID ${staffId}. Falling back to Root Admin.`);
-            const rootAdmin = yield prisma_1.default.user.findFirst({ where: { role: "ADMIN" } });
-            validatedStaffId = (rootAdmin === null || rootAdmin === void 0 ? void 0 : rootAdmin.id) || staffId; // Fallback to root or keep original if absolutely zero users (though unlikely)
+            const rootAdmin = yield prisma_1.default.user.findFirst({
+                where: { role: "ADMIN" },
+                select: { id: true }
+            });
+            validatedStaffId = (rootAdmin === null || rootAdmin === void 0 ? void 0 : rootAdmin.id) || staffId;
         }
         const result = yield prisma_1.default.$transaction((tx) => __awaiter(void 0, void 0, void 0, function* () {
+            var _a, _b;
             const itemTotals = items.reduce((acc, item) => acc + (item.price * item.quantity), 0);
             const totalAmount = itemTotals - (discountAmount || 0);
-            // Determine payment status for THIS bill
-            const effectivePaid = paymentMethod === "CREDIT" ? 0 : Number(paidAmount || totalAmount);
+            // Determine payment slices
+            let paymentSlices = [];
+            if (Array.isArray(splitPayments) && splitPayments.length > 0) {
+                paymentSlices = splitPayments
+                    .map(p => ({
+                    method: String(p.method || "CASH").toUpperCase(),
+                    amount: Number(p.amount || 0),
+                    transactionId: p.transactionId,
+                    denominations: p.denominations
+                }))
+                    .filter(p => p.amount > 0);
+            }
+            else if (paymentMethod && paymentMethod !== "CREDIT") {
+                const pAmt = paidAmount !== undefined && paidAmount !== null && Number(paidAmount) >= 0
+                    ? Number(paidAmount)
+                    : totalAmount;
+                if (pAmt > 0) {
+                    paymentSlices = [{
+                            method: String(paymentMethod).toUpperCase(),
+                            amount: pAmt,
+                            transactionId: paymentDetails === null || paymentDetails === void 0 ? void 0 : paymentDetails.transactionId,
+                            denominations: denominations
+                        }];
+                }
+            }
+            const effectivePaid = paymentSlices.reduce((sum, p) => sum + p.amount, 0);
             const totalPaidAmount = existingPaidTotal + effectivePaid;
             const isFull = totalPaidAmount >= totalAmount;
+            const isCredit = paymentMethod === "CREDIT" || (paymentSlices.length === 0 && !suspend);
             const pStatus = totalPaidAmount <= 0 ? "PENDING" : (isFull ? "COMPLETED" : "PARTIAL");
             let order;
             if (existingOrder) {
-                // 1. Restore stock first if not cancelled or pending
                 if (existingOrder.status !== "PENDING" && existingOrder.status !== "CANCELLED") {
                     yield inventoryService_1.InventoryService.restoreStock({
                         items: existingOrder.items.map((i) => ({
@@ -454,11 +517,17 @@ const processPOSOrder = (req, res, next) => __awaiter(void 0, void 0, void 0, fu
                         referenceId: existingOrder.id
                     }, tx);
                 }
-                // 2. Delete old order items
                 yield tx.orderItem.deleteMany({
                     where: { orderId: existingOrder.id }
                 });
-                // 3. Update order fields and create new items
+                let calculatedAddress = { type: "IN_STORE", note: "Handover at Counter / In-Store Pickup" };
+                if (isDelivery) {
+                    const cust = yield tx.user.findUnique({
+                        where: { id: customerId },
+                        include: { addresses: { where: { isDefault: true }, take: 1 } }
+                    });
+                    calculatedAddress = deliveryAddress || (((_a = cust === null || cust === void 0 ? void 0 : cust.addresses) === null || _a === void 0 ? void 0 : _a[0]) ? cust.addresses[0] : ((cust === null || cust === void 0 ? void 0 : cust.profileAddress) ? { fullAddress: cust.profileAddress } : { type: "DELIVERY", note: "Customer Delivery" }));
+                }
                 order = yield tx.order.update({
                     where: { id: existingOrder.id },
                     data: {
@@ -467,7 +536,9 @@ const processPOSOrder = (req, res, next) => __awaiter(void 0, void 0, void 0, fu
                         status: (suspend ? "PENDING" : (existingOrder.status === "PENDING" ? "CONFIRMED" : existingOrder.status)),
                         paymentStatus: pStatus,
                         isPaid: isFull,
-                        isCredit: paymentMethod === "CREDIT",
+                        isCredit: isCredit,
+                        isDelivery: Boolean(isDelivery),
+                        shippingAddress: calculatedAddress,
                         packerId,
                         staffId: validatedStaffId,
                         items: {
@@ -483,6 +554,14 @@ const processPOSOrder = (req, res, next) => __awaiter(void 0, void 0, void 0, fu
                 });
             }
             else {
+                let calculatedAddress = { type: "IN_STORE", note: "Handover at Counter / In-Store Pickup" };
+                if (isDelivery) {
+                    const cust = yield tx.user.findUnique({
+                        where: { id: customerId },
+                        include: { addresses: { where: { isDefault: true }, take: 1 } }
+                    });
+                    calculatedAddress = deliveryAddress || (((_b = cust === null || cust === void 0 ? void 0 : cust.addresses) === null || _b === void 0 ? void 0 : _b[0]) ? cust.addresses[0] : ((cust === null || cust === void 0 ? void 0 : cust.profileAddress) ? { fullAddress: cust.profileAddress } : { type: "DELIVERY", note: "Customer Delivery" }));
+                }
                 order = yield tx.order.create({
                     data: {
                         id: (0, idGenerator_1.generateOrderId)(),
@@ -493,12 +572,13 @@ const processPOSOrder = (req, res, next) => __awaiter(void 0, void 0, void 0, fu
                         status: (suspend ? "PENDING" : "CONFIRMED"),
                         paymentStatus: pStatus,
                         isPaid: isFull,
-                        isCredit: paymentMethod === "CREDIT",
-                        shippingAddress: { type: "POS_IN_STORE", note: "Handover at Counter" },
+                        isCredit: isCredit,
+                        isDelivery: Boolean(isDelivery),
+                        shippingAddress: calculatedAddress,
                         channel: client_1.Channel.POS,
-                        notes: `POS Transaction by ${staffId}${!staffExists ? " (SESSION_RECOVERED)" : ""}`,
+                        notes: `POS Transaction by ${staffId} [${isDelivery ? "DELIVERY" : "IN_STORE"}]${paymentSlices.length > 1 ? " (SPLIT_PAYMENT)" : ""}`,
                         packerId,
-                        staffId: validatedStaffId, // Use validated ID
+                        staffId: validatedStaffId,
                         items: {
                             create: items.map((item) => ({
                                 productId: item.productId,
@@ -511,7 +591,7 @@ const processPOSOrder = (req, res, next) => __awaiter(void 0, void 0, void 0, fu
                         statusHistory: {
                             create: {
                                 status: (suspend ? "PENDING" : "CONFIRMED"),
-                                remark: `POS Checkout (${pStatus})`,
+                                remark: `POS Checkout (${pStatus}) [${isDelivery ? "DELIVERY" : "IN_STORE"}] - Paid: ₹${effectivePaid}`,
                                 changedBy: staffId
                             }
                         }
@@ -526,43 +606,65 @@ const processPOSOrder = (req, res, next) => __awaiter(void 0, void 0, void 0, fu
                     staffId
                 }, tx);
             }
-            if (effectivePaid > 0 && !suspend && paymentMethod !== "CREDIT") {
-                yield tx.payment.create({
-                    data: {
-                        orderId: order.id,
-                        amount: new client_1.Prisma.Decimal(effectivePaid),
-                        method: paymentMethod,
-                        status: "SUCCESS",
-                        transactionId: (paymentDetails === null || paymentDetails === void 0 ? void 0 : paymentDetails.transactionId) || `POS_${Date.now()}`,
-                        denominations: denominations || null
-                    }
-                });
-                if (paymentMethod === "CASH" && denominations && locationId) {
-                    const activeShift = yield tx.cashierShift.findFirst({
-                        where: { locationId, status: "OPEN" }
-                    });
-                    if (activeShift) {
-                        const shiftDenominations = activeShift.currentDenominations
-                            ? (typeof activeShift.currentDenominations === "string"
-                                ? JSON.parse(activeShift.currentDenominations)
-                                : activeShift.currentDenominations)
-                            : {};
-                        const received = denominations.received || {};
-                        const change = denominations.change || {};
-                        const denominationsKeys = ["500", "200", "100", "50", "20", "10", "5", "2", "1"];
-                        const updatedDenominations = {};
-                        for (const key of denominationsKeys) {
-                            const currentCount = Number(shiftDenominations[key] || 0);
-                            const receivedCount = Number(received[key] || 0);
-                            const changeCount = Number(change[key] || 0);
-                            updatedDenominations[key] = Math.max(0, currentCount + receivedCount - changeCount);
-                        }
-                        yield tx.cashierShift.update({
-                            where: { id: activeShift.id },
+            // Record each payment slice
+            if (!suspend && paymentSlices.length > 0) {
+                for (const slice of paymentSlices) {
+                    if (slice.method === "WALLET" && customerId) {
+                        const cust = yield tx.user.findUnique({ where: { id: customerId } });
+                        const curBal = Number((cust === null || cust === void 0 ? void 0 : cust.accountBalance) || 0);
+                        const newBal = Math.max(0, curBal - slice.amount);
+                        yield tx.user.update({
+                            where: { id: customerId },
+                            data: { accountBalance: new client_1.Prisma.Decimal(newBal) }
+                        });
+                        yield tx.walletTransaction.create({
                             data: {
-                                currentDenominations: updatedDenominations
+                                userId: customerId,
+                                amount: new client_1.Prisma.Decimal(slice.amount),
+                                type: "PAYMENT_DEDUCTION",
+                                paymentMethod: "WALLET",
+                                referenceId: order.id,
+                                balanceAfter: new client_1.Prisma.Decimal(newBal),
+                                notes: `Settlement for POS Bill #${order.id}`,
+                                createdBy: staffId
                             }
                         });
+                    }
+                    yield tx.payment.create({
+                        data: {
+                            orderId: order.id,
+                            amount: new client_1.Prisma.Decimal(slice.amount),
+                            method: slice.method,
+                            status: "SUCCESS",
+                            transactionId: slice.transactionId || `POS_${slice.method}_${Date.now()}`,
+                            denominations: slice.denominations || null
+                        }
+                    });
+                    if (slice.method === "CASH" && slice.denominations && locationId) {
+                        const activeShift = yield tx.cashierShift.findFirst({
+                            where: { locationId, status: "OPEN" }
+                        });
+                        if (activeShift) {
+                            const shiftDenominations = activeShift.currentDenominations
+                                ? (typeof activeShift.currentDenominations === "string"
+                                    ? JSON.parse(activeShift.currentDenominations)
+                                    : activeShift.currentDenominations)
+                                : {};
+                            const received = slice.denominations.received || {};
+                            const change = slice.denominations.change || {};
+                            const denominationsKeys = ["500", "200", "100", "50", "20", "10", "5", "2", "1"];
+                            const updatedDenominations = {};
+                            for (const key of denominationsKeys) {
+                                const currentCount = Number(shiftDenominations[key] || 0);
+                                const receivedCount = Number(received[key] || 0);
+                                const changeCount = Number(change[key] || 0);
+                                updatedDenominations[key] = Math.max(0, currentCount + receivedCount - changeCount);
+                            }
+                            yield tx.cashierShift.update({
+                                where: { id: activeShift.id },
+                                data: { currentDenominations: updatedDenominations }
+                            });
+                        }
                     }
                 }
             }
@@ -613,11 +715,31 @@ const processPOSOrder = (req, res, next) => __awaiter(void 0, void 0, void 0, fu
             where: { id: result.id },
             include: {
                 payments: true,
-                staff: { select: { name: true } }
+                staff: { select: { name: true } },
+                location: { select: { name: true, contactNumber: true } }
             }
         });
         const currentBillPaid = finalOrder.payments.reduce((acc, p) => acc + Number(p.amount), 0);
-        const currentBillDue = Number(finalOrder.totalAmount) - currentBillPaid;
+        const currentBillDue = Math.max(0, Number(finalOrder.totalAmount) - currentBillPaid);
+        // Update customer totalDue field
+        if (customerId) {
+            const allUnpaid = yield prisma_1.default.order.findMany({
+                where: {
+                    userId: customerId,
+                    paymentStatus: { in: ["PENDING", "PARTIAL"] },
+                    status: { notIn: ["CANCELLED", "FAILED"] }
+                },
+                include: { payments: true }
+            });
+            const netDue = allUnpaid.reduce((sum, o) => {
+                const pPaid = o.payments.reduce((pSum, p) => pSum + Number(p.amount), 0);
+                return sum + Math.max(0, Number(o.totalAmount) - pPaid);
+            }, 0);
+            yield prisma_1.default.user.update({
+                where: { id: customerId },
+                data: { totalDue: new client_1.Prisma.Decimal(netDue) }
+            }).catch(() => null);
+        }
         res.status(201).json({
             message: "POS Order Processed",
             order: finalOrder,
@@ -643,17 +765,20 @@ const processPOSOrder = (req, res, next) => __awaiter(void 0, void 0, void 0, fu
                 if (user === null || user === void 0 ? void 0 : user.phone) {
                     const orderId = result.id;
                     const totalAmount = Number(result.totalAmount);
-                    const paymentMode = paymentMethod === "CASH" ? "CASH" : (paymentMethod === "CREDIT" ? "DUE ON ACCOUNT" : "DIGITAL PAY");
                     const isPaid = result.isPaid || result.paymentStatus === "COMPLETED" || result.paymentStatus === "PAID";
+                    const isPartial = result.paymentStatus === "PARTIAL";
+                    const paymentModeDesc = finalOrder.payments.length > 1
+                        ? finalOrder.payments.map((p) => `${p.method}: ₹${Number(p.amount)}`).join(", ")
+                        : (((_c = finalOrder.payments[0]) === null || _c === void 0 ? void 0 : _c.method) || (finalOrder.isCredit ? "DUE ON ACCOUNT" : "CASH"));
                     const { sendInvoicePaidViaWhatsapp, sendInvoiceDueViaWhatsapp } = require("../services/mbgcard");
                     if (isPaid) {
-                        sendInvoicePaidViaWhatsapp(user.phone, user.name || "Customer", orderId, totalAmount, paymentMode, orderId).catch((err) => {
+                        sendInvoicePaidViaWhatsapp(user.phone, user.name || "Customer", orderId, totalAmount, paymentModeDesc, orderId).catch((err) => {
                             console.error("[POSController] WhatsApp Invoice Paid dispatch failure:", err);
                         });
                     }
                     else {
-                        const dueAmount = totalAmount;
-                        sendInvoiceDueViaWhatsapp(user.phone, user.name || "Customer", orderId, totalAmount, paymentMode, dueAmount, customerId, orderId).catch((err) => {
+                        const dueAmount = isPartial ? currentBillDue : totalAmount;
+                        sendInvoiceDueViaWhatsapp(user.phone, user.name || "Customer", orderId, totalAmount, paymentModeDesc, dueAmount, customerId, orderId).catch((err) => {
                             console.error("[POSController] WhatsApp Invoice Due dispatch failure:", err);
                         });
                     }
@@ -665,7 +790,7 @@ const processPOSOrder = (req, res, next) => __awaiter(void 0, void 0, void 0, fu
         }
     }
     catch (error) {
-        if ((_c = error.message) === null || _c === void 0 ? void 0 : _c.includes("stock")) {
+        if ((_d = error.message) === null || _d === void 0 ? void 0 : _d.includes("stock")) {
             return res.status(409).json({ message: error.message });
         }
         next(error);
@@ -732,38 +857,61 @@ const getCustomerHistory = (req, res, next) => __awaiter(void 0, void 0, void 0,
     var _a;
     const customerId = req.params.customerId;
     try {
-        const orders = yield prisma_1.default.order.findMany({
-            where: { userId: customerId, channel: "POS" },
-            include: {
-                user: {
-                    select: {
-                        id: true,
-                        name: true,
-                        phone: true,
-                        email: true,
-                        profileAddress: true,
-                        addresses: true
-                    }
+        let walletTransactions = [];
+        try {
+            walletTransactions = yield prisma_1.default.walletTransaction.findMany({
+                where: { userId: customerId },
+                orderBy: { createdAt: "desc" },
+                take: 20
+            });
+        }
+        catch (_b) {
+            walletTransactions = [];
+        }
+        const [customerUser, orders] = yield Promise.all([
+            prisma_1.default.user.findUnique({
+                where: { id: customerId },
+                select: {
+                    id: true,
+                    name: true,
+                    phone: true,
+                    email: true,
+                    createdAt: true
+                }
+            }),
+            prisma_1.default.order.findMany({
+                where: { userId: customerId, channel: "POS" },
+                include: {
+                    items: { include: { product: { select: { name: true, sku: true } } } },
+                    payments: true,
+                    staff: { select: { name: true } },
+                    location: { select: { name: true } }
                 },
-                items: { include: { product: { select: { name: true, sku: true } } } },
-                payments: true,
-                staff: { select: { name: true } },
-                location: { select: { name: true } }
-            },
-            orderBy: { createdAt: "desc" },
-            take: 50
-        });
-        // 🛡️ ACCURATE DUE: Only calculate due on unpaid orders (!isPaid & paymentStatus not completed/paid/settled)
+                orderBy: { createdAt: "desc" },
+                take: 100
+            })
+        ]);
         const dueOrders = orders.filter(o => !o.isPaid &&
             o.paymentStatus !== "COMPLETED" &&
             o.paymentStatus !== "PAID" &&
             o.paymentStatus !== "SETTLED" &&
             o.status !== "CANCELLED" &&
             o.status !== "FAILED");
-        const now = new Date();
-        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+        const startOfToday = new Date();
+        startOfToday.setHours(0, 0, 0, 0);
         let todayDue = 0;
         let pastDue = 0;
+        const calculatedWalletBalance = Math.max(0, walletTransactions.reduce((acc, tx) => {
+            return tx.type === "DEPOSIT" ? acc + Number(tx.amount) : acc - Number(tx.amount);
+        }, 0));
+        const enrichedOrders = orders.map(o => {
+            const paid = o.payments ? o.payments.filter((p) => p.status === "SUCCESS" || !p.status).reduce((pAcc, p) => pAcc + Number(p.amount), 0) : 0;
+            const due = Math.max(0, Number(o.totalAmount) - paid);
+            const isCompleted = o.isPaid || o.paymentStatus === "COMPLETED" || o.paymentStatus === "PAID" || due <= 0;
+            const isPartial = !isCompleted && paid > 0;
+            const isUnpaid = !isCompleted && paid === 0;
+            return Object.assign(Object.assign({}, o), { paidAmount: paid, dueAmount: due, billStatus: isCompleted ? "PAID" : (isPartial ? "PARTIAL" : "UNPAID") });
+        });
         dueOrders.forEach(o => {
             const paid = o.payments ? o.payments.filter((p) => p.status === "SUCCESS" || !p.status).reduce((pAcc, p) => pAcc + Number(p.amount), 0) : 0;
             const remaining = Number(o.totalAmount) - paid;
@@ -780,13 +928,16 @@ const getCustomerHistory = (req, res, next) => __awaiter(void 0, void 0, void 0,
         const totalSpend = orders.filter(o => o.status !== "CANCELLED" && o.status !== "FAILED").reduce((acc, o) => acc + Number(o.totalAmount), 0);
         const lastVisit = ((_a = orders[0]) === null || _a === void 0 ? void 0 : _a.createdAt) || null;
         res.json({
-            orders,
+            customer: customerUser ? Object.assign(Object.assign({}, customerUser), { accountBalance: calculatedWalletBalance, totalDue: totalDue }) : null,
+            orders: enrichedOrders,
+            walletTransactions,
             summary: {
                 totalOrders: orders.length,
                 totalSpend,
                 totalDue,
                 todayDue,
                 pastDue,
+                accountBalance: calculatedWalletBalance,
                 lastVisit
             }
         });
@@ -979,30 +1130,90 @@ const getStoreConfig = (req, res, next) => __awaiter(void 0, void 0, void 0, fun
 });
 exports.getStoreConfig = getStoreConfig;
 const collectDuePayment = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a;
+    var _a, _b, _c;
     const orderId = req.params.orderId;
-    const { amount, method } = req.body;
+    const { amount, method = "CASH", splitPayments, useWalletBalance = false, denominations, notes, transactionId } = req.body;
     const staffId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.userId;
+    const locationId = (_b = req.user) === null || _b === void 0 ? void 0 : _b.locationId;
     if (!staffId)
         return next(new errors_1.AppError("Unauthorized", 401));
     try {
-        const order = yield prisma_1.default.order.findUnique({ where: { id: orderId }, include: { payments: true } });
+        const order = yield prisma_1.default.order.findUnique({
+            where: { id: orderId },
+            include: { payments: true, user: { select: { id: true, name: true, phone: true } } }
+        });
         if (!order)
             return next(new errors_1.AppError("Order not found", 404));
-        const paidAlready = order.payments.reduce((acc, p) => acc + Number(p.amount), 0);
-        const payingNow = Number(amount || (Number(order.totalAmount) - paidAlready));
-        const totalPaid = paidAlready + payingNow;
-        const isFull = totalPaid >= Number(order.totalAmount);
+        const paidAlready = (order.payments || []).reduce((acc, p) => {
+            const isSuccess = p.status === "SUCCESS" || p.status === "COMPLETED" || p.status === "PAID";
+            return isSuccess ? acc + Number(p.amount) : acc;
+        }, 0);
+        const orderTotal = Number(order.totalAmount);
+        const remainingDue = Math.max(0, orderTotal - paidAlready);
+        if (remainingDue <= 0) {
+            return res.status(400).json({ message: "This bill has already been fully paid and settled." });
+        }
+        // Determine payment slices
+        let paymentSlices = [];
+        if (Array.isArray(splitPayments) && splitPayments.length > 0) {
+            paymentSlices = splitPayments
+                .map(p => ({
+                method: String(p.method || "CASH").toUpperCase(),
+                amount: Number(p.amount || 0),
+                transactionId: p.transactionId,
+                denominations: p.denominations
+            }))
+                .filter(p => p.amount > 0);
+        }
+        else {
+            const payingAmt = amount !== undefined && amount !== null && Number(amount) > 0
+                ? Math.min(Number(amount), remainingDue)
+                : remainingDue;
+            paymentSlices = [{
+                    method: String(method || "CASH").toUpperCase(),
+                    amount: payingAmt,
+                    transactionId: transactionId || `SETTLE_${Date.now()}`,
+                    denominations: denominations
+                }];
+        }
+        const totalPayingNow = paymentSlices.reduce((acc, p) => acc + p.amount, 0);
+        if (totalPayingNow <= 0) {
+            return res.status(400).json({ message: "Invalid payment amount specified." });
+        }
+        const newTotalPaid = paidAlready + totalPayingNow;
+        const isFull = newTotalPaid >= orderTotal;
+        const customerId = order.userId;
         yield prisma_1.default.$transaction((tx) => __awaiter(void 0, void 0, void 0, function* () {
-            yield tx.payment.create({
-                data: {
-                    orderId,
-                    amount: new client_1.Prisma.Decimal(payingNow),
-                    method: method || "CASH",
-                    status: "SUCCESS",
-                    transactionId: `DUE_COLLECT_${Date.now()}`
+            // Handle wallet deduction if applicable
+            for (const slice of paymentSlices) {
+                if (slice.method === "WALLET" || (useWalletBalance && slice.method === "ADVANCE")) {
+                    try {
+                        yield tx.walletTransaction.create({
+                            data: {
+                                userId: customerId,
+                                amount: new client_1.Prisma.Decimal(slice.amount),
+                                type: "DEBIT",
+                                notes: `Bill #${order.id.slice(0, 8).toUpperCase()} settlement`,
+                                orderId: order.id
+                            }
+                        });
+                    }
+                    catch (wErr) {
+                        console.warn("[POS Bill Settle] Wallet transaction ledger notice:", wErr.message);
+                    }
                 }
-            });
+                yield tx.payment.create({
+                    data: {
+                        orderId,
+                        amount: new client_1.Prisma.Decimal(slice.amount),
+                        method: slice.method,
+                        status: "SUCCESS",
+                        transactionId: slice.transactionId || `DUE_SETTLE_${Date.now()}_${Math.random().toString(36).slice(-4)}`,
+                        denominations: slice.method === "CASH" ? (slice.denominations || denominations || null) : null
+                    }
+                });
+            }
+            // Update order status
             yield tx.order.update({
                 where: { id: orderId },
                 data: {
@@ -1011,14 +1222,84 @@ const collectDuePayment = (req, res, next) => __awaiter(void 0, void 0, void 0, 
                     statusHistory: {
                         create: {
                             status: order.status,
-                            remark: `Due payment collected: ₹${payingNow} via ${method || "CASH"}. Total Paid: ₹${totalPaid}`,
+                            remark: `Bill settlement: ₹${totalPayingNow} collected (${paymentSlices.map(s => `${s.method}: ₹${s.amount}`).join(", ")}). Total Paid: ₹${newTotalPaid}/${orderTotal}`,
                             changedBy: staffId
                         }
                     }
                 }
             });
+            // Update cashier shift cash denominations if CASH was collected
+            const cashSlice = paymentSlices.find(s => s.method === "CASH");
+            if (cashSlice && (cashSlice.denominations || denominations) && locationId) {
+                try {
+                    const activeShift = yield tx.cashierShift.findFirst({
+                        where: { locationId, status: "OPEN" }
+                    });
+                    if (activeShift) {
+                        const shiftDenominations = activeShift.currentDenominations
+                            ? (typeof activeShift.currentDenominations === "string"
+                                ? JSON.parse(activeShift.currentDenominations)
+                                : activeShift.currentDenominations)
+                            : {};
+                        const denomObj = cashSlice.denominations || denominations;
+                        const received = denomObj.received || {};
+                        const change = denomObj.change || {};
+                        const denominationsKeys = ["500", "200", "100", "50", "20", "10", "5", "2", "1"];
+                        const updatedDenominations = {};
+                        for (const k of denominationsKeys) {
+                            const currentCount = Number(shiftDenominations[k] || 0);
+                            const receivedCount = Number(received[k] || 0);
+                            const changeCount = Number(change[k] || 0);
+                            updatedDenominations[k] = Math.max(0, currentCount + receivedCount - changeCount);
+                        }
+                        yield tx.cashierShift.update({
+                            where: { id: activeShift.id },
+                            data: { currentDenominations: updatedDenominations }
+                        });
+                    }
+                }
+                catch (shiftErr) {
+                    console.warn("[POS Bill Settle] Cashier shift denomination update notice:", shiftErr.message);
+                }
+            }
         }));
-        res.json({ message: "Payment recorded successfully", isFull });
+        // ── WhatsApp Notification Dispatch ────────────────────────────────
+        if ((_c = order.user) === null || _c === void 0 ? void 0 : _c.phone) {
+            try {
+                const user = order.user;
+                const totalAmount = orderTotal;
+                const remainingDueAfter = Math.max(0, orderTotal - newTotalPaid);
+                const paymentModeDesc = paymentSlices.map(p => `${p.method}: ₹${p.amount}`).join(", ");
+                const { sendInvoicePaidViaWhatsapp, sendInvoiceDueViaWhatsapp } = require("../services/mbgcard");
+                if (isFull) {
+                    sendInvoicePaidViaWhatsapp(user.phone, user.name || "Customer", orderId, totalAmount, paymentModeDesc, orderId).catch((err) => {
+                        console.error("[POS Bill Settle] WhatsApp Invoice Paid dispatch failure:", err.message);
+                    });
+                }
+                else {
+                    sendInvoiceDueViaWhatsapp(user.phone, user.name || "Customer", orderId, totalAmount, paymentModeDesc, remainingDueAfter, customerId, orderId).catch((err) => {
+                        console.error("[POS Bill Settle] WhatsApp Invoice Due dispatch failure:", err.message);
+                    });
+                }
+            }
+            catch (wErr) {
+                console.warn("[POS Bill Settle] WhatsApp notification dispatch warning:", wErr.message);
+            }
+        }
+        res.json({
+            success: true,
+            message: isFull ? "Bill fully settled and cleared" : `Partial settlement of ₹${totalPayingNow} recorded`,
+            isFull,
+            settledAmount: totalPayingNow,
+            order: {
+                id: order.id,
+                totalAmount: orderTotal,
+                paidAmount: newTotalPaid,
+                dueAmount: Math.max(0, orderTotal - newTotalPaid),
+                paymentStatus: isFull ? "COMPLETED" : "PARTIAL",
+                isPaid: isFull
+            }
+        });
     }
     catch (error) {
         next(error);
@@ -1238,3 +1519,69 @@ const getPOSOrderById = (req, res, next) => __awaiter(void 0, void 0, void 0, fu
     }
 });
 exports.getPOSOrderById = getPOSOrderById;
+// ─── 9. Customer Advance Deposit / Credit Top-up ──────────────────────────────
+const customerDeposit = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
+    const { customerId, amount, paymentMethod = "CASH", transactionId, notes } = req.body;
+    const staffId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.userId;
+    if (!customerId || !amount || Number(amount) <= 0) {
+        return res.status(400).json({ message: "Valid customer and positive deposit amount are required." });
+    }
+    try {
+        const depositAmt = Number(amount);
+        const result = yield prisma_1.default.$transaction((tx) => __awaiter(void 0, void 0, void 0, function* () {
+            const customer = yield tx.user.findUnique({
+                where: { id: String(customerId) },
+                select: { id: true, name: true, phone: true, accountBalance: true }
+            });
+            if (!customer) {
+                throw new Error("Customer not found.");
+            }
+            const currentBalance = Number(customer.accountBalance || 0);
+            const newBalance = currentBalance + depositAmt;
+            yield tx.user.update({
+                where: { id: String(customerId) },
+                data: { accountBalance: new client_1.Prisma.Decimal(newBalance) }
+            });
+            const transaction = yield tx.walletTransaction.create({
+                data: {
+                    userId: String(customerId),
+                    amount: new client_1.Prisma.Decimal(depositAmt),
+                    type: "DEPOSIT",
+                    paymentMethod: String(paymentMethod).toUpperCase(),
+                    referenceId: transactionId || `DEP_${Date.now()}`,
+                    balanceAfter: new client_1.Prisma.Decimal(newBalance),
+                    notes: notes || "Advance Credit Deposit in POS",
+                    createdBy: staffId || "STAFF"
+                }
+            });
+            return { customer, newBalance, transaction };
+        }));
+        // Send WhatsApp confirmation if customer phone exists
+        if (result.customer.phone) {
+            try {
+                const { sendTemplateViaChatHub } = require("../services/mbgcard");
+                yield sendTemplateViaChatHub(result.customer.phone, "payment_received", {
+                    body: [
+                        result.customer.name || "Customer",
+                        `ADV-DEP-${Date.now().toString().slice(-4)}`,
+                        String(depositAmt),
+                        `${paymentMethod} (Advance Wallet Credit - Current Balance: ₹${result.newBalance})`
+                    ]
+                }).catch(() => null);
+            }
+            catch (err) {
+                console.warn("[Deposit WhatsApp warning]:", err);
+            }
+        }
+        res.status(201).json({
+            message: `₹${depositAmt} deposited successfully into ${result.customer.name || 'Customer'}'s advance wallet.`,
+            accountBalance: result.newBalance,
+            transaction: result.transaction
+        });
+    }
+    catch (error) {
+        next(error);
+    }
+});
+exports.customerDeposit = customerDeposit;

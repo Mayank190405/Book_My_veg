@@ -7,6 +7,7 @@ const router = (0, express_1.Router)();
 // Dashboard Analytics (Protected)
 router.get("/stats", auth_1.authenticate, dashboardController_1.getDashboardStats);
 router.get("/reports", auth_1.authenticate, (0, auth_1.authorize)(["ADMIN", "STORE_ADMIN"]), dashboardController_1.getSalesReports);
+router.get("/daily-product-reports", auth_1.authenticate, (0, auth_1.authorize)(["ADMIN", "STORE_ADMIN", "MANAGER"]), dashboardController_1.getDailyProductReport);
 router.get("/customer-reports", auth_1.authenticate, (0, auth_1.authorize)(["ADMIN", "STORE_ADMIN"]), dashboardController_1.getCustomerSalesAndDueReports);
 router.get("/customer-reports/:customerId", auth_1.authenticate, (0, auth_1.authorize)(["ADMIN", "STORE_ADMIN"]), dashboardController_1.getCustomerDetailedReport);
 // Shift Management (Hub/Staff specific)

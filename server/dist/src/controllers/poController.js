@@ -12,7 +12,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getPurchaseManagerAssignedStores = exports.assignPurchaseManagerStores = exports.receivePurchaseOrder = exports.reviewPurchaseOrder = exports.getPurchaseOrderById = exports.getPurchaseOrders = exports.createPurchaseOrder = void 0;
+exports.sendPOToVendorWhatsApp = exports.getPurchaseManagerAssignedStores = exports.assignPurchaseManagerStores = exports.receivePurchaseOrder = exports.reviewPurchaseOrder = exports.getPurchaseOrderById = exports.getPurchaseOrders = exports.createPurchaseOrder = void 0;
 const prisma_1 = __importDefault(require("../config/prisma"));
 const client_1 = require("@prisma/client");
 // Generate sequential PO number (e.g. PO-2026-0001)
@@ -130,7 +130,8 @@ const ensurePOSchema = () => __awaiter(void 0, void 0, void 0, function* () {
 });
 // ─── 1. Create Purchase Order (Store Creation) ────────────────────────────────
 const createPurchaseOrder = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
-    const { items, notes, supplierName, supplierPhone, locationId: reqLocId } = req.body;
+    var _a, _b;
+    const { items, notes, vendorId, supplierName, supplierPhone, locationId: reqLocId, autoSend = false } = req.body;
     const caller = req.user;
     try {
         yield ensurePOSchema();
@@ -143,6 +144,15 @@ const createPurchaseOrder = (req, res, next) => __awaiter(void 0, void 0, void 0
         }
         if (!Array.isArray(items) || items.length === 0) {
             return res.status(400).json({ message: "At least one product item is required for the Purchase Order." });
+        }
+        let effectiveSupplierName = supplierName;
+        let effectiveSupplierPhone = supplierPhone;
+        if (vendorId) {
+            const vendor = yield prisma_1.default.vendor.findUnique({ where: { id: String(vendorId) } });
+            if (vendor) {
+                effectiveSupplierName = vendor.companyName ? `${vendor.name} (${vendor.companyName})` : vendor.name;
+                effectiveSupplierPhone = vendor.phone;
+            }
         }
         const poNumber = yield generatePONumber();
         const po = yield prisma_1.default.$transaction((tx) => __awaiter(void 0, void 0, void 0, function* () {
@@ -173,16 +183,18 @@ const createPurchaseOrder = (req, res, next) => __awaiter(void 0, void 0, void 0
                     poNumber,
                     locationId: String(targetLocationId),
                     createdById: String(creatorId),
+                    vendorId: vendorId ? String(vendorId) : null,
                     notes: notes || null,
-                    supplierName: supplierName || null,
-                    supplierPhone: supplierPhone || null,
+                    supplierName: effectiveSupplierName || null,
+                    supplierPhone: effectiveSupplierPhone || null,
                     status: client_1.POStatus.SUBMITTED,
                     totalEstimatedCost: new client_1.Prisma.Decimal(totalEst),
                     items: { create: itemCreates }
                 },
                 include: {
-                    location: { select: { id: true, name: true, slug: true } },
+                    location: { select: { id: true, name: true, slug: true, address: true } },
                     createdBy: { select: { id: true, name: true, role: true } },
+                    vendor: { select: { id: true, name: true, companyName: true, phone: true, email: true } },
                     items: {
                         include: {
                             product: { select: { id: true, name: true, sku: true, images: true, basePrice: true } },
@@ -192,7 +204,30 @@ const createPurchaseOrder = (req, res, next) => __awaiter(void 0, void 0, void 0
                 }
             });
         }));
-        res.status(201).json({ message: "Purchase Order submitted successfully for manager review.", purchaseOrder: po });
+        // Trigger WhatsApp to vendor if autoSend is requested and phone is present
+        if (autoSend && effectiveSupplierPhone) {
+            try {
+                const { sendTemplateViaChatHub } = require("../services/mbgcard");
+                const storeName = ((_a = po.location) === null || _a === void 0 ? void 0 : _a.name) || "Book My Veg";
+                const origin = process.env.CLIENT_URL || "https://bookmyveg.co.in";
+                const poLink = `${origin}/admin/purchase-orders?po=${po.id}`;
+                yield sendTemplateViaChatHub(effectiveSupplierPhone, "vendor_po_dispatch", {
+                    body: [
+                        effectiveSupplierName || "Vendor",
+                        po.poNumber,
+                        String(po.items.length),
+                        String(Number(po.totalEstimatedCost)),
+                        storeName,
+                        ((_b = po.location) === null || _b === void 0 ? void 0 : _b.address) || "Store Hub",
+                        poLink
+                    ]
+                }).catch((e) => console.warn("[PO autoSend warning]:", e.message));
+            }
+            catch (e) {
+                console.error("[PO autoSend error]:", e);
+            }
+        }
+        res.status(201).json({ message: "Purchase Order submitted successfully.", purchaseOrder: po });
     }
     catch (error) {
         next(error);
@@ -201,7 +236,7 @@ const createPurchaseOrder = (req, res, next) => __awaiter(void 0, void 0, void 0
 exports.createPurchaseOrder = createPurchaseOrder;
 // ─── 2. List Purchase Orders ──────────────────────────────────────────────────
 const getPurchaseOrders = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
-    const { status, locationId } = req.query;
+    const { status, locationId, vendorId } = req.query;
     const caller = req.user;
     try {
         yield ensurePOSchema();
@@ -212,6 +247,9 @@ const getPurchaseOrders = (req, res, next) => __awaiter(void 0, void 0, void 0, 
         }
         if (locationId) {
             whereClause.locationId = String(locationId);
+        }
+        if (vendorId) {
+            whereClause.vendorId = String(vendorId);
         }
         if (status && status !== "ALL") {
             whereClause.status = String(status);
@@ -224,6 +262,7 @@ const getPurchaseOrders = (req, res, next) => __awaiter(void 0, void 0, void 0, 
                     location: { select: { id: true, name: true, slug: true } },
                     createdBy: { select: { id: true, name: true, role: true, phone: true } },
                     reviewedBy: { select: { id: true, name: true, role: true } },
+                    vendor: { select: { id: true, name: true, companyName: true, phone: true } },
                     items: {
                         include: {
                             product: { select: { id: true, name: true, sku: true, images: true, basePrice: true } },
@@ -510,3 +549,57 @@ const getPurchaseManagerAssignedStores = (req, res, next) => __awaiter(void 0, v
     }
 });
 exports.getPurchaseManagerAssignedStores = getPurchaseManagerAssignedStores;
+// ─── 8. Dispatch PO to Vendor WhatsApp ────────────────────────────────────────
+const sendPOToVendorWhatsApp = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a, _b, _c, _d, _e;
+    const id = String(req.params.id);
+    const { templateName = "vendor_po_dispatch", customPhone, customMessage } = req.body;
+    try {
+        const po = yield prisma_1.default.purchaseOrder.findUnique({
+            where: { id },
+            include: {
+                location: { select: { name: true, address: true, contactNumber: true } },
+                vendor: { select: { name: true, companyName: true, phone: true } },
+                items: {
+                    include: {
+                        product: { select: { name: true } },
+                        variant: { select: { name: true } }
+                    }
+                }
+            }
+        });
+        if (!po) {
+            return res.status(404).json({ message: "Purchase Order not found." });
+        }
+        const recipientPhone = customPhone || po.supplierPhone || ((_a = po.vendor) === null || _a === void 0 ? void 0 : _a.phone);
+        if (!recipientPhone) {
+            return res.status(400).json({ message: "No phone number available for vendor/supplier." });
+        }
+        const vendorName = ((_b = po.vendor) === null || _b === void 0 ? void 0 : _b.companyName) || ((_c = po.vendor) === null || _c === void 0 ? void 0 : _c.name) || po.supplierName || "Vendor";
+        const storeName = ((_d = po.location) === null || _d === void 0 ? void 0 : _d.name) || "Book My Veg Hub";
+        const storeAddress = ((_e = po.location) === null || _e === void 0 ? void 0 : _e.address) || "Store Hub";
+        const totalAmount = String(Number(po.actualCost) > 0 ? Number(po.actualCost) : Number(po.totalEstimatedCost));
+        const origin = process.env.CLIENT_URL || "https://bookmyveg.co.in";
+        const poLink = `${origin}/admin/purchase-orders?po=${po.id}`;
+        const { sendTemplateViaChatHub } = require("../services/mbgcard");
+        const variables = [
+            vendorName,
+            po.poNumber,
+            String(po.items.length),
+            totalAmount,
+            storeName,
+            storeAddress,
+            poLink
+        ];
+        const dispatchResult = yield sendTemplateViaChatHub(recipientPhone, templateName, { body: variables });
+        res.json({
+            success: true,
+            message: `Purchase Order ${po.poNumber} sent to vendor WhatsApp (${recipientPhone}).`,
+            dispatchResult
+        });
+    }
+    catch (error) {
+        res.status(500).json({ success: false, message: error.message || "Failed to send PO via WhatsApp." });
+    }
+});
+exports.sendPOToVendorWhatsApp = sendPOToVendorWhatsApp;

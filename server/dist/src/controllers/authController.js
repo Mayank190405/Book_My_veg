@@ -116,9 +116,15 @@ const verifyOtpAndLogin = (req, res) => __awaiter(void 0, void 0, void 0, functi
             return res.status(400).json({ message: "Invalid or expired OTP" });
         }
         // Find or create user (retry on stale-connection errors)
-        let user = yield (0, prisma_1.withRetry)(() => prisma_1.default.user.findUnique({ where: { phone } }));
+        let user = yield (0, prisma_1.withRetry)(() => prisma_1.default.user.findUnique({
+            where: { phone },
+            select: { id: true, phone: true, role: true, name: true, locationId: true }
+        }));
         if (!user) {
-            user = yield (0, prisma_1.withRetry)(() => prisma_1.default.user.create({ data: { phone } }));
+            user = yield (0, prisma_1.withRetry)(() => prisma_1.default.user.create({
+                data: { phone },
+                select: { id: true, phone: true, role: true, name: true, locationId: true }
+            }));
         }
         const { accessToken, refreshToken } = (0, jwt_1.generateTokens)(user.id, user.role, user.locationId);
         res.cookie("refreshToken", refreshToken, {
@@ -348,6 +354,16 @@ const loginWithPassword = (req, res) => __awaiter(void 0, void 0, void 0, functi
                     { phone: loginId },
                     { email: { equals: loginId, mode: "insensitive" } }
                 ]
+            },
+            select: {
+                id: true,
+                phone: true,
+                email: true,
+                name: true,
+                role: true,
+                password: true,
+                isActive: true,
+                locationId: true
             }
         }));
         let locationMatch = null;

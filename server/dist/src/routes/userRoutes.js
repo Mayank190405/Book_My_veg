@@ -23,8 +23,19 @@ router.put("/profile", auth_1.authenticate, (0, validate_1.validate)(authSchemas
 // Admin Identity Management
 router.get("/admin/all", auth_1.authenticate, (0, auth_1.authorize)(["ADMIN", "STORE_ADMIN", "MANAGER"]), userController_1.getUsersAdmin);
 router.post("/admin/create", auth_1.authenticate, (0, auth_1.authorize)(["ADMIN", "STORE_ADMIN", "MANAGER"]), userController_1.createUserAdmin);
-router.post("/admin/bulk-ingest", auth_1.authenticate, (0, auth_1.authorize)(["ADMIN", "STORE_ADMIN", "MANAGER"]), userController_1.bulkIngestUsers);
-router.get("/admin/drivers", auth_1.authenticate, (0, auth_1.authorize)(["ADMIN", "STORE_ADMIN", "MANAGER"]), userController_1.getDeliveryPartners);
+router.get("/admin/drivers", auth_1.authenticate, (0, auth_1.authorize)(["ADMIN", "STORE_ADMIN", "MANAGER", "POS_OPERATOR"]), userController_1.getDeliveryPartners);
+router.get("/admin/packers", auth_1.authenticate, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const packers = yield prisma_1.default.user.findMany({
+            where: { role: "PACKING", isActive: true },
+            select: { id: true, name: true, phone: true }
+        });
+        res.json(packers);
+    }
+    catch (err) {
+        res.status(500).json({ message: "Failed to fetch packers" });
+    }
+}));
 router.patch("/admin/update/:id", auth_1.authenticate, (0, auth_1.authorize)(["ADMIN", "STORE_ADMIN", "MANAGER"]), userController_1.updateUserAdmin);
 // PATCH /api/v1/users/:id — Update any user's basic info (for POS customer edit)
 router.patch("/:id", auth_1.authenticate, (req, res) => __awaiter(void 0, void 0, void 0, function* () {

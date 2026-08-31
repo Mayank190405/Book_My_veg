@@ -303,6 +303,15 @@ model Order {
   deliveryPhoto     String?
   deliveryOtp       String?
   staffId           String?
+  isDelivery        Boolean              @default(false)
+  packerValidatedAt DateTime?
+  packerValidatedBy String?
+  cashCollected     Decimal              @default(0) @db.Decimal(10, 2)
+  easebuzzCollected Decimal              @default(0) @db.Decimal(10, 2)
+  deliveredAt       DateTime?
+  returnAssignedTo  String?
+  returnReason      String?
+  returnStatus      String?
   coupon            Coupon?              @relation(fields: [couponId], references: [id])
   deliveryPartner   User?                @relation("OrderDeliveryPartner", fields: [deliveryPartnerId], references: [id])
   location          Location?            @relation(fields: [locationId], references: [id])

@@ -11,6 +11,7 @@ router.get("/customers/search", posController_1.searchCustomer);
 router.post("/customers/upsert", posController_1.createOrUpdateCustomer);
 router.get("/customers/:customerId/history", posController_1.getCustomerHistory);
 router.post("/customers/:customerId/settle", posController_1.settleAccountBalance);
+router.post("/customers/deposit", posController_1.customerDeposit);
 // ─── Transaction Node ─────────────────────────────────────────────────────────
 router.post("/orders/process", posController_1.processPOSOrder);
 router.get("/orders/web", posController_1.getWebOrders);

@@ -52,6 +52,9 @@ const index_1 = __importDefault(require("./routes/integration/index"));
 const incidentRoutes_1 = __importDefault(require("./routes/incidentRoutes"));
 const analyticsRoutes_1 = __importDefault(require("./routes/analyticsRoutes"));
 const pageContentRoutes_1 = __importDefault(require("./routes/pageContentRoutes"));
+const templateRoutes_1 = __importDefault(require("./routes/templateRoutes"));
+const vendorRoutes_1 = __importDefault(require("./routes/vendorRoutes"));
+const staffAdvanceRoutes_1 = __importDefault(require("./routes/staffAdvanceRoutes"));
 const auth_1 = require("./middleware/auth");
 const socketHandler_1 = require("./sockets/socketHandler");
 const logger_1 = __importDefault(require("./utils/logger"));
@@ -140,6 +143,9 @@ app.use("/api/v1/integration-keys", auth_1.authenticate, (0, auth_1.authorize)([
 app.use("/api/v1/incidents", auth_1.authenticate, (0, auth_1.authorize)(["ADMIN"]), incidentRoutes_1.default);
 app.use("/api/v1/analytics", auth_1.authenticate, (0, auth_1.authorize)(["ADMIN"]), analyticsRoutes_1.default);
 app.use("/api/v1/page-content", pageContentRoutes_1.default);
+app.use("/api/v1/templates", templateRoutes_1.default);
+app.use("/api/v1/vendors", vendorRoutes_1.default);
+app.use("/api/v1/staff-advances", staffAdvanceRoutes_1.default);
 app.use("/api/integration/v1", index_1.default);
 app.get("/health", (_req, res) => {
     res.status(200).json({ status: "ok" });

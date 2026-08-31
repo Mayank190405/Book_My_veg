@@ -20,12 +20,22 @@ const ONE_HOUR_MS = 60 * 60 * 1000;
 const THREE_HOURS_MS = 3 * ONE_HOUR_MS;
 const ONE_DAY_MS = 24 * ONE_HOUR_MS;
 const startPaymentReminderWorker = () => {
-    logger_1.default.info("[Payment Reminder Worker] Daemon initialized.");
+    logger_1.default.info("[Payment & Retention Reminder Worker] Daemon initialized.");
     const runRemindersAndFeedbackCheck = () => __awaiter(void 0, void 0, void 0, function* () {
         var _a;
-        logger_1.default.info("[Payment Reminder Worker] Running background tasks (Dues & Feedback)...");
+        logger_1.default.info("[Payment & Retention Worker] Running background tasks (Dues, Inactivity & Feedback)...");
         try {
             const now = new Date();
+            const origin = process.env.CLIENT_URL || "https://bookmyveg.co.in";
+            // Load active template configurations
+            const [dueConfig, inactiveConfig] = yield Promise.all([
+                prisma_1.default.whatsAppTemplateConfig.findFirst({
+                    where: { event: "PAYMENT_REMINDER", isActive: true }
+                }),
+                prisma_1.default.whatsAppTemplateConfig.findFirst({
+                    where: { event: "CUSTOMER_INACTIVE", isActive: true }
+                })
+            ]);
             // ─── 1. DELAYED FEEDBACK REQUESTS (3 HOURS POST-DELIVERY) ───
             const deliveredOrders = yield prisma_1.default.order.findMany({
                 where: {
@@ -55,43 +65,97 @@ const startPaymentReminderWorker = () => {
                     }
                 }
             }
-            // ─── 2. DUES PAYMENT REMINDERS (7, 14, 21 DAYS UNPAID INVOICES) ───
+            // ─── 2. DUES PAYMENT REMINDERS (With Locked Payment Link) ───
             const unpaidOrders = yield prisma_1.default.order.findMany({
                 where: {
                     isPaid: false,
-                    paymentStatus: { notIn: ["COMPLETED", "PAID"] }
+                    paymentStatus: { in: ["PENDING", "PARTIAL"] },
+                    status: { notIn: ["CANCELLED", "FAILED"] }
                 },
-                include: { user: true, payments: true }
+                include: { user: true, payments: true, location: true }
             });
+            // Target duration from config or default (7 days)
+            const dueDurationValue = (dueConfig === null || dueConfig === void 0 ? void 0 : dueConfig.triggerDurationValue) || 7;
+            const dueDurationUnit = (dueConfig === null || dueConfig === void 0 ? void 0 : dueConfig.triggerDurationUnit) || "DAYS";
+            const dueIntervalMs = dueDurationUnit === "HOURS" ? dueDurationValue * ONE_HOUR_MS : dueDurationValue * ONE_DAY_MS;
             for (const order of unpaidOrders) {
                 const user = order.user;
                 if (!user || !user.phone)
                     continue;
                 const ageInMs = now.getTime() - new Date(order.createdAt).getTime();
-                const ageInDays = ageInMs / ONE_DAY_MS;
-                let shouldSend = false;
-                let reminderType = "";
-                if (ageInDays >= 7 && ageInDays < 8) {
-                    shouldSend = true;
-                    reminderType = "7-day";
-                }
-                else if (ageInDays >= 14 && ageInDays < 15) {
-                    shouldSend = true;
-                    reminderType = "14-day";
-                }
-                else if (ageInDays >= 21 && ageInDays < 22) {
-                    shouldSend = true;
-                    reminderType = "21-day";
-                }
-                if (shouldSend) {
-                    const paid = order.payments.filter((p) => p.status === "SUCCESS").reduce((sum, p) => sum + Number(p.amount), 0);
+                const dueIntervalCycles = Math.floor(ageInMs / dueIntervalMs);
+                // Send when order crosses 1x, 2x, 3x duration cycle within a 2-hour window
+                const remainderMs = ageInMs % dueIntervalMs;
+                const isCycleTrigger = dueIntervalCycles >= 1 && remainderMs < (2 * ONE_HOUR_MS);
+                if (isCycleTrigger) {
+                    const paid = order.payments.filter((p) => p.status === "SUCCESS" || !p.status).reduce((sum, p) => sum + Number(p.amount), 0);
                     const dueAmount = Math.max(0, Number(order.totalAmount) - paid);
                     if (dueAmount > 0) {
-                        logger_1.default.info(`[Payment Reminder Worker] Dispatching ${reminderType} reminder to customer ${user.name} (${user.phone}) for order ${order.id}`);
-                        yield (0, mbgcard_1.sendPaymentReminderViaWhatsapp)(user.phone, user.name || "Customer", dueAmount, order.id, user.id, order.id).catch((err) => {
+                        const templateName = (dueConfig === null || dueConfig === void 0 ? void 0 : dueConfig.templateId) || "due_payment_reminder";
+                        const lockedPayLink = `${origin}/pay?userid=${user.id}&number=${user.phone}&billid=${order.id}&lockAmount=true`;
+                        logger_1.default.info(`[Payment Reminder Worker] Dispatching due reminder to customer ${user.name} (${user.phone}) for order ${order.id} (Due: ₹${dueAmount})`);
+                        yield (0, mbgcard_1.sendTemplateViaChatHub)(user.phone, templateName, {
+                            body: [
+                                user.name || "Customer",
+                                String(dueAmount),
+                                order.id,
+                                lockedPayLink
+                            ]
+                        }).catch((err) => {
                             logger_1.default.error(`[Payment Reminder Worker] Error sending to ${user.phone}: ${err.message}`);
                         });
                     }
+                }
+            }
+            // ─── 3. 7-DAY (OR CONFIGURABLE) INACTIVITY REMINDERS ───
+            const inactiveDurationValue = (inactiveConfig === null || inactiveConfig === void 0 ? void 0 : inactiveConfig.triggerDurationValue) || 7;
+            const inactiveDurationUnit = (inactiveConfig === null || inactiveConfig === void 0 ? void 0 : inactiveConfig.triggerDurationUnit) || "DAYS";
+            const inactiveIntervalMs = inactiveDurationUnit === "HOURS" ? inactiveDurationValue * ONE_HOUR_MS : inactiveDurationValue * ONE_DAY_MS;
+            const inactivityThresholdDate = new Date(now.getTime() - inactiveIntervalMs);
+            // Find users who have orders, but whose latest order is older than threshold
+            const customersWithHistory = yield prisma_1.default.user.findMany({
+                where: {
+                    role: "USER",
+                    isActive: true,
+                    orders: { some: {} }
+                },
+                select: {
+                    id: true,
+                    name: true,
+                    phone: true,
+                    orders: {
+                        orderBy: { createdAt: "desc" },
+                        take: 1,
+                        select: { createdAt: true }
+                    }
+                },
+                take: 100
+            });
+            for (const customer of customersWithHistory) {
+                if (!customer.phone)
+                    continue;
+                const lastOrder = customer.orders[0];
+                if (!lastOrder)
+                    continue;
+                const lastOrderDate = new Date(lastOrder.createdAt);
+                const inactiveMs = now.getTime() - lastOrderDate.getTime();
+                const daysInactive = Math.floor(inactiveMs / ONE_DAY_MS);
+                // Check if customer just crossed the inactivity threshold today (within 2 hours window)
+                if (inactiveMs >= inactiveIntervalMs && (inactiveMs - inactiveIntervalMs) < (2 * ONE_HOUR_MS)) {
+                    const templateName = (inactiveConfig === null || inactiveConfig === void 0 ? void 0 : inactiveConfig.templateId) || "customer_inactive_reminder";
+                    const storeLink = `${origin}`;
+                    const storeName = "Book My Veg";
+                    logger_1.default.info(`[Retention Worker] Dispatching ${daysInactive}-day inactivity reminder to customer ${customer.name} (${customer.phone})`);
+                    yield (0, mbgcard_1.sendTemplateViaChatHub)(customer.phone, templateName, {
+                        body: [
+                            customer.name || "Valued Customer",
+                            storeName,
+                            String(daysInactive),
+                            storeLink
+                        ]
+                    }).catch((err) => {
+                        logger_1.default.error(`[Retention Worker] Inactivity send failure for ${customer.phone}: ${err.message}`);
+                    });
                 }
             }
         }

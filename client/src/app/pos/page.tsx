@@ -9,7 +9,8 @@ import {
     Clock, User, Printer, AlertTriangle, ChevronDown, Receipt,
     Banknote, Smartphone, BookOpen, XCircle, Check, Package, Settings, SquarePen, Globe,
     ArrowLeft, Bell, Wallet, CheckCircle2, AlertCircle, ScanLine,
-    Power, PowerOff, RefreshCw, MessageCircle, Send, Layers, Loader2
+    Power, PowerOff, RefreshCw, MessageCircle, Send, Layers, Loader2,
+    Store, Truck
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -253,11 +254,34 @@ export default function POSOperator() {
     const qrBuffer = useRef("");
     const lastKeyTime = useRef(0);
 
+    // Packers & Fulfillment Selection
+    const [availablePackers, setAvailablePackers] = useState<any[]>([]);
+    const [selectedPackerId, setSelectedPackerId] = useState<string>("");
+    const [isDeliverySelected, setIsDeliverySelected] = useState<boolean>(false);
+
+    const fetchPackers = async () => {
+        try {
+            const res = await api.get("/users/admin/packers");
+            const packers = res.data || [];
+            setAvailablePackers(packers);
+            const saved = typeof window !== "undefined" ? localStorage.getItem("selectedPackerId") : null;
+            if (saved && packers.some((p: any) => p.id === saved)) {
+                setSelectedPackerId(saved);
+            } else if (packers.length > 0) {
+                setSelectedPackerId(packers[0].id);
+                localStorage.setItem("selectedPackerId", packers[0].id);
+            }
+        } catch {
+            /* silent */
+        }
+    };
+
     useEffect(() => {
         fetchProducts();
         fetchStoreConfig();
         checkShiftStatus();
         fetchTodaySales(false);
+        fetchPackers();
         const tick = setInterval(() => setTime(new Date()), 1000);
 
         const handleKeyPress = (e: KeyboardEvent) => {
@@ -1091,10 +1115,16 @@ export default function POSOperator() {
         }
     };
 
-    // Checkout — CUST-01: Blocked if no real customer
+    // Checkout — CUST-01: Blocked if no real customer & Packer Compulsory
     const handleCheckout = async () => {
         if (!activeShift) { toast.error("Operational Block: No active shift found. Open a shift to proceed."); setShowShiftModal(true); return; }
         if (!selectedCustomer?.id) { toast.error("Customer required. Walk-in is disabled."); return; }
+        if (!selectedPackerId) {
+            toast.error("Packer selection is compulsory for every bill.", {
+                description: "Please select a packer from the checkout window."
+            });
+            return;
+        }
         setIsProcessing(true);
 
         const splitPayments: any[] = [];
@@ -1131,7 +1161,8 @@ export default function POSOperator() {
                 paymentMethod,
                 splitPayments: paymentMethod === "SPLIT" ? splitPayments : undefined,
                 discountAmount: discount,
-                packerId: localStorage.getItem("selectedPackerId"),
+                packerId: selectedPackerId,
+                isDelivery: isDeliverySelected,
                 duePaymentAmount: Number(duePaymentAmount),
                 paidAmount: effectivePaidAmount,
                 denominations: (paymentMethod === "CASH" || (paymentMethod === "SPLIT" && Number(splitCashAmount) > 0)) ? {
@@ -1640,13 +1671,11 @@ export default function POSOperator() {
                         ${storeConfig?.gstNumber ? `<span style="margin: 0 3px;">•</span><span>GST: ${storeConfig.gstNumber}</span>` : '<span style="margin: 0 3px;">•</span><span>GST: N/A</span>'}
                     </div>
 
-                    <!-- Public Pay Link QR Code -->
-                    ${dueAmount > 0 ? `
+                    <!-- Compulsory POS Bill QR Code -->
                     <div class="qr-section">
-                        <p class="font-bold uppercase" style="font-size: 8px; margin: 0 0 4px 0;">Scan To Pay Bill / View Dues</p>
+                        <p class="font-bold uppercase" style="font-size: 8px; margin: 0 0 4px 0;">${dueAmount > 0 ? 'SCAN TO PAY ONLINE / VIEW DUES' : 'SCAN FOR DIGITAL INVOICE / VERIFIED RECEIPT'}</p>
                         <img class="qr-code" src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(`${typeof window !== 'undefined' ? window.location.origin : ''}/pay/userid=${lastReceipt.userId || lastReceipt.customer?.id || ''}&number=${printCustPhone}&billid=${lastReceipt.id || lastReceipt.order?.id || ''}`)}" />
                     </div>
-                    ` : ''}
 
                     <div class="divider-solid"></div>
 
@@ -2485,6 +2514,73 @@ export default function POSOperator() {
                                         </div>
                                     )}
 
+                                    {/* Fulfillment Selection: IN-STORE vs DELIVERY (Large Distinguished Buttons) */}
+                                    <div className="p-4 bg-white/5 rounded-[1.5rem] border border-white/10 space-y-2">
+                                        <p className="text-[9px] font-black text-white/40 uppercase tracking-[0.2em]">Fulfillment Mode <span className="text-rose-400">*</span></p>
+                                        <div className="grid grid-cols-2 gap-2.5">
+                                            <button
+                                                type="button"
+                                                onClick={() => setIsDeliverySelected(false)}
+                                                className={cn(
+                                                    "p-3 rounded-2xl border-2 flex flex-col items-center justify-center gap-1 transition-all text-center",
+                                                    !isDeliverySelected 
+                                                        ? "bg-teal-500 border-teal-400 text-slate-900 font-black shadow-lg shadow-teal-500/20 ring-2 ring-teal-400/50" 
+                                                        : "bg-white/5 border-white/10 text-white/60 hover:bg-white/10 font-bold"
+                                                )}
+                                            >
+                                                <Store className="h-5 w-5" />
+                                                <span className="text-[11px] uppercase tracking-wider font-black">IN-STORE</span>
+                                                <span className="text-[7.5px] opacity-80 uppercase">Counter</span>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setIsDeliverySelected(true)}
+                                                className={cn(
+                                                    "p-3 rounded-2xl border-2 flex flex-col items-center justify-center gap-1 transition-all text-center",
+                                                    isDeliverySelected 
+                                                        ? "bg-amber-400 border-amber-300 text-slate-900 font-black shadow-lg shadow-amber-400/20 ring-2 ring-amber-400/50" 
+                                                        : "bg-white/5 border-white/10 text-white/60 hover:bg-white/10 font-bold"
+                                                )}
+                                            >
+                                                <Truck className="h-5 w-5" />
+                                                <span className="text-[11px] uppercase tracking-wider font-black">DELIVERY</span>
+                                                <span className="text-[7.5px] opacity-80 uppercase">Fleet</span>
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* Compulsory Packer Selector */}
+                                    <div className="p-4 bg-white/5 rounded-[1.5rem] border border-white/10 space-y-2">
+                                        <div className="flex justify-between items-center">
+                                            <p className="text-[9px] font-black text-white/40 uppercase tracking-[0.2em]">Assigned Packer <span className="text-rose-400">*</span></p>
+                                            {!selectedPackerId && (
+                                                <span className="text-[8px] font-black text-rose-400 uppercase bg-rose-500/20 px-2 py-0.5 rounded-full">
+                                                    Compulsory
+                                                </span>
+                                            )}
+                                        </div>
+                                        <select
+                                            value={selectedPackerId}
+                                            onChange={(e) => {
+                                                setSelectedPackerId(e.target.value);
+                                                localStorage.setItem("selectedPackerId", e.target.value);
+                                            }}
+                                            className={cn(
+                                                "w-full h-11 rounded-xl px-3 text-xs font-bold outline-none transition-all",
+                                                selectedPackerId 
+                                                    ? "bg-white/10 border-2 border-white/20 text-white focus:border-teal-400" 
+                                                    : "bg-rose-500/10 border-2 border-rose-500/40 text-rose-200"
+                                            )}
+                                        >
+                                            <option value="" className="text-slate-900">-- Choose Packing Person (Compulsory) --</option>
+                                            {availablePackers.map((p: any) => (
+                                                <option key={p.id} value={p.id} className="text-slate-900">
+                                                    {p.name} ({p.phone || "Packer"})
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+
                                     <div className="p-5 bg-white/5 rounded-[2rem] border border-white/10 flex items-center justify-between">
                                         <div className="min-w-0 pr-3">
                                             <p className="text-[9px] font-black text-white/30 uppercase tracking-[0.2em] mb-1">Customer</p>
@@ -2795,7 +2891,7 @@ export default function POSOperator() {
 
                                     <div className="flex flex-col gap-3 w-full max-w-md pt-2">
                                         <Button
-                                            onClick={triggerEasebuzzCheckoutInPOS}
+                                            onClick={() => triggerEasebuzzCheckoutInPOS()}
                                             disabled={isProcessing}
                                             className="h-14 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs uppercase tracking-wider shadow-xl rounded-2xl transition-all active:scale-95 disabled:opacity-50"
                                         >
@@ -3629,16 +3725,20 @@ export default function POSOperator() {
                                     </div>
                                 )}
 
-                                {/* Public Pay QR Code Section */}
-                                {lastReceipt && !lastReceipt.order?.isPaid && lastReceipt.order?.paymentStatus !== "COMPLETED" && lastReceipt.order?.paymentStatus !== "PAID" && (
+                                {/* Compulsory Bill QR Code Section */}
+                                {lastReceipt && (
                                     <div className="mt-6 p-4 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col items-center justify-center text-center">
-                                        <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest mb-2">Scan To Pay Bill / Settle Dues Online</p>
+                                        <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest mb-2">
+                                            {lastReceipt.order?.isPaid || lastReceipt.order?.paymentStatus === "PAID" || lastReceipt.order?.paymentStatus === "COMPLETED" 
+                                                ? "Scan For Verified Digital Invoice" 
+                                                : "Scan To Pay Bill / Settle Dues Online"}
+                                        </p>
                                         <img 
                                             src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(`${typeof window !== 'undefined' ? window.location.origin : ''}/pay/userid=${lastReceipt.customer?.id || ''}&number=${lastReceipt.customer?.phone || ''}&billid=${lastReceipt.id || lastReceipt.order?.id || ''}`)}`}
-                                            alt="Public Pay QR"
+                                            alt="POS Bill QR"
                                             className="w-28 h-28 object-contain rounded-lg border p-1 bg-white"
                                         />
-                                        <p className="text-[8px] font-bold text-slate-400 mt-1 uppercase">Direct Bill Payment Gateway</p>
+                                        <p className="text-[8px] font-bold text-slate-400 mt-1 uppercase">Official BMV Bill Verification</p>
                                     </div>
                                 )}
 

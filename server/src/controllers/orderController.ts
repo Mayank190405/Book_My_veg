@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from "express";
-import { OrderStatus as PrismaOrderStatus } from "@prisma/client";
+import { OrderStatus as PrismaOrderStatus, Prisma, Channel } from "@prisma/client";
 import prisma from "../config/prisma";
 import { io } from "../index";
 import {
@@ -14,9 +14,12 @@ import { scheduleOrderAutoCancel } from "../queues/autoCancelQueue";
 import { orderService } from "../services/orderService";
 import { AppError } from "../utils/errors";
 import { getIo } from "../sockets/io";
+import { generateOtp, storeOtp, verifyOtp } from "../utils/otp";
+import { sendOtpViaWhatsapp } from "../services/mbgcard";
+import { generateOrderId } from "../utils/idGenerator";
 
 interface AuthenticatedRequest extends Request {
-    user?: { userId: string; role: string; locationId?: string };
+    user?: { userId: string; role: string; locationId?: string; name?: string };
 }
 
 // ─── Assigning Operations ─────────────────────────────────────────────────────
@@ -221,9 +224,6 @@ export const getAllOrders = async (req: AuthenticatedRequest, res: Response) => 
         res.status(500).json({ message: "Error fetching all orders" });
     }
 };
-
-import { generateOtp, storeOtp, verifyOtp } from "../utils/otp";
-import { sendOtpViaWhatsapp } from "../services/mbgcard";
 
 export const updateOrderStatus = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     const { id } = req.params;
@@ -523,12 +523,684 @@ export const sendDeliveryOtp = async (req: AuthenticatedRequest, res: Response) 
     }
 };
 
+export const extractBillId = (qrData: string): string => {
+    if (!qrData) return "";
+    let str = String(qrData).trim();
+    if (str.includes("billid=")) {
+        const match = str.match(/billid=([^&]+)/);
+        if (match) return decodeURIComponent(match[1]).trim();
+    }
+    if (str.includes("/invoice/")) {
+        const parts = str.split("/invoice/");
+        if (parts[1]) return parts[1].split("?")[0].split("/")[0].trim();
+    }
+    if (str.includes("/pay/")) {
+        const afterPay = str.split("/pay/")[1];
+        if (afterPay) {
+            const match = afterPay.match(/billid=([^&]+)/);
+            if (match) return decodeURIComponent(match[1]).trim();
+        }
+    }
+    return str;
+};
+
+// ─── Packer Manual Order Creation (e.g. WhatsApp orders) ─────────────────────
+export const createPackerOrder = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    const userId = req.user?.userId;
+    const locationId = req.user?.locationId;
+    const { 
+        customerId, 
+        customerName, 
+        customerPhone, 
+        customerAddress, 
+        items, 
+        notes,
+        packerNotes,
+        packerPhoto,
+        isDelivery = true
+    } = req.body;
+
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+    if (!items || !Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ message: "Order must contain at least one item." });
+    }
+
+    try {
+        let finalUserId = customerId;
+        if (!finalUserId) {
+            if (!customerPhone) {
+                return res.status(400).json({ message: "Customer phone is required to create order." });
+            }
+            const cleanPhone = customerPhone.replace(/\D/g, "");
+            let user = await prisma.user.findFirst({
+                where: { OR: [{ phone: cleanPhone }, { phone: `+91${cleanPhone}` }] }
+            });
+            if (!user) {
+                user = await prisma.user.create({
+                    data: {
+                        phone: cleanPhone,
+                        name: customerName || "WhatsApp Customer",
+                        profileAddress: customerAddress || null
+                    }
+                });
+                if (customerAddress) {
+                    await prisma.address.create({
+                        data: {
+                            userId: user.id,
+                            fullAddress: customerAddress,
+                            name: customerName || user.name,
+                            phone: cleanPhone,
+                            isDefault: true
+                        }
+                    });
+                }
+            }
+            finalUserId = user.id;
+        }
+
+        // Calculate totals
+        let totalAmount = 0;
+        const itemCreates = [];
+
+        for (const item of items) {
+            let sellingPrice = Number(item.sellingPrice || item.price || 0);
+            if (!sellingPrice && (item.productId || item.id)) {
+                const prod = await prisma.product.findUnique({
+                    where: { id: item.productId || item.id },
+                    include: { variants: true }
+                });
+                if (prod) {
+                    sellingPrice = Number(prod.basePrice || 0);
+                    if (item.variantId) {
+                        const variant = prod.variants.find((v: any) => v.id === item.variantId);
+                        if (variant) sellingPrice = Number(variant.price);
+                    }
+                }
+            }
+            const qty = Number(item.quantity || 1);
+            totalAmount += sellingPrice * qty;
+
+            itemCreates.push({
+                productId: item.productId || item.id,
+                variantId: item.variantId || null,
+                quantity: new Prisma.Decimal(qty),
+                sellingPrice: new Prisma.Decimal(sellingPrice),
+                locationId: locationId || undefined
+            });
+        }
+
+        const orderId = generateOrderId();
+        const order = await prisma.order.create({
+            data: {
+                id: orderId,
+                userId: finalUserId,
+                locationId: locationId || undefined,
+                packerId: userId,
+                packedAt: new Date(),
+                packerNotes: packerNotes || notes || null,
+                packerPhoto: packerPhoto || null,
+                totalAmount: new Prisma.Decimal(totalAmount),
+                status: "PACKED" as PrismaOrderStatus,
+                paymentStatus: "PENDING",
+                channel: Channel.WHATSAPP,
+                isDelivery: isDelivery !== false,
+                shippingAddress: typeof customerAddress === "object" ? customerAddress : {
+                    fullAddress: customerAddress || "WhatsApp Order Address",
+                    name: customerName,
+                    phone: customerPhone
+                },
+                notes: notes || "Created by Packer via WhatsApp flow",
+                items: {
+                    create: itemCreates
+                },
+                statusHistory: {
+                    create: {
+                        status: "PACKED" as PrismaOrderStatus,
+                        remark: `WhatsApp order manually packed and created by Packer`,
+                        changedBy: userId
+                    }
+                }
+            },
+            include: {
+                user: { select: { id: true, name: true, phone: true, profileAddress: true } },
+                items: { include: { product: true, variant: true } },
+                location: true,
+                packer: { select: { id: true, name: true } }
+            }
+        });
+
+        // Notify POS of new packed order ready for billing
+        getIo().emit("ORDER_PACKED_FOR_BILLING", { orderId: order.id, order });
+
+        res.status(201).json({
+            success: true,
+            message: "Order packed and registered successfully",
+            order
+        });
+    } catch (error: any) {
+        logger.error("[createPackerOrder] Failed to create packer order:", error);
+        res.status(500).json({ message: error.message || "Failed to create packed order" });
+    }
+};
+
+// ─── Packer QR Bill Validation ────────────────────────────────────────────────
+export const validatePackerQr = async (req: AuthenticatedRequest, res: Response) => {
+    const userId = req.user?.userId;
+    const { qrData, billId } = req.body;
+
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+    const targetId = extractBillId(billId || qrData);
+
+    if (!targetId) {
+        return res.status(400).json({ message: "Invalid QR code or bill ID" });
+    }
+
+    try {
+        const order = await prisma.order.findFirst({
+            where: {
+                OR: [
+                    { id: targetId },
+                    { id: { endsWith: targetId } }
+                ]
+            },
+            include: {
+                user: { select: { id: true, name: true, phone: true } },
+                items: { include: { product: true, variant: true } },
+                packer: { select: { id: true, name: true } }
+            }
+        });
+
+        if (!order) {
+            return res.status(404).json({ message: `Order #${targetId} not found. Please verify the bill.` });
+        }
+
+        // Verify that logged-in packer is the packer attached to the order/bill
+        if (order.packerId && order.packerId !== userId) {
+            return res.status(400).json({
+                success: false,
+                message: "This bill was not packed by you. Please verify the order.",
+                assignedPacker: order.packer?.name || "Another Packer"
+            });
+        }
+
+        const updated = await prisma.order.update({
+            where: { id: order.id },
+            data: {
+                packerId: userId, // Ensure packer is confirmed
+                packerValidatedAt: new Date(),
+                packerValidatedBy: userId,
+                statusHistory: {
+                    create: {
+                        status: order.status,
+                        remark: `Bill QR validated by Packer`,
+                        changedBy: userId
+                    }
+                }
+            },
+            include: {
+                user: { select: { id: true, name: true, phone: true } },
+                items: { include: { product: true, variant: true } },
+                location: true,
+                packer: { select: { id: true, name: true } }
+            }
+        });
+
+        res.json({
+            success: true,
+            message: "Bill Validated Successfully",
+            order: updated
+        });
+    } catch (error: any) {
+        logger.error("[validatePackerQr] Error:", error);
+        res.status(500).json({ message: "Failed to validate bill QR" });
+    }
+};
+
+// ─── Delivery Driver QR Claim ─────────────────────────────────────────────────
+export const claimDeliveryQr = async (req: AuthenticatedRequest, res: Response) => {
+    const userId = req.user?.userId;
+    const { qrData, billId } = req.body;
+
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+    const targetId = extractBillId(billId || qrData);
+
+    if (!targetId) {
+        return res.status(400).json({ message: "Invalid QR code or bill ID" });
+    }
+
+    try {
+        const order = await prisma.order.findFirst({
+            where: {
+                OR: [
+                    { id: targetId },
+                    { id: { endsWith: targetId } }
+                ]
+            },
+            include: {
+                user: { select: { id: true, name: true, phone: true, addresses: true, profileAddress: true } },
+                items: { include: { product: true, variant: true } },
+                location: true,
+                packer: { select: { id: true, name: true } },
+                deliveryPartner: { select: { id: true, name: true } },
+                payments: true
+            }
+        });
+
+        if (!order) {
+            return res.status(404).json({ message: `Order #${targetId} not found.` });
+        }
+
+        // Rule 1: Order must be marked for Delivery
+        if (!order.isDelivery) {
+            return res.status(400).json({ 
+                success: false,
+                message: "This order is not for delivery." 
+            });
+        }
+
+        // Rule 2: Packer validation must be completed
+        if (!order.packerValidatedAt) {
+            return res.status(400).json({ 
+                success: false,
+                message: "Bill has not been validated by the packer yet. Please ask the packer to scan and validate." 
+            });
+        }
+
+        // Rule 3: Must not be already assigned to another delivery person
+        if (order.deliveryPartnerId && order.deliveryPartnerId !== userId) {
+            return res.status(400).json({ 
+                success: false,
+                message: "This order is already assigned to another delivery person." 
+            });
+        }
+
+        // If already assigned to this driver, return it smoothly
+        if (order.deliveryPartnerId === userId) {
+            return res.json({
+                success: true,
+                message: "Order is already in your active delivery run.",
+                order
+            });
+        }
+
+        // Assign to this driver
+        const updated = await prisma.order.update({
+            where: { id: order.id },
+            data: {
+                deliveryPartnerId: userId,
+                status: (order.status === "CONFIRMED" || order.status === "PACKED" || order.status === "PROCESSING") ? ("OUT_FOR_DELIVERY" as PrismaOrderStatus) : order.status,
+                statusHistory: {
+                    create: {
+                        status: "OUT_FOR_DELIVERY" as PrismaOrderStatus,
+                        remark: `Order claimed via QR scan by Delivery Partner`,
+                        changedBy: userId
+                    }
+                }
+            },
+            include: {
+                user: { select: { id: true, name: true, phone: true, addresses: true, profileAddress: true } },
+                items: { include: { product: true, variant: true } },
+                location: true,
+                packer: { select: { id: true, name: true } },
+                deliveryPartner: { select: { id: true, name: true } },
+                payments: true
+            }
+        });
+
+        res.json({
+            success: true,
+            message: "Order added to My Orders successfully",
+            order: updated
+        });
+    } catch (error: any) {
+        logger.error("[claimDeliveryQr] Error:", error);
+        res.status(500).json({ message: "Failed to claim delivery order" });
+    }
+};
+
+export const getCustomerOutstandingDues = async (req: AuthenticatedRequest, res: Response) => {
+    const customerId = String(req.params.customerId || req.params.id || "");
+
+    if (!customerId) {
+        return res.status(400).json({ message: "Customer ID is required" });
+    }
+
+    try {
+        const customer = await prisma.user.findUnique({
+            where: { id: customerId },
+            select: { id: true, name: true, phone: true, profileAddress: true, totalDue: true }
+        });
+
+        if (!customer) {
+            return res.status(404).json({ message: "Customer not found" });
+        }
+
+        const pendingOrders = await prisma.order.findMany({
+            where: {
+                userId: customerId,
+                paymentStatus: { in: ["PENDING", "PARTIAL"] },
+                status: { notIn: ["CANCELLED", "FAILED"] }
+            },
+            include: {
+                payments: true,
+                items: { include: { product: true } },
+                location: { select: { id: true, name: true } }
+            },
+            orderBy: { createdAt: "asc" }
+        });
+
+        let totalOutstandingDue = 0;
+        const bills = pendingOrders.map((order: any) => {
+            const paid = order.payments
+                .filter((p: any) => p.status === "SUCCESS")
+                .reduce((sum: number, p: any) => sum + Number(p.amount), 0);
+            const due = Math.max(0, Number(order.totalAmount) - paid);
+            totalOutstandingDue += due;
+            return {
+                id: order.id,
+                createdAt: order.createdAt,
+                totalAmount: Number(order.totalAmount),
+                paidAmount: paid,
+                dueAmount: due,
+                paymentStatus: order.paymentStatus,
+                status: order.status,
+                storeName: order.location?.name || "Main Hub",
+                itemCount: order.items?.length || 0
+            };
+        });
+
+        res.json({
+            customer,
+            bills,
+            totalOutstandingDue: Number(totalOutstandingDue.toFixed(2))
+        });
+    } catch (error: any) {
+        logger.error("[getCustomerOutstandingDues] Error:", error);
+        res.status(500).json({ message: "Failed to fetch customer dues" });
+    }
+};
+
+// ─── Cash Collection OTP (Send & Verify) ──────────────────────────────────────
+export const sendCashCollectionOtp = async (req: AuthenticatedRequest, res: Response) => {
+    const userId = req.user?.userId;
+    const { orderId, customerId, amount } = req.body;
+
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+    if (!amount || Number(amount) <= 0) {
+        return res.status(400).json({ message: "Valid collection amount is required" });
+    }
+
+    try {
+        let phone = "";
+        let customerName = "Customer";
+
+        if (orderId) {
+            const order = await prisma.order.findUnique({
+                where: { id: orderId },
+                include: { user: true }
+            });
+            if (order?.user?.phone) {
+                phone = order.user.phone;
+                customerName = order.user.name || "Customer";
+            }
+        }
+
+        if (!phone && customerId) {
+            const customer = await prisma.user.findUnique({ where: { id: customerId } });
+            if (customer?.phone) {
+                phone = customer.phone;
+                customerName = customer.name || "Customer";
+            }
+        }
+
+        if (!phone) {
+            return res.status(404).json({ message: "Customer contact number not found" });
+        }
+
+        const otp = generateOtp();
+        const otpKey = `CASH_OTP_${orderId || customerId}`;
+        await storeOtp(otpKey, otp);
+
+        const cleanPhone = phone.replace(/\D/g, "");
+        const maskedPhone = cleanPhone.slice(-4).padStart(cleanPhone.length, "*");
+
+        try {
+            await sendOtpViaWhatsapp(cleanPhone, otp);
+        } catch (msgErr) {
+            logger.warn(`[sendCashCollectionOtp] WhatsApp delivery failed, using fallback OTP:`, msgErr);
+        }
+
+        res.json({
+            success: true,
+            message: `OTP sent to customer (${maskedPhone}) for cash collection of ₹${Number(amount).toFixed(2)}`,
+            phone: maskedPhone,
+            fallbackOtp: process.env.NODE_ENV !== "production" ? otp : undefined
+        });
+    } catch (error: any) {
+        logger.error("[sendCashCollectionOtp] Error:", error);
+        res.status(500).json({ message: "Failed to send cash collection OTP" });
+    }
+};
+
+export const verifyCashCollectionOtp = async (req: AuthenticatedRequest, res: Response) => {
+    const userId = req.user?.userId;
+    const { orderId, customerId, amount, otp, clearAllDues } = req.body;
+
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+    if (!otp) return res.status(400).json({ message: "OTP is required" });
+    if (!amount || Number(amount) <= 0) return res.status(400).json({ message: "Valid collection amount is required" });
+
+    const targetAmount = Number(amount);
+    const otpKey = `CASH_OTP_${orderId || customerId}`;
+
+    try {
+        const isValid = await verifyOtp(otpKey, otp);
+        if (!isValid) {
+            return res.status(400).json({ message: "Invalid or expired OTP. Please ask customer for the correct code." });
+        }
+
+        // Process Cash Collection
+        await prisma.$transaction(async (tx: any) => {
+            if (clearAllDues && customerId) {
+                // Distribute cash across all unpaid bills (oldest first)
+                const pendingOrders = await tx.order.findMany({
+                    where: {
+                        userId: customerId,
+                        paymentStatus: { in: ["PENDING", "PARTIAL"] },
+                        status: { notIn: ["CANCELLED", "FAILED"] }
+                    },
+                    include: { payments: true },
+                    orderBy: { createdAt: "asc" }
+                });
+
+                let remainingCollection = targetAmount;
+                for (const ord of pendingOrders) {
+                    if (remainingCollection <= 0) break;
+                    const paid = ord.payments
+                        .filter((p: any) => p.status === "SUCCESS")
+                        .reduce((sum: number, p: any) => sum + Number(p.amount), 0);
+                    const billDue = Math.max(0, Number(ord.totalAmount) - paid);
+                    const allocate = Math.min(remainingCollection, billDue);
+
+                    if (allocate > 0) {
+                        await tx.payment.create({
+                            data: {
+                                orderId: ord.id,
+                                amount: new Prisma.Decimal(allocate),
+                                method: "CASH",
+                                status: "SUCCESS",
+                                transactionId: `CASH_${Date.now()}_${ord.id.slice(-4)}`,
+                                metadata: {
+                                    collectedBy: userId,
+                                    collectorRole: req.user?.role,
+                                    otpVerified: true,
+                                    timestamp: new Date().toISOString()
+                                }
+                            }
+                        });
+
+                        const newPaid = paid + allocate;
+                        const isPaid = newPaid >= Number(ord.totalAmount);
+
+                        await tx.order.update({
+                            where: { id: ord.id },
+                            data: {
+                                isPaid,
+                                paymentStatus: isPaid ? "COMPLETED" : "PARTIAL",
+                                cashCollected: { increment: new Prisma.Decimal(allocate) },
+                                statusHistory: {
+                                    create: {
+                                        status: ord.status,
+                                        remark: `Cash collected ₹${allocate.toFixed(2)} (OTP Verified)`,
+                                        changedBy: userId
+                                    }
+                                }
+                            }
+                        });
+
+                        remainingCollection -= allocate;
+                    }
+                }
+            } else if (orderId) {
+                // Single order cash collection
+                const ord = await tx.order.findUnique({
+                    where: { id: orderId },
+                    include: { payments: true }
+                });
+                if (!ord) throw new Error("Order not found");
+
+                const paid = ord.payments
+                    .filter((p: any) => p.status === "SUCCESS")
+                    .reduce((sum: number, p: any) => sum + Number(p.amount), 0);
+                const newPaid = paid + targetAmount;
+                const isPaid = newPaid >= Number(ord.totalAmount);
+
+                await tx.payment.create({
+                    data: {
+                        orderId: ord.id,
+                        amount: new Prisma.Decimal(targetAmount),
+                        method: "CASH",
+                        status: "SUCCESS",
+                        transactionId: `CASH_${Date.now()}_${ord.id.slice(-4)}`,
+                        metadata: {
+                            collectedBy: userId,
+                            collectorRole: req.user?.role,
+                            otpVerified: true,
+                            timestamp: new Date().toISOString()
+                        }
+                    }
+                });
+
+                await tx.order.update({
+                    where: { id: ord.id },
+                    data: {
+                        isPaid,
+                        paymentStatus: isPaid ? "COMPLETED" : "PARTIAL",
+                        cashCollected: { increment: new Prisma.Decimal(targetAmount) },
+                        statusHistory: {
+                            create: {
+                                status: ord.status,
+                                remark: `Cash collected ₹${targetAmount.toFixed(2)} (OTP Verified)`,
+                                changedBy: userId
+                            }
+                        }
+                    }
+                });
+            }
+        });
+
+        res.json({
+            success: true,
+            message: `Cash collection of ₹${targetAmount.toFixed(2)} verified and recorded successfully`
+        });
+    } catch (error: any) {
+        logger.error("[verifyCashCollectionOtp] Error:", error);
+        res.status(500).json({ message: error.message || "Failed to verify cash collection" });
+    }
+};
+
+// ─── Mark Delivery Completed ──────────────────────────────────────────────────
+export const markOrderDelivered = async (req: AuthenticatedRequest, res: Response) => {
+    const userId = req.user?.userId;
+    const id = String(req.params.id);
+    const { deliveryPhoto, notes } = req.body;
+
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+
+    try {
+        const order = await prisma.order.findUnique({
+            where: { id },
+            include: { payments: true }
+        });
+        if (!order) return res.status(404).json({ message: "Order not found" });
+
+        const updated = await prisma.order.update({
+            where: { id },
+            data: {
+                status: "DELIVERED" as PrismaOrderStatus,
+                deliveredAt: new Date(),
+                deliveryPhoto: deliveryPhoto || order.deliveryPhoto,
+                statusHistory: {
+                    create: {
+                        status: "DELIVERED" as PrismaOrderStatus,
+                        remark: `Order marked as DELIVERED by Delivery Partner. ${notes ? notes : ''}`,
+                        changedBy: userId
+                    }
+                }
+            },
+            include: {
+                user: { select: { id: true, name: true, phone: true } },
+                location: true,
+                payments: true
+            }
+        });
+
+        res.json({
+            success: true,
+            message: "Order successfully marked as DELIVERED",
+            order: updated
+        });
+    } catch (error: any) {
+        logger.error("[markOrderDelivered] Error:", error);
+        res.status(500).json({ message: "Failed to mark order as delivered" });
+    }
+};
+
+// ─── Driver Returns & Notifications ──────────────────────────────────────────
+export const getDriverReturns = async (req: AuthenticatedRequest, res: Response) => {
+    const userId = req.user?.userId;
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+
+    try {
+        const returns = await prisma.order.findMany({
+            where: {
+                OR: [
+                    { returnAssignedTo: userId },
+                    { deliveryPartnerId: userId, status: "RETURNED" },
+                    { deliveryPartnerId: userId, returnStatus: { not: null } }
+                ]
+            },
+            include: {
+                user: { select: { id: true, name: true, phone: true, addresses: true, profileAddress: true } },
+                items: { include: { product: true } },
+                location: true
+            },
+            orderBy: { updatedAt: "desc" }
+        });
+
+        res.json({ returns });
+    } catch (error: any) {
+        res.status(500).json({ message: "Failed to fetch driver return tasks" });
+    }
+};
+
+// ─── Enhanced Assigned Orders for Driver ──────────────────────────────────────
 export const getAssignedOrders = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     const userId = req.user?.userId;
     if (!userId) return res.status(401).json({ message: "Unauthorized" });
 
     try {
-        const limit = Math.min(Number(req.query.limit) || 20, 100);
+        const limit = Math.min(Number(req.query.limit) || 50, 100);
         const cursor = req.query.cursor ? (req.query.cursor as string) : undefined;
 
         const orders = await prisma.order.findMany({
@@ -537,8 +1209,11 @@ export const getAssignedOrders = async (req: AuthenticatedRequest, res: Response
             cursor: cursor ? { id: cursor } : undefined,
             skip: cursor ? 1 : 0,
             include: {
-                user: { select: { name: true, phone: true } },
-                items: { include: { product: true } },
+                user: { select: { id: true, name: true, phone: true, email: true, addresses: true, profileAddress: true } },
+                items: { include: { product: true, variant: true } },
+                location: { select: { id: true, name: true, address: true, contactNumber: true, upiId: true } },
+                packer: { select: { id: true, name: true, phone: true } },
+                payments: true
             },
             orderBy: { createdAt: "desc" },
         });
@@ -552,4 +1227,5 @@ export const getAssignedOrders = async (req: AuthenticatedRequest, res: Response
         res.status(500).json({ message: "Error fetching assigned orders" });
     }
 };
+
 

@@ -12,5 +12,6 @@ router.get("/assigned-stores", poController_1.getPurchaseManagerAssignedStores);
 router.get("/:id", (0, auth_1.authorize)(["ADMIN", "SUPER_ADMIN", "STORE_ADMIN", "POS_OPERATOR", "PURCHASE_MANAGER", "MANAGER"]), poController_1.getPurchaseOrderById);
 router.put("/:id/review", (0, auth_1.authorize)(["ADMIN", "SUPER_ADMIN", "PURCHASE_MANAGER", "STORE_ADMIN"]), poController_1.reviewPurchaseOrder);
 router.post("/:id/receive", (0, auth_1.authorize)(["ADMIN", "SUPER_ADMIN", "STORE_ADMIN", "POS_OPERATOR", "PURCHASE_MANAGER", "MANAGER"]), poController_1.receivePurchaseOrder);
+router.post("/:id/send-whatsapp", (0, auth_1.authorize)(["ADMIN", "SUPER_ADMIN", "STORE_ADMIN", "PURCHASE_MANAGER", "MANAGER", "POS_OPERATOR"]), poController_1.sendPOToVendorWhatsApp);
 router.post("/managers/assign", (0, auth_1.authorize)(["ADMIN", "SUPER_ADMIN"]), poController_1.assignPurchaseManagerStores);
 exports.default = router;

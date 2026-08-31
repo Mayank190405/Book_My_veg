@@ -12,7 +12,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getCustomerDetailedReport = exports.getCustomerSalesAndDueReports = exports.closeShift = exports.getSalesReports = exports.openShift = exports.getDashboardStats = void 0;
+exports.getDailyProductReport = exports.getCustomerDetailedReport = exports.getCustomerSalesAndDueReports = exports.closeShift = exports.getSalesReports = exports.openShift = exports.getDashboardStats = void 0;
 const prisma_1 = __importDefault(require("../config/prisma"));
 const client_1 = require("@prisma/client");
 /**
@@ -790,3 +790,149 @@ const getCustomerDetailedReport = (req, res, next) => __awaiter(void 0, void 0, 
     }
 });
 exports.getCustomerDetailedReport = getCustomerDetailedReport;
+/**
+ * Daily Product-Wise Sales & Inventory Report
+ */
+const getDailyProductReport = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    const { date, locationId, categoryId, search } = req.query;
+    const caller = req.user;
+    try {
+        const targetDate = date ? new Date(String(date)) : new Date();
+        const startOfDay = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 0, 0, 0, 0);
+        const endOfDay = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 23, 59, 59, 999);
+        let targetLocationId = locationId && locationId !== "ALL" ? String(locationId) : caller === null || caller === void 0 ? void 0 : caller.locationId;
+        if ((caller === null || caller === void 0 ? void 0 : caller.role) === "ADMIN" || (caller === null || caller === void 0 ? void 0 : caller.role) === "SUPER_ADMIN") {
+            if (locationId === "ALL" || !locationId) {
+                targetLocationId = undefined; // All stores
+            }
+        }
+        // 1. Fetch Products
+        const productWhere = { isActive: true };
+        if (categoryId && categoryId !== "ALL") {
+            productWhere.categoryId = String(categoryId);
+        }
+        if (search) {
+            const q = String(search).trim();
+            productWhere.OR = [
+                { name: { contains: q, mode: 'insensitive' } },
+                { sku: { contains: q, mode: 'insensitive' } }
+            ];
+        }
+        const products = yield prisma_1.default.product.findMany({
+            where: productWhere,
+            include: {
+                category: { select: { id: true, name: true } },
+                inventory: targetLocationId ? { where: { locationId: targetLocationId } } : true,
+                variants: { select: { id: true, name: true, price: true } }
+            },
+            orderBy: { name: "asc" }
+        });
+        // 2. Fetch OrderItems on this date
+        const orderItems = yield prisma_1.default.orderItem.findMany({
+            where: {
+                order: Object.assign({ createdAt: { gte: startOfDay, lte: endOfDay }, status: { notIn: ["CANCELLED", "FAILED"] } }, (targetLocationId ? { locationId: targetLocationId } : {}))
+            },
+            select: {
+                productId: true,
+                variantId: true,
+                quantity: true,
+                sellingPrice: true
+            }
+        });
+        // 3. Fetch Received PO items on this date
+        const poItems = yield prisma_1.default.purchaseOrderItem.findMany({
+            where: {
+                purchaseOrder: Object.assign({ createdAt: { gte: startOfDay, lte: endOfDay }, status: { in: ["RECEIVED", "PARTIALLY_RECEIVED", "APPROVED", "ORDERED"] } }, (targetLocationId ? { locationId: targetLocationId } : {}))
+            },
+            select: {
+                productId: true,
+                variantId: true,
+                receivedQty: true,
+                approvedQty: true,
+                requestedQty: true,
+                buyingPrice: true
+            }
+        });
+        // 4. Fetch Mortality Logs on this date
+        const mortalityLogs = yield prisma_1.default.mortalityLog.findMany({
+            where: Object.assign({ createdAt: { gte: startOfDay, lte: endOfDay } }, (targetLocationId ? { locationId: targetLocationId } : {})),
+            select: {
+                productId: true,
+                quantity: true,
+                totalLoss: true
+            }
+        });
+        // Group aggregation maps
+        const salesMap = new Map();
+        orderItems.forEach(item => {
+            const current = salesMap.get(item.productId) || { qty: 0, revenue: 0 };
+            const q = Number(item.quantity);
+            const r = q * Number(item.sellingPrice);
+            salesMap.set(item.productId, { qty: current.qty + q, revenue: current.revenue + r });
+        });
+        const inwardMap = new Map();
+        poItems.forEach(item => {
+            const current = inwardMap.get(item.productId) || { qty: 0, cost: 0 };
+            const q = Number(item.receivedQty || item.approvedQty || item.requestedQty || 0);
+            const c = q * Number(item.buyingPrice || 0);
+            inwardMap.set(item.productId, { qty: current.qty + q, cost: current.cost + c });
+        });
+        const mortalityMap = new Map();
+        mortalityLogs.forEach(log => {
+            const current = mortalityMap.get(log.productId) || { qty: 0, loss: 0 };
+            const q = Number(log.quantity);
+            const l = Number(log.totalLoss);
+            mortalityMap.set(log.productId, { qty: current.qty + q, loss: current.loss + l });
+        });
+        let totalRevenueSum = 0;
+        let totalSoldUnitsSum = 0;
+        let totalInwardedUnitsSum = 0;
+        let totalLossSum = 0;
+        const report = products.map(product => {
+            var _a;
+            const currentStock = product.inventory.reduce((acc, inv) => acc + Number(inv.currentStock || 0), 0);
+            const sales = salesMap.get(product.id) || { qty: 0, revenue: 0 };
+            const inward = inwardMap.get(product.id) || { qty: 0, cost: 0 };
+            const mortality = mortalityMap.get(product.id) || { qty: 0, loss: 0 };
+            // Opening stock estimated
+            const openingStock = Math.max(0, currentStock + sales.qty + mortality.qty - inward.qty);
+            totalRevenueSum += sales.revenue;
+            totalSoldUnitsSum += sales.qty;
+            totalInwardedUnitsSum += inward.qty;
+            totalLossSum += mortality.loss;
+            const avgSellingPrice = sales.qty > 0 ? Number((sales.revenue / sales.qty).toFixed(2)) : Number(product.basePrice || 0);
+            return {
+                id: product.id,
+                name: product.name,
+                sku: product.sku || "N/A",
+                category: ((_a = product.category) === null || _a === void 0 ? void 0 : _a.name) || "Uncategorized",
+                weightUnit: product.weightUnit,
+                basePrice: Number(product.basePrice || 0),
+                openingStock: Number(openingStock.toFixed(2)),
+                inwardedQty: Number(inward.qty.toFixed(2)),
+                soldQty: Number(sales.qty.toFixed(2)),
+                revenue: Number(sales.revenue.toFixed(2)),
+                mortalityQty: Number(mortality.qty.toFixed(2)),
+                mortalityLoss: Number(mortality.loss.toFixed(2)),
+                closingStock: Number(currentStock.toFixed(2)),
+                avgSellingPrice
+            };
+        });
+        res.json({
+            date: targetDate.toISOString().split("T")[0],
+            locationId: targetLocationId || "ALL",
+            report,
+            totals: {
+                totalProducts: report.length,
+                totalRevenue: Number(totalRevenueSum.toFixed(2)),
+                totalSoldUnits: Number(totalSoldUnitsSum.toFixed(2)),
+                totalInwardedUnits: Number(totalInwardedUnitsSum.toFixed(2)),
+                totalMortalityLoss: Number(totalLossSum.toFixed(2))
+            }
+        });
+    }
+    catch (error) {
+        next(error);
+    }
+});
+exports.getDailyProductReport = getDailyProductReport;
