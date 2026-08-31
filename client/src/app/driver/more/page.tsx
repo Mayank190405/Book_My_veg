@@ -18,8 +18,11 @@ export default function MoreMenuPage() {
 
     useEffect(() => {
         api.get("/orders/driver/assigned")
-            .then(res => setOrders(res.data || []))
-            .catch(() => null);
+            .then(res => {
+                const list = Array.isArray(res.data) ? res.data : (res.data?.data || []);
+                setOrders(list);
+            })
+            .catch(() => setOrders([]));
     }, []);
 
     const { cashCollected, cashSubmitted } = useMemo(() => {

@@ -25,9 +25,11 @@ function OrdersListContent() {
     const fetchOrders = useCallback(async () => {
         try {
             const res = await api.get("/orders/driver/assigned");
-            setOrders(res.data || []);
+            const orderList = Array.isArray(res.data) ? res.data : (res.data?.data || []);
+            setOrders(orderList);
         } catch (error: any) {
             toast.error("Failed to sync deliveries");
+            setOrders([]);
         } finally {
             setLoading(false);
             setRefreshing(false);

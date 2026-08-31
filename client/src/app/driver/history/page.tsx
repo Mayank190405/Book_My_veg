@@ -21,10 +21,15 @@ function HistoryContent() {
                 api.get("/orders/driver/returns").catch(() => ({ data: [] }))
             ]);
 
-            setOrders(ordersRes.data || []);
-            setReturnsList(returnsRes.data || []);
+            const ordersList = Array.isArray(ordersRes.data) ? ordersRes.data : (ordersRes.data?.data || []);
+            const returnsData = Array.isArray(returnsRes.data) ? returnsRes.data : (returnsRes.data?.data || []);
+
+            setOrders(ordersList);
+            setReturnsList(returnsData);
         } catch (error: any) {
             toast.error("Failed to load history");
+            setOrders([]);
+            setReturnsList([]);
         } finally {
             setLoading(false);
         }
