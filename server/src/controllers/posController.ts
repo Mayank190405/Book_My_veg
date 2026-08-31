@@ -164,15 +164,17 @@ export const getWebOrders = async (req: AuthenticatedRequest, res: Response, nex
                 customerPhone: o.user?.phone || "",
                 customerEmail: o.user?.email || "",
                 shippingAddress: addressString,
-                items: o.items.map(item => ({
+                items: (o.items || []).map(item => ({
                     id: item.id,
                     productId: item.productId,
                     variantId: item.variantId,
-                    name: item.variant?.name ? `${item.product.name} (${item.variant.name})` : item.product.name,
-                    productName: item.product.name,
-                    image: item.product.images?.[0] || "",
-                    quantity: Number(item.quantity),
-                    sellingPrice: Number(item.sellingPrice)
+                    name: item.variant?.name 
+                        ? `${item.product?.name || "Item"} (${item.variant.name})` 
+                        : (item.product?.name || "Item"),
+                    productName: item.product?.name || "Item",
+                    image: item.product?.images?.[0] || "",
+                    quantity: Number(item.quantity || 0),
+                    sellingPrice: Number(item.sellingPrice || 0)
                 })),
                 totalAmount: Number(o.totalAmount),
                 discountAmount: Number(o.discountAmount),

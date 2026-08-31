@@ -163,17 +163,19 @@ const getWebOrders = (req, res, next) => __awaiter(void 0, void 0, void 0, funct
                 customerPhone: ((_e = o.user) === null || _e === void 0 ? void 0 : _e.phone) || "",
                 customerEmail: ((_f = o.user) === null || _f === void 0 ? void 0 : _f.email) || "",
                 shippingAddress: addressString,
-                items: o.items.map(item => {
-                    var _a, _b;
+                items: (o.items || []).map(item => {
+                    var _a, _b, _c, _d, _e, _f;
                     return ({
                         id: item.id,
                         productId: item.productId,
                         variantId: item.variantId,
-                        name: ((_a = item.variant) === null || _a === void 0 ? void 0 : _a.name) ? `${item.product.name} (${item.variant.name})` : item.product.name,
-                        productName: item.product.name,
-                        image: ((_b = item.product.images) === null || _b === void 0 ? void 0 : _b[0]) || "",
-                        quantity: Number(item.quantity),
-                        sellingPrice: Number(item.sellingPrice)
+                        name: ((_a = item.variant) === null || _a === void 0 ? void 0 : _a.name)
+                            ? `${((_b = item.product) === null || _b === void 0 ? void 0 : _b.name) || "Item"} (${item.variant.name})`
+                            : (((_c = item.product) === null || _c === void 0 ? void 0 : _c.name) || "Item"),
+                        productName: ((_d = item.product) === null || _d === void 0 ? void 0 : _d.name) || "Item",
+                        image: ((_f = (_e = item.product) === null || _e === void 0 ? void 0 : _e.images) === null || _f === void 0 ? void 0 : _f[0]) || "",
+                        quantity: Number(item.quantity || 0),
+                        sellingPrice: Number(item.sellingPrice || 0)
                     });
                 }),
                 totalAmount: Number(o.totalAmount),

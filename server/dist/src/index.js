@@ -174,6 +174,25 @@ server.listen(PORT, () => __awaiter(void 0, void 0, void 0, function* () {
     catch (e) {
         // Ignore if DB type is non-enum or already synced
     }
+    // Auto-sync database columns for Delivery & Packer workflow
+    try {
+        yield prisma_1.default.$executeRawUnsafe(`
+            ALTER TABLE "Order"
+            ADD COLUMN IF NOT EXISTS "isDelivery" BOOLEAN NOT NULL DEFAULT false,
+            ADD COLUMN IF NOT EXISTS "packerValidatedAt" TIMESTAMP(3),
+            ADD COLUMN IF NOT EXISTS "packerValidatedBy" TEXT,
+            ADD COLUMN IF NOT EXISTS "cashCollected" DECIMAL(10,2) NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS "easebuzzCollected" DECIMAL(10,2) NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS "deliveredAt" TIMESTAMP(3),
+            ADD COLUMN IF NOT EXISTS "returnAssignedTo" TEXT,
+            ADD COLUMN IF NOT EXISTS "returnReason" TEXT,
+            ADD COLUMN IF NOT EXISTS "returnStatus" TEXT;
+        `);
+        logger_1.default.info("✅ PostgreSQL 'Order' delivery/packer columns synchronized");
+    }
+    catch (e) {
+        logger_1.default.warn("Order table column sync warning: " + e.message);
+    }
     // Start background metrics flush daemon
     (0, metricsFlushWorker_1.startMetricsFlushWorker)();
     // Start background unpaid invoice reminders and feedback dispatch
