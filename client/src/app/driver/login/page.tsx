@@ -6,7 +6,7 @@ import { verifyOtp, sendOtp, loginWithPassword } from "@/services/authService";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, Truck, Lock, Phone, Eye, EyeOff, ShieldCheck } from "lucide-react";
+import { Loader2, Eye, EyeOff, Smartphone, Lock, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 import { useUserStore } from "@/store/useUserStore";
 
@@ -28,7 +28,7 @@ function DriverLoginForm() {
     const handlePasswordLogin = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!identifier.trim() || !password) {
-            toast.error("Please enter both login identifier and password");
+            toast.error("Please enter mobile number and password");
             return;
         }
 
@@ -37,15 +37,15 @@ function DriverLoginForm() {
             const res = await loginWithPassword(identifier.trim(), password);
             const userRole = res?.user?.role;
             if (userRole !== "DELIVERY_PARTNER" && userRole !== "ADMIN" && userRole !== "STORE_ADMIN") {
-                toast.error("Fleet Entry Restricted", { 
+                toast.error("Access Restricted", { 
                     description: "This portal is strictly restricted to Delivery Partners." 
                 });
                 return;
             }
-            toast.success("Delivery Duty Started", { description: `Welcome, ${res.user.name || "Delivery Partner"}!` });
+            toast.success("Login Successful", { description: `Welcome back, ${res.user.name || "Delivery Partner"}!` });
             router.push("/driver");
         } catch (error: any) {
-            toast.error(error.response?.data?.message || "Invalid login credentials. Please check your password.");
+            toast.error(error.response?.data?.message || "Invalid mobile number or password.");
         } finally {
             setLoading(false);
         }
@@ -60,10 +60,10 @@ function DriverLoginForm() {
         setLoading(true);
         try {
             await sendOtp(otpPhone);
-            toast.success("Driver Access Code Sent via WhatsApp");
+            toast.success("OTP Sent via WhatsApp");
             setStep("OTP");
         } catch (error: any) {
-            toast.error(error.response?.data?.message || "Fleet connection failed");
+            toast.error(error.response?.data?.message || "Failed to send WhatsApp OTP");
         } finally {
             setLoading(false);
         }
@@ -76,189 +76,200 @@ function DriverLoginForm() {
             const res = await verifyOtp(otpPhone, otp);
             const userRole = res?.user?.role;
             if (userRole !== "DELIVERY_PARTNER" && userRole !== "ADMIN" && userRole !== "STORE_ADMIN") {
-                toast.error("Fleet Entry Restricted", { description: "This terminal is restricted to Delivery Partners." });
+                toast.error("Access Restricted", { description: "This portal is restricted to Delivery Partners." });
                 return;
             }
-            toast.success("Active Duty Started");
+            toast.success("Login Successful");
             router.push("/driver");
         } catch (error: any) {
-            toast.error("Invalid driver verification code");
+            toast.error("Invalid verification code");
         } finally {
             setLoading(false);
         }
     };
 
     return (
-        <div className="w-full max-w-md mx-auto px-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
-            <div className="bg-white p-8 sm:p-10 rounded-[2.5rem] shadow-2xl border border-emerald-100 relative overflow-hidden group">
-                <div className="absolute -top-10 -right-10 w-40 h-40 bg-emerald-50 rounded-full blur-3xl opacity-60 transition-all group-hover:bg-emerald-100/50" />
-                
-                <div className="relative z-10 space-y-7">
-                    <div className="flex flex-col items-center text-center space-y-3">
-                        <div className="w-20 h-20 bg-emerald-600 rounded-[2rem] flex items-center justify-center shadow-lg shadow-emerald-200 ring-4 ring-emerald-50 group-hover:scale-105 transition-transform">
-                            <Truck className="h-10 w-10 text-white" />
-                        </div>
-                        <div>
-                            <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">Delivery Portal</h1>
-                            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-600 mt-1">BMV Fleet Terminal</p>
+        <div className="w-full max-w-sm mx-auto px-5 py-8 flex flex-col min-h-screen justify-between">
+            <div className="space-y-8 my-auto">
+                {/* Illustration & Branding (Screen 1) */}
+                <div className="flex flex-col items-center text-center space-y-4">
+                    <div className="w-28 h-28 bg-blue-50 rounded-3xl flex items-center justify-center relative shadow-sm">
+                        {/* Scooter Delivery Illustration */}
+                        <div className="w-20 h-20 bg-blue-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-200">
+                            <svg className="w-12 h-12 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <circle cx="18.5" cy="17.5" r="3.5"/>
+                                <circle cx="5.5" cy="17.5" r="3.5"/>
+                                <circle cx="15" cy="5" r="1"/>
+                                <path d="M12 17.5V14l-3-3 4-3 2 3h2"/>
+                            </svg>
                         </div>
                     </div>
-
-                    {/* Mode Selector Tabs */}
-                    <div className="flex bg-slate-100 p-1 rounded-2xl">
-                        <button
-                            type="button"
-                            onClick={() => setLoginMode("PASSWORD")}
-                            className={`flex-1 py-2.5 text-xs font-black uppercase tracking-wider rounded-xl transition-all ${
-                                loginMode === "PASSWORD"
-                                    ? "bg-white text-slate-900 shadow-sm"
-                                    : "text-slate-500 hover:text-slate-800"
-                            }`}
-                        >
-                            Password Login
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => setLoginMode("OTP")}
-                            className={`flex-1 py-2.5 text-xs font-black uppercase tracking-wider rounded-xl transition-all ${
-                                loginMode === "OTP"
-                                    ? "bg-white text-slate-900 shadow-sm"
-                                    : "text-slate-500 hover:text-slate-800"
-                            }`}
-                        >
-                            WhatsApp OTP
-                        </button>
+                    <div className="space-y-1">
+                        <h1 className="text-xl font-black tracking-tight text-slate-900 uppercase">DELIVERY PORTAL</h1>
+                        <div className="space-y-0.5">
+                            <h2 className="text-base font-bold text-slate-800">Welcome Back!</h2>
+                            <p className="text-xs text-slate-400 font-medium">Log in to continue</p>
+                        </div>
                     </div>
+                </div>
 
-                    {loginMode === "PASSWORD" ? (
-                        <form onSubmit={handlePasswordLogin} className="space-y-5">
-                            <div className="space-y-2">
-                                <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">
-                                    Mobile / Username
-                                </Label>
-                                <div className="relative">
-                                    <Phone className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
-                                    <Input
-                                        type="text"
-                                        placeholder="e.g. 9876543210"
-                                        value={identifier}
-                                        onChange={(e) => setIdentifier(e.target.value)}
-                                        className="h-14 pl-12 rounded-2xl bg-slate-50 border-none text-base font-bold focus:ring-4 focus:ring-emerald-100 transition-all shadow-inner"
-                                        required
-                                        autoFocus
-                                    />
+                {/* Login Mode Toggle */}
+                <div className="flex bg-slate-100 p-1 rounded-2xl">
+                    <button
+                        type="button"
+                        onClick={() => setLoginMode("PASSWORD")}
+                        className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition-all ${
+                            loginMode === "PASSWORD"
+                                ? "bg-white text-blue-600 shadow-sm"
+                                : "text-slate-500 hover:text-slate-800"
+                        }`}
+                    >
+                        Password
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setLoginMode("OTP")}
+                        className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition-all ${
+                            loginMode === "OTP"
+                                ? "bg-white text-blue-600 shadow-sm"
+                                : "text-slate-500 hover:text-slate-800"
+                        }`}
+                    >
+                        WhatsApp OTP
+                    </button>
+                </div>
+
+                {loginMode === "PASSWORD" ? (
+                    <form onSubmit={handlePasswordLogin} className="space-y-4">
+                        <div className="space-y-1.5">
+                            <div className="relative">
+                                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">
+                                    <Smartphone className="h-5 w-5" />
                                 </div>
+                                <Input
+                                    type="text"
+                                    placeholder="Mobile Number"
+                                    value={identifier}
+                                    onChange={(e) => setIdentifier(e.target.value)}
+                                    className="h-13 pl-12 rounded-2xl bg-slate-50 border border-slate-200 text-sm font-bold focus:border-blue-600 focus:bg-white transition-all"
+                                    required
+                                    autoFocus
+                                />
                             </div>
+                        </div>
 
-                            <div className="space-y-2">
-                                <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">
-                                    Driver Password
-                                </Label>
-                                <div className="relative">
-                                    <Lock className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
-                                    <Input
-                                        type={showPassword ? "text" : "password"}
-                                        placeholder="••••••••"
-                                        value={password}
-                                        onChange={(e) => setPassword(e.target.value)}
-                                        className="h-14 pl-12 pr-12 rounded-2xl bg-slate-50 border-none text-base font-bold focus:ring-4 focus:ring-emerald-100 transition-all shadow-inner"
-                                        required
-                                    />
-                                    <button
-                                        type="button"
-                                        onClick={() => setShowPassword(!showPassword)}
-                                        className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                                    >
-                                        {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-                                    </button>
+                        <div className="space-y-1.5">
+                            <div className="relative">
+                                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">
+                                    <Lock className="h-5 w-5" />
                                 </div>
+                                <Input
+                                    type={showPassword ? "text" : "password"}
+                                    placeholder="Password"
+                                    value={password}
+                                    onChange={(e) => setPassword(e.target.value)}
+                                    className="h-13 pl-12 pr-12 rounded-2xl bg-slate-50 border border-slate-200 text-sm font-bold focus:border-blue-600 focus:bg-white transition-all"
+                                    required
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => setShowPassword(!showPassword)}
+                                    className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                                >
+                                    {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                                </button>
                             </div>
+                        </div>
 
+                        <div className="text-right">
+                            <button
+                                type="button"
+                                onClick={() => toast.info("Please contact store administrator to reset your password.")}
+                                className="text-xs font-bold text-blue-600 hover:underline"
+                            >
+                                Forgot Password?
+                            </button>
+                        </div>
+
+                        <Button 
+                            type="submit" 
+                            disabled={loading}
+                            className="w-full h-13 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm shadow-lg shadow-blue-200 transition-all active:scale-95 flex items-center justify-center gap-2"
+                        >
+                            {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : "Login"}
+                        </Button>
+                    </form>
+                ) : (
+                    step === "PHONE" ? (
+                        <form onSubmit={handleSendOtp} className="space-y-4">
+                            <div className="relative">
+                                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">
+                                    <Smartphone className="h-5 w-5" />
+                                </div>
+                                <Input
+                                    type="tel"
+                                    placeholder="Mobile Number"
+                                    value={otpPhone}
+                                    onChange={(e) => setOtpPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                                    className="h-13 pl-12 rounded-2xl bg-slate-50 border border-slate-200 text-sm font-bold focus:border-blue-600 focus:bg-white transition-all"
+                                    required
+                                    autoFocus
+                                />
+                            </div>
                             <Button 
                                 type="submit" 
                                 disabled={loading}
-                                className="w-full h-14 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-black uppercase tracking-widest text-sm shadow-xl shadow-emerald-200 transition-all active:scale-95 flex items-center justify-center gap-2"
+                                className="w-full h-13 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm shadow-lg shadow-blue-200 transition-all active:scale-95"
                             >
-                                {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <>Start Duty Session <ShieldCheck className="h-4 w-4" /></>}
+                                {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : "Send OTP"}
                             </Button>
                         </form>
                     ) : (
-                        step === "PHONE" ? (
-                            <form onSubmit={handleSendOtp} className="space-y-5">
-                                <div className="space-y-2">
-                                    <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Registered Mobile</Label>
-                                    <div className="relative">
-                                        <div className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center gap-1.5 border-r border-slate-200 pr-3">
-                                            <span className="text-base">🇮🇳</span>
-                                            <span className="text-slate-500 font-bold text-xs">+91</span>
-                                        </div>
-                                        <Input
-                                            type="tel"
-                                            placeholder="Phone Number"
-                                            value={otpPhone}
-                                            onChange={(e) => setOtpPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                                            className="h-14 pl-20 rounded-2xl bg-slate-50 border-none text-base font-bold focus:ring-4 focus:ring-emerald-100 transition-all shadow-inner"
-                                            required
-                                            autoFocus
-                                        />
-                                    </div>
-                                </div>
-                                <Button 
-                                    type="submit" 
-                                    disabled={loading}
-                                    className="w-full h-14 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-black uppercase tracking-widest text-sm shadow-xl shadow-emerald-200 transition-all active:scale-95"
-                                >
-                                    {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : "Send WhatsApp OTP"}
-                                </Button>
-                            </form>
-                        ) : (
-                            <form onSubmit={handleVerifyOtp} className="space-y-5">
-                                <div className="space-y-2 text-center">
-                                    <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Entry Approval Code</Label>
-                                    <Input
-                                        type="text"
-                                        placeholder="• • • • • •"
-                                        value={otp}
-                                        onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                                        className="h-16 rounded-2xl bg-slate-50 border-none text-center text-2xl font-black tracking-[0.4em] focus:ring-4 focus:ring-emerald-100 transition-all"
-                                        required
-                                        autoFocus
-                                    />
-                                    <p className="text-[10px] text-slate-400 font-bold mt-1">Encrypted code sent to +91 {otpPhone}</p>
-                                </div>
-                                <Button 
-                                    type="submit" 
-                                    disabled={loading}
-                                    className="w-full h-14 rounded-2xl bg-slate-900 hover:bg-black text-white font-black uppercase tracking-widest text-sm shadow-xl shadow-slate-200 transition-all active:scale-95"
-                                >
-                                    {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : "Verify Identity"}
-                                </Button>
-                                <button
-                                    type="button"
-                                    onClick={() => setStep("PHONE")}
-                                    className="w-full text-center text-xs text-slate-400 font-bold hover:text-slate-600"
-                                >
-                                    Change Mobile Number
-                                </button>
-                            </form>
-                        )
-                    )}
-                </div>
+                        <form onSubmit={handleVerifyOtp} className="space-y-4">
+                            <div className="space-y-2 text-center">
+                                <Input
+                                    type="text"
+                                    placeholder="• • • • • •"
+                                    value={otp}
+                                    onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                                    className="h-14 rounded-2xl bg-slate-50 border border-slate-200 text-center text-2xl font-black tracking-[0.4em] focus:border-blue-600 focus:bg-white transition-all"
+                                    required
+                                    autoFocus
+                                />
+                                <p className="text-xs text-slate-400 font-medium">OTP sent to +91 {otpPhone}</p>
+                            </div>
+                            <Button 
+                                type="submit" 
+                                disabled={loading}
+                                className="w-full h-13 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm shadow-lg shadow-blue-200 transition-all active:scale-95"
+                            >
+                                {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : "Verify & Login"}
+                            </Button>
+                            <button
+                                type="button"
+                                onClick={() => setStep("PHONE")}
+                                className="w-full text-center text-xs text-slate-400 font-medium hover:text-slate-600"
+                            >
+                                Change Mobile Number
+                            </button>
+                        </form>
+                    )
+                )}
             </div>
-            <p className="mt-8 text-center text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">
-                BMV Fleet Operations • Secure Token Gateway
-            </p>
+
+            <div className="text-center pt-8">
+                <p className="text-[11px] text-slate-400 font-medium">Version 1.0.0</p>
+            </div>
         </div>
     );
 }
 
 export default function DriverLoginPage() {
     return (
-        <div className="min-h-screen bg-slate-50 flex items-center justify-center py-12">
-            <Suspense fallback={<Loader2 className="h-12 w-12 animate-spin text-emerald-600" />}>
+        <div className="min-h-screen bg-white flex items-center justify-center">
+            <Suspense fallback={<Loader2 className="h-10 w-10 animate-spin text-blue-600" />}>
                 <DriverLoginForm />
             </Suspense>
         </div>
     );
 }
-
