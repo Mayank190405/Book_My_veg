@@ -32,7 +32,7 @@ export default function DriverDashboardPage() {
         fetchOrders();
     }, [fetchOrders]);
 
-    // Calculate metrics matching Screen 2
+    // Calculate actual metrics from real live orders
     const metrics = useMemo(() => {
         const total = orders.length;
         const delivered = orders.filter(o => o.status === "DELIVERED").length;
@@ -50,8 +50,8 @@ export default function DriverDashboardPage() {
             }
         });
 
-        const cashSubmitted = Math.max(0, Math.floor(cashCollected * 0.9));
-        const pendingSubmission = Math.max(0, cashCollected - cashSubmitted);
+        const cashSubmitted = 0;
+        const pendingSubmission = cashCollected;
 
         return {
             totalOrders: total,
@@ -65,15 +65,22 @@ export default function DriverDashboardPage() {
         };
     }, [orders]);
 
+    const greeting = useMemo(() => {
+        const hour = new Date().getHours();
+        if (hour < 12) return "Good Morning";
+        if (hour < 17) return "Good Afternoon";
+        return "Good Evening";
+    }, []);
+
     return (
         <div className="p-5 space-y-6 animate-in fade-in duration-300">
             {/* Header: Greeting & Notification Bell (Screen 2) */}
             <div className="flex items-center justify-between pt-2">
                 <div className="space-y-0.5">
                     <h2 className="text-xl font-black text-slate-900">
-                        Hi, {user?.name?.split(" ")[0] || "Rohit"} 👋
+                        Hi, {user?.name?.split(" ")[0] || "Delivery Partner"} 👋
                     </h2>
-                    <p className="text-xs font-semibold text-slate-400">Good Morning</p>
+                    <p className="text-xs font-semibold text-slate-400">{greeting}</p>
                 </div>
                 <button 
                     onClick={() => toast.info("No new notifications")}

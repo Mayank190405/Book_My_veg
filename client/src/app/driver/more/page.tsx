@@ -27,7 +27,7 @@ export default function MoreMenuPage() {
         orders.forEach(o => {
             collected += Number(o.cashCollected || 0);
         });
-        const submitted = Math.max(0, Math.floor(collected * 0.9));
+        const submitted = 0;
         return { cashCollected: collected, cashSubmitted: submitted };
     }, [orders]);
 
@@ -45,11 +45,11 @@ export default function MoreMenuPage() {
             {/* Driver Profile Card (Screen 14) */}
             <div className="bg-white p-4 rounded-3xl border border-slate-100 shadow-sm flex items-center gap-3.5">
                 <div className="w-14 h-14 rounded-2xl bg-blue-600 text-white flex items-center justify-center font-black text-lg shadow-md shadow-blue-200">
-                    {user?.name?.charAt(0) || "R"}
+                    {user?.name?.charAt(0) || "D"}
                 </div>
                 <div className="space-y-0.5">
-                    <h3 className="text-base font-black text-slate-900">{user?.name || "Rohit Sharma"}</h3>
-                    <p className="text-xs font-bold text-slate-400">{user?.phone || "9876543210"}</p>
+                    <h3 className="text-base font-black text-slate-900">{user?.name || "Delivery Partner"}</h3>
+                    <p className="text-xs font-bold text-slate-400">{user?.phone || ""}</p>
                     <span className="inline-block px-2 py-0.5 bg-blue-50 text-blue-700 text-[9px] font-black rounded-full uppercase tracking-wider">
                         Delivery Partner
                     </span>

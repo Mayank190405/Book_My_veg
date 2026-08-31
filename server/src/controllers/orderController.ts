@@ -526,6 +526,19 @@ export const sendDeliveryOtp = async (req: AuthenticatedRequest, res: Response) 
 export const extractBillId = (qrData: string): string => {
     if (!qrData) return "";
     let str = String(qrData).trim();
+
+    // Check if JSON
+    try {
+        if (str.startsWith("{") && str.endsWith("}")) {
+            const parsed = JSON.parse(str);
+            if (parsed.orderId) return String(parsed.orderId).trim();
+            if (parsed.id) return String(parsed.id).trim();
+            if (parsed.billId) return String(parsed.billId).trim();
+        }
+    } catch (e) {
+        // Not JSON
+    }
+
     if (str.includes("billid=")) {
         const match = str.match(/billid=([^&]+)/);
         if (match) return decodeURIComponent(match[1]).trim();
@@ -534,12 +547,24 @@ export const extractBillId = (qrData: string): string => {
         const parts = str.split("/invoice/");
         if (parts[1]) return parts[1].split("?")[0].split("/")[0].trim();
     }
+    if (str.includes("/orders/")) {
+        const parts = str.split("/orders/");
+        if (parts[1]) return parts[1].split("?")[0].split("/")[0].trim();
+    }
     if (str.includes("/pay/")) {
         const afterPay = str.split("/pay/")[1];
         if (afterPay) {
             const match = afterPay.match(/billid=([^&]+)/);
             if (match) return decodeURIComponent(match[1]).trim();
+            const directId = afterPay.split("?")[0].split("/")[0].trim();
+            if (directId) return directId;
         }
+    }
+    if (str.includes("tr=") || str.includes("tn=")) {
+        const trMatch = str.match(/[?&]tr=([^&]+)/);
+        if (trMatch) return decodeURIComponent(trMatch[1]).trim();
+        const tnMatch = str.match(/[?&]tn=([^&]+)/);
+        if (tnMatch) return decodeURIComponent(tnMatch[1]).trim();
     }
     return str;
 };
@@ -790,30 +815,6 @@ export const claimDeliveryQr = async (req: AuthenticatedRequest, res: Response) 
             return res.status(404).json({ message: `Order #${targetId} not found.` });
         }
 
-        // Rule 1: Order must be marked for Delivery
-        if (!order.isDelivery) {
-            return res.status(400).json({ 
-                success: false,
-                message: "This order is not for delivery." 
-            });
-        }
-
-        // Rule 2: Packer validation must be completed
-        if (!order.packerValidatedAt) {
-            return res.status(400).json({ 
-                success: false,
-                message: "Bill has not been validated by the packer yet. Please ask the packer to scan and validate." 
-            });
-        }
-
-        // Rule 3: Must not be already assigned to another delivery person
-        if (order.deliveryPartnerId && order.deliveryPartnerId !== userId) {
-            return res.status(400).json({ 
-                success: false,
-                message: "This order is already assigned to another delivery person." 
-            });
-        }
-
         // If already assigned to this driver, return it smoothly
         if (order.deliveryPartnerId === userId) {
             return res.json({
@@ -823,15 +824,17 @@ export const claimDeliveryQr = async (req: AuthenticatedRequest, res: Response) 
             });
         }
 
-        // Assign to this driver
+        // Assign to this driver and mark as out for delivery
         const updated = await prisma.order.update({
             where: { id: order.id },
             data: {
+                isDelivery: true,
+                packerValidatedAt: order.packerValidatedAt || new Date(),
                 deliveryPartnerId: userId,
-                status: (order.status === "CONFIRMED" || order.status === "PACKED" || order.status === "PROCESSING") ? ("OUT_FOR_DELIVERY" as PrismaOrderStatus) : order.status,
+                status: (order.status === "DELIVERED") ? order.status : ("OUT_FOR_DELIVERY" as PrismaOrderStatus),
                 statusHistory: {
                     create: {
-                        status: "OUT_FOR_DELIVERY" as PrismaOrderStatus,
+                        status: (order.status === "DELIVERED") ? order.status : ("OUT_FOR_DELIVERY" as PrismaOrderStatus),
                         remark: `Order claimed via QR scan by Delivery Partner`,
                         changedBy: userId
                     }
