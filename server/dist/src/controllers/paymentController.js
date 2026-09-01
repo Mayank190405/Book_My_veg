@@ -46,6 +46,7 @@ const idGenerator_1 = require("../utils/idGenerator");
 const axios_1 = __importDefault(require("axios"));
 const crypto_1 = __importDefault(require("crypto"));
 const paymentEligibilityService_1 = require("../services/paymentEligibilityService");
+const orderController_1 = require("./orderController");
 const generateSha512 = (str) => {
     return crypto_1.default.createHash("sha512").update(str).digest("hex").toLowerCase();
 };
@@ -473,6 +474,9 @@ const settleDuesForCustomer = (userId, amount, transactionId, metadata) => __awa
                 });
                 remaining -= toApply;
             }
+        }
+        if (targetUserId) {
+            yield (0, orderController_1.syncCustomerTotalDue)(targetUserId, tx);
         }
     }));
 });

@@ -23,7 +23,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getAssignedOrders = exports.getDriverReturns = exports.markOrderDelivered = exports.collectCashDirect = exports.verifyCashCollectionOtp = exports.sendCashCollectionOtp = exports.getCustomerOutstandingDues = exports.claimDeliveryQr = exports.validatePackerQr = exports.createPackerOrder = exports.extractBillId = exports.sendDeliveryOtp = exports.updateOrderPaymentStatus = exports.updatePackingDetails = exports.getPackedOrdersCount = exports.getOrdersForPacking = exports.updateOrderStatus = exports.getAllOrders = exports.cancelOrder = exports.getOrderById = exports.getOrders = exports.createOrder = exports.assignDriver = exports.assignPacker = void 0;
+exports.getAssignedOrders = exports.getDriverReturns = exports.markOrderDelivered = exports.collectCashDirect = exports.verifyCashCollectionOtp = exports.syncCustomerTotalDue = exports.sendCashCollectionOtp = exports.getCustomerOutstandingDues = exports.claimDeliveryQr = exports.validatePackerQr = exports.createPackerOrder = exports.extractBillId = exports.sendDeliveryOtp = exports.updateOrderPaymentStatus = exports.updatePackingDetails = exports.getPackedOrdersCount = exports.getOrdersForPacking = exports.updateOrderStatus = exports.getAllOrders = exports.cancelOrder = exports.getOrderById = exports.getOrders = exports.createOrder = exports.assignDriver = exports.assignPacker = void 0;
 const client_1 = require("@prisma/client");
 const prisma_1 = __importDefault(require("../config/prisma"));
 const logger_1 = __importDefault(require("../utils/logger"));
@@ -965,6 +965,38 @@ const sendCashCollectionOtp = (req, res) => __awaiter(void 0, void 0, void 0, fu
     }
 });
 exports.sendCashCollectionOtp = sendCashCollectionOtp;
+// ─── Customer Ledger Sync Helper ─────────────────────────────────────────────
+const syncCustomerTotalDue = (customerId, tx) => __awaiter(void 0, void 0, void 0, function* () {
+    const db = tx || prisma_1.default;
+    if (!customerId)
+        return 0;
+    try {
+        const unpaidOrders = yield db.order.findMany({
+            where: {
+                userId: customerId,
+                status: { notIn: ["CANCELLED", "FAILED"] },
+                isPaid: false
+            },
+            include: {
+                payments: { where: { status: "SUCCESS" } }
+            }
+        });
+        const totalRemainingDue = unpaidOrders.reduce((sum, ord) => {
+            const paid = ord.payments.reduce((acc, p) => acc + Number(p.amount), 0);
+            return sum + Math.max(0, Number(ord.totalAmount) - paid);
+        }, 0);
+        yield db.user.update({
+            where: { id: customerId },
+            data: { totalDue: new client_1.Prisma.Decimal(totalRemainingDue) }
+        });
+        return totalRemainingDue;
+    }
+    catch (e) {
+        logger_1.default.error(`[syncCustomerTotalDue] Failed to sync totalDue for ${customerId}:`, e);
+        return 0;
+    }
+});
+exports.syncCustomerTotalDue = syncCustomerTotalDue;
 const verifyCashCollectionOtp = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
     const userId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.userId;
@@ -986,6 +1018,7 @@ const verifyCashCollectionOtp = (req, res) => __awaiter(void 0, void 0, void 0, 
         // Process Cash Collection
         yield prisma_1.default.$transaction((tx) => __awaiter(void 0, void 0, void 0, function* () {
             var _a, _b;
+            let targetCustId = customerId;
             if (clearAllDues && customerId) {
                 // Distribute cash across all unpaid bills (oldest first)
                 const pendingOrders = yield tx.order.findMany({
@@ -1051,6 +1084,7 @@ const verifyCashCollectionOtp = (req, res) => __awaiter(void 0, void 0, void 0, 
                 });
                 if (!ord)
                     throw new Error("Order not found");
+                targetCustId = ord.userId;
                 const paid = ord.payments
                     .filter((p) => p.status === "SUCCESS")
                     .reduce((sum, p) => sum + Number(p.amount), 0);
@@ -1087,6 +1121,10 @@ const verifyCashCollectionOtp = (req, res) => __awaiter(void 0, void 0, void 0, 
                     }
                 });
             }
+            // Immediately Synchronize Customer Total Ledger Balance
+            if (targetCustId) {
+                yield (0, exports.syncCustomerTotalDue)(targetCustId, tx);
+            }
         }));
         res.json({
             success: true,
@@ -1113,6 +1151,7 @@ const collectCashDirect = (req, res) => __awaiter(void 0, void 0, void 0, functi
     try {
         yield prisma_1.default.$transaction((tx) => __awaiter(void 0, void 0, void 0, function* () {
             var _a, _b;
+            let targetCustId = customerId;
             if (clearAllDues && customerId) {
                 const pendingOrders = yield tx.order.findMany({
                     where: {
@@ -1176,6 +1215,7 @@ const collectCashDirect = (req, res) => __awaiter(void 0, void 0, void 0, functi
                 });
                 if (!ord)
                     throw new Error("Order not found");
+                targetCustId = ord.userId;
                 const paid = ord.payments
                     .filter((p) => p.status === "SUCCESS")
                     .reduce((sum, p) => sum + Number(p.amount), 0);
@@ -1211,6 +1251,10 @@ const collectCashDirect = (req, res) => __awaiter(void 0, void 0, void 0, functi
                         }
                     }
                 });
+            }
+            // Immediately Synchronize Customer Total Ledger Balance
+            if (targetCustId) {
+                yield (0, exports.syncCustomerTotalDue)(targetCustId, tx);
             }
         }));
         res.json({

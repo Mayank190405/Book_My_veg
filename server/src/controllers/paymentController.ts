@@ -10,6 +10,7 @@ import { generateOrderId } from "../utils/idGenerator";
 import axios from "axios";
 import crypto from "crypto";
 import { getPaymentEligibility } from "../services/paymentEligibilityService";
+import { syncCustomerTotalDue } from "./orderController";
 
 const generateSha512 = (str: string) => {
     return crypto.createHash("sha512").update(str).digest("hex").toLowerCase();
@@ -502,6 +503,10 @@ export const settleDuesForCustomer = async (userId: string, amount: number, tran
                 });
                 remaining -= toApply;
             }
+        }
+
+        if (targetUserId) {
+            await syncCustomerTotalDue(targetUserId, tx);
         }
     });
 };

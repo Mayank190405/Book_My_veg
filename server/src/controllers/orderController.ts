@@ -992,6 +992,39 @@ export const sendCashCollectionOtp = async (req: AuthenticatedRequest, res: Resp
     }
 };
 
+// ─── Customer Ledger Sync Helper ─────────────────────────────────────────────
+export const syncCustomerTotalDue = async (customerId: string, tx?: any) => {
+    const db = tx || prisma;
+    if (!customerId) return 0;
+    try {
+        const unpaidOrders = await db.order.findMany({
+            where: {
+                userId: customerId,
+                status: { notIn: ["CANCELLED", "FAILED"] },
+                isPaid: false
+            },
+            include: {
+                payments: { where: { status: "SUCCESS" } }
+            }
+        });
+
+        const totalRemainingDue = unpaidOrders.reduce((sum: number, ord: any) => {
+            const paid = ord.payments.reduce((acc: number, p: any) => acc + Number(p.amount), 0);
+            return sum + Math.max(0, Number(ord.totalAmount) - paid);
+        }, 0);
+
+        await db.user.update({
+            where: { id: customerId },
+            data: { totalDue: new Prisma.Decimal(totalRemainingDue) }
+        });
+
+        return totalRemainingDue;
+    } catch (e) {
+        logger.error(`[syncCustomerTotalDue] Failed to sync totalDue for ${customerId}:`, e);
+        return 0;
+    }
+};
+
 export const verifyCashCollectionOtp = async (req: AuthenticatedRequest, res: Response) => {
     const userId = req.user?.userId;
     const orderId = req.params.id || req.body.orderId;
@@ -1012,6 +1045,8 @@ export const verifyCashCollectionOtp = async (req: AuthenticatedRequest, res: Re
 
         // Process Cash Collection
         await prisma.$transaction(async (tx: any) => {
+            let targetCustId = customerId;
+
             if (clearAllDues && customerId) {
                 // Distribute cash across all unpaid bills (oldest first)
                 const pendingOrders = await tx.order.findMany({
@@ -1079,6 +1114,7 @@ export const verifyCashCollectionOtp = async (req: AuthenticatedRequest, res: Re
                     include: { payments: true }
                 });
                 if (!ord) throw new Error("Order not found");
+                targetCustId = ord.userId;
 
                 const paid = ord.payments
                     .filter((p: any) => p.status === "SUCCESS")
@@ -1118,6 +1154,11 @@ export const verifyCashCollectionOtp = async (req: AuthenticatedRequest, res: Re
                     }
                 });
             }
+
+            // Immediately Synchronize Customer Total Ledger Balance
+            if (targetCustId) {
+                await syncCustomerTotalDue(targetCustId, tx);
+            }
         });
 
         res.json({
@@ -1143,6 +1184,8 @@ export const collectCashDirect = async (req: AuthenticatedRequest, res: Response
 
     try {
         await prisma.$transaction(async (tx: any) => {
+            let targetCustId = customerId;
+
             if (clearAllDues && customerId) {
                 const pendingOrders = await tx.order.findMany({
                     where: {
@@ -1208,6 +1251,7 @@ export const collectCashDirect = async (req: AuthenticatedRequest, res: Response
                     include: { payments: true }
                 });
                 if (!ord) throw new Error("Order not found");
+                targetCustId = ord.userId;
 
                 const paid = ord.payments
                     .filter((p: any) => p.status === "SUCCESS")
@@ -1246,6 +1290,11 @@ export const collectCashDirect = async (req: AuthenticatedRequest, res: Response
                         }
                     }
                 });
+            }
+
+            // Immediately Synchronize Customer Total Ledger Balance
+            if (targetCustId) {
+                await syncCustomerTotalDue(targetCustId, tx);
             }
         });
 
