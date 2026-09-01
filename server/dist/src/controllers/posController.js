@@ -20,6 +20,7 @@ const io_1 = require("../sockets/io");
 const idGenerator_1 = require("../utils/idGenerator");
 const inventoryService_1 = require("../services/inventoryService");
 const searchService_1 = require("../services/searchService");
+const orderController_1 = require("./orderController");
 // ─── Customer Management ──────────────────────────────────────────────────────
 const searchCustomer = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     const rawQuery = String(req.query.query || "").trim().replace(/\\+/g, "");
@@ -712,6 +713,12 @@ const processPOSOrder = (req, res, next) => __awaiter(void 0, void 0, void 0, fu
                     settledFromOld += toApply;
                 }
             }
+        }
+        if (customerId) {
+            try {
+                yield (0, orderController_1.syncCustomerTotalDue)(customerId);
+            }
+            catch (_) { }
         }
         const finalOrder = yield prisma_1.default.order.findUnique({
             where: { id: result.id },

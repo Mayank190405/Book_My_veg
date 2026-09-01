@@ -1144,7 +1144,9 @@ export default function POSOperator() {
             ? 0
             : (paymentMethod === "SPLIT"
                 ? splitPayments.reduce((sum, p) => sum + p.amount, 0)
-                : (paidAmount || grandTotal));
+                : (paymentMethod === "WALLET"
+                    ? Math.min(Number(paidAmount || grandTotal), Number(selectedCustomer?.accountBalance || 0))
+                    : (paidAmount || grandTotal)));
 
         const changeBreakdown = (paymentMethod === "CASH" && changeDue > 0)
             ? (calculateOptimalChangeBreakdown(changeDue, drawerDenominations) || getStandardGreedyBreakdown(changeDue))
@@ -2514,398 +2516,509 @@ export default function POSOperator() {
                                         </div>
                                     )}
 
-                                    {/* Fulfillment Selection: IN-STORE vs DELIVERY (Large Distinguished Buttons) */}
-                                    <div className="p-4 bg-white/5 rounded-[1.5rem] border border-white/10 space-y-2">
-                                        <p className="text-[9px] font-black text-white/40 uppercase tracking-[0.2em]">Fulfillment Mode <span className="text-rose-400">*</span></p>
-                                        <div className="grid grid-cols-2 gap-2.5">
-                                            <button
-                                                type="button"
-                                                onClick={() => setIsDeliverySelected(false)}
-                                                className={cn(
-                                                    "p-3 rounded-2xl border-2 flex flex-col items-center justify-center gap-1 transition-all text-center",
-                                                    !isDeliverySelected 
-                                                        ? "bg-teal-500 border-teal-400 text-slate-900 font-black shadow-lg shadow-teal-500/20 ring-2 ring-teal-400/50" 
-                                                        : "bg-white/5 border-white/10 text-white/60 hover:bg-white/10 font-bold"
-                                                )}
-                                            >
-                                                <Store className="h-5 w-5" />
-                                                <span className="text-[11px] uppercase tracking-wider font-black">IN-STORE</span>
-                                                <span className="text-[7.5px] opacity-80 uppercase">Counter</span>
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => setIsDeliverySelected(true)}
-                                                className={cn(
-                                                    "p-3 rounded-2xl border-2 flex flex-col items-center justify-center gap-1 transition-all text-center",
-                                                    isDeliverySelected 
-                                                        ? "bg-amber-400 border-amber-300 text-slate-900 font-black shadow-lg shadow-amber-400/20 ring-2 ring-amber-400/50" 
-                                                        : "bg-white/5 border-white/10 text-white/60 hover:bg-white/10 font-bold"
-                                                )}
-                                            >
-                                                <Truck className="h-5 w-5" />
-                                                <span className="text-[11px] uppercase tracking-wider font-black">DELIVERY</span>
-                                                <span className="text-[7.5px] opacity-80 uppercase">Fleet</span>
-                                            </button>
+                                            {/* Advance Wallet Quick Pill */}
+                                            {Number(selectedCustomer?.accountBalance || 0) > 0 && (
+                                                <div className="p-4 bg-emerald-500/10 border-2 border-emerald-400/30 rounded-[1.5rem] space-y-2">
+                                                    <div className="flex justify-between items-center">
+                                                        <div className="flex items-center gap-1.5">
+                                                            <Wallet className="h-4 w-4 text-emerald-400" />
+                                                            <p className="text-[9px] font-black text-emerald-300 uppercase tracking-[0.2em]">Advance Wallet</p>
+                                                        </div>
+                                                        <span className="text-xs font-black text-emerald-400 tabular-nums font-mono">
+                                                            ₹{Number(selectedCustomer.accountBalance).toFixed(2)}
+                                                        </span>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setPaymentMethod("WALLET");
+                                                            setPaidAmount(Math.min(grandTotal, Number(selectedCustomer.accountBalance)));
+                                                        }}
+                                                        className={cn(
+                                                            "w-full py-2 px-3 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2",
+                                                            paymentMethod === "WALLET"
+                                                                ? "bg-emerald-500 text-slate-900 shadow-lg ring-2 ring-emerald-300 font-black"
+                                                                : "bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500 hover:text-slate-900 border border-emerald-500/40"
+                                                        )}
+                                                    >
+                                                        {paymentMethod === "WALLET" ? "✓ Paying via Advance" : "Pay with Advance Balance ➔"}
+                                                    </button>
+                                                </div>
+                                            )}
+
+                                            {/* Fulfillment Selection: IN-STORE vs DELIVERY (Large Distinguished Buttons) */}
+                                            <div className="p-4 bg-white/5 rounded-[1.5rem] border border-white/10 space-y-2">
+                                                <p className="text-[9px] font-black text-white/40 uppercase tracking-[0.2em]">Fulfillment Mode <span className="text-rose-400">*</span></p>
+                                                <div className="grid grid-cols-2 gap-2.5">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setIsDeliverySelected(false)}
+                                                        className={cn(
+                                                            "p-3 rounded-2xl border-2 flex flex-col items-center justify-center gap-1 transition-all text-center",
+                                                            !isDeliverySelected 
+                                                                ? "bg-teal-500 border-teal-400 text-slate-900 font-black shadow-lg shadow-teal-500/20 ring-2 ring-teal-400/50" 
+                                                                : "bg-white/5 border-white/10 text-white/60 hover:bg-white/10 font-bold"
+                                                        )}
+                                                    >
+                                                        <Store className="h-5 w-5" />
+                                                        <span className="text-[10px] uppercase tracking-wider">In-Store</span>
+                                                        <span className="text-[8px] opacity-70">Counter</span>
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setIsDeliverySelected(true)}
+                                                        className={cn(
+                                                            "p-3 rounded-2xl border-2 flex flex-col items-center justify-center gap-1 transition-all text-center",
+                                                            isDeliverySelected 
+                                                                ? "bg-teal-500 border-teal-400 text-slate-900 font-black shadow-lg shadow-teal-500/20 ring-2 ring-teal-400/50" 
+                                                                : "bg-white/5 border-white/10 text-white/60 hover:bg-white/10 font-bold"
+                                                        )}
+                                                    >
+                                                        <Truck className="h-5 w-5" />
+                                                        <span className="text-[10px] uppercase tracking-wider">Delivery</span>
+                                                        <span className="text-[8px] opacity-70">Fleet</span>
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            {/* Compulsory Packer Selector */}
+                                            <div className="p-4 bg-white/5 rounded-[1.5rem] border border-white/10 space-y-2">
+                                                <div className="flex justify-between items-center">
+                                                    <p className="text-[9px] font-black text-white/40 uppercase tracking-[0.2em]">Assigned Packer <span className="text-rose-400">*</span></p>
+                                                    {!selectedPackerId && (
+                                                        <span className="text-[8px] font-black text-rose-400 uppercase bg-rose-500/20 px-2 py-0.5 rounded-full">
+                                                            Compulsory
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <select
+                                                    value={selectedPackerId}
+                                                    onChange={(e) => {
+                                                        setSelectedPackerId(e.target.value);
+                                                        localStorage.setItem("selectedPackerId", e.target.value);
+                                                    }}
+                                                    className={cn(
+                                                        "w-full h-11 rounded-xl px-3 text-xs font-bold outline-none transition-all",
+                                                        selectedPackerId 
+                                                            ? "bg-white/10 border-2 border-white/20 text-white focus:border-teal-400" 
+                                                            : "bg-rose-500/10 border-2 border-rose-500/40 text-rose-200"
+                                                    )}
+                                                >
+                                                    <option value="" className="text-slate-900">-- Choose Packing Person (Compulsory) --</option>
+                                                    {availablePackers.map((p: any) => (
+                                                        <option key={p.id} value={p.id} className="text-slate-900">
+                                                            {p.name} ({p.phone || "Packer"})
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </div>
+
+                                            <div className="p-5 bg-white/5 rounded-[2rem] border border-white/10 flex items-center justify-between">
+                                                <div className="min-w-0 pr-3">
+                                                    <p className="text-[9px] font-black text-white/30 uppercase tracking-[0.2em] mb-1">Customer</p>
+                                                    <p className="text-lg font-black text-white truncate leading-tight uppercase tracking-tight">{selectedCustomer?.name}</p>
+                                                    <p className="text-[10px] font-bold text-white/40 tabular-nums tracking-[0.2em] mt-1">{selectedCustomer?.phone}</p>
+                                                    {(selectedCustomer?.addresses?.[0]?.fullAddress || selectedCustomer?.address) && (
+                                                        <p className="text-[9px] font-bold text-teal-400 truncate mt-1 max-w-[200px] italic">
+                                                            {selectedCustomer?.addresses?.[0]?.fullAddress || selectedCustomer?.address}
+                                                        </p>
+                                                    )}
+                                                </div>
+                                                <div className="w-10 h-10 rounded-[1rem] bg-teal-500/10 flex items-center justify-center shrink-0 border border-teal-500/20 text-teal-400 shadow-xl">
+                                                    <User className="h-5 w-5" />
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
 
-                                    {/* Compulsory Packer Selector */}
-                                    <div className="p-4 bg-white/5 rounded-[1.5rem] border border-white/10 space-y-2">
-                                        <div className="flex justify-between items-center">
-                                            <p className="text-[9px] font-black text-white/40 uppercase tracking-[0.2em]">Assigned Packer <span className="text-rose-400">*</span></p>
-                                            {!selectedPackerId && (
-                                                <span className="text-[8px] font-black text-rose-400 uppercase bg-rose-500/20 px-2 py-0.5 rounded-full">
-                                                    Compulsory
-                                                </span>
-                                            )}
-                                        </div>
-                                        <select
-                                            value={selectedPackerId}
-                                            onChange={(e) => {
-                                                setSelectedPackerId(e.target.value);
-                                                localStorage.setItem("selectedPackerId", e.target.value);
-                                            }}
-                                            className={cn(
-                                                "w-full h-11 rounded-xl px-3 text-xs font-bold outline-none transition-all",
-                                                selectedPackerId 
-                                                    ? "bg-white/10 border-2 border-white/20 text-white focus:border-teal-400" 
-                                                    : "bg-rose-500/10 border-2 border-rose-500/40 text-rose-200"
-                                            )}
-                                        >
-                                            <option value="" className="text-slate-900">-- Choose Packing Person (Compulsory) --</option>
-                                            {availablePackers.map((p: any) => (
-                                                <option key={p.id} value={p.id} className="text-slate-900">
-                                                    {p.name} ({p.phone || "Packer"})
-                                                </option>
-                                            ))}
-                                        </select>
-                                    </div>
-
-                                    <div className="p-5 bg-white/5 rounded-[2rem] border border-white/10 flex items-center justify-between">
-                                        <div className="min-w-0 pr-3">
-                                            <p className="text-[9px] font-black text-white/30 uppercase tracking-[0.2em] mb-1">Customer</p>
-                                            <p className="text-lg font-black text-white truncate leading-tight uppercase tracking-tight">{selectedCustomer?.name}</p>
-                                            <p className="text-[10px] font-bold text-white/40 tabular-nums tracking-[0.2em] mt-1">{selectedCustomer?.phone}</p>
-                                            {(selectedCustomer?.addresses?.[0]?.fullAddress || selectedCustomer?.address) && (
-                                                <p className="text-[9px] font-bold text-teal-400 truncate mt-1 max-w-[200px] italic">
-                                                    {selectedCustomer?.addresses?.[0]?.fullAddress || selectedCustomer?.address}
-                                                </p>
-                                            )}
-                                        </div>
-                                        <div className="w-10 h-10 rounded-[1rem] bg-teal-500/10 flex items-center justify-center shrink-0 border border-teal-500/20 text-teal-400 shadow-xl">
-                                            <User className="h-5 w-5" />
-                                        </div>
+                                    <div className="p-6 bg-black/20 border-t border-white/5 mt-auto">
+                                        <Button onClick={handleCheckout}
+                                            disabled={isProcessing || (paymentMethod === "CASH" && changeDue < 0)}
+                                            className="w-full h-16 rounded-[1.25rem] bg-emerald-500 text-white font-black text-lg uppercase tracking-[0.2em] hover:bg-emerald-400 shadow-2xl shadow-emerald-900/40 active:scale-[0.97] transition-all flex items-center justify-center gap-3">
+                                            {isProcessing ? <Ban className="h-6 w-6 animate-spin" /> : <Save className="h-6 w-6" />}
+                                            Finalize Transaction
+                                        </Button>
                                     </div>
                                 </div>
-                            </div>
 
-                            <div className="p-6 bg-black/20 border-t border-white/5 mt-auto">
-                                <Button onClick={handleCheckout}
-                                    disabled={isProcessing || (paymentMethod === "CASH" && changeDue < 0)}
-                                    className="w-full h-16 rounded-[1.25rem] bg-emerald-500 text-white font-black text-lg uppercase tracking-[0.2em] hover:bg-emerald-400 shadow-2xl shadow-emerald-900/40 active:scale-[0.97] transition-all flex items-center justify-center gap-3">
-                                    {isProcessing ? <Ban className="h-6 w-6 animate-spin" /> : <Save className="h-6 w-6" />}
-                                    Finalize Transaction
-                                </Button>
-                            </div>
-                        </div>
-
-                        {/* RIGHT CONTENT: Payment Method Selector */}
-                        <div className="col-span-8 bg-slate-50 flex flex-col p-8 gap-8 overflow-hidden">
-                            <div className="flex gap-3 h-20">
-                                {[
-                                    { key: "CASH", icon: Banknote, label: "Cash Desk" },
-                                    { key: "UPI", icon: Smartphone, label: "Digital Pay" },
-                                    { key: "SPLIT", icon: Layers, label: "Split Pay" },
-                                    { key: "CREDIT", icon: BookOpen, label: "Due Sale" }
-                                ].map(m => (
-                                    <button key={m.key} onClick={() => {
-                                        setPaymentMethod(m.key);
-                                        if (m.key === "UPI") {
-                                            triggerEasebuzzCheckoutInPOS();
-                                        } else if (m.key === "SPLIT") {
-                                            handleSelectSplitPreset(50);
-                                        }
-                                    }}
-                                        className={cn("flex-1 h-full rounded-[1.5rem] flex items-center justify-center gap-3 text-[10px] font-black uppercase tracking-[0.2em] border-[4px] transition-all active:scale-[0.98]",
-                                            paymentMethod === m.key ? "bg-white border-emerald-500 text-emerald-600 shadow-2xl shadow-emerald-500/10" : "bg-white border-white text-slate-400 hover:border-slate-100 shadow-sm")}>
-                                        <m.icon className="h-6 w-6 text-emerald-500" /> {m.label}
-                                    </button>
-                                ))}
-                            </div>
-
-                            {paymentMethod === "CASH" ? (
-                                <div className="flex-1 flex flex-col gap-8">
-                                    <div className="grid grid-cols-4 gap-2">
-                                        {DENOMINATIONS.map(den => (
-                                            <button key={den} onClick={() => setCashReceived(prev => ({ ...prev, [den]: (prev[den] || 0) + 1 }))}
-                                                className="h-16 rounded-[1.25rem] bg-white border-2 border-slate-100 text-xl font-black text-slate-800 hover:bg-emerald-50 hover:border-emerald-300 hover:text-emerald-700 active:scale-90 transition-all shadow-sm">
-                                                ₹{den}
+                                {/* RIGHT CONTENT: Payment Method Selector */}
+                                <div className="col-span-8 bg-slate-50 flex flex-col p-8 gap-8 overflow-hidden">
+                                    <div className="flex gap-3 h-20">
+                                        {[
+                                            { key: "CASH", icon: Banknote, label: "Cash Desk" },
+                                            { key: "UPI", icon: Smartphone, label: "Digital Pay" },
+                                            { key: "SPLIT", icon: Layers, label: "Split Pay" },
+                                            { key: "CREDIT", icon: BookOpen, label: "Due Sale" },
+                                            ...(Number(selectedCustomer?.accountBalance || 0) > 0 ? [
+                                                { 
+                                                    key: "WALLET", 
+                                                    icon: Wallet, 
+                                                    label: `Advance (₹${Number(selectedCustomer.accountBalance).toFixed(0)})`,
+                                                    isAdvance: true 
+                                                }
+                                            ] : [])
+                                        ].map(m => (
+                                            <button key={m.key} onClick={() => {
+                                                setPaymentMethod(m.key);
+                                                if (m.key === "UPI") {
+                                                    triggerEasebuzzCheckoutInPOS();
+                                                } else if (m.key === "SPLIT") {
+                                                    handleSelectSplitPreset(50);
+                                                } else if (m.key === "WALLET") {
+                                                    setPaidAmount(Math.min(grandTotal, Number(selectedCustomer?.accountBalance || 0)));
+                                                }
+                                            }}
+                                                className={cn("flex-1 h-full rounded-[1.5rem] flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-[0.15em] border-[4px] transition-all active:scale-[0.98]",
+                                                    paymentMethod === m.key 
+                                                        ? ((m as any).isAdvance ? "bg-emerald-500 border-emerald-400 text-slate-900 shadow-2xl shadow-emerald-500/20 font-black ring-2 ring-emerald-300" : "bg-white border-emerald-500 text-emerald-600 shadow-2xl shadow-emerald-500/10") 
+                                                        : ((m as any).isAdvance ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-700 hover:bg-emerald-500/25 font-black" : "bg-white border-white text-slate-400 hover:border-slate-100 shadow-sm"))}>
+                                                <m.icon className={cn("h-5 w-5 shrink-0", (m as any).isAdvance ? (paymentMethod === "WALLET" ? "text-slate-900" : "text-emerald-600") : "text-emerald-500")} /> 
+                                                <span className="truncate">{m.label}</span>
                                             </button>
                                         ))}
                                     </div>
 
-                                    <div className="mt-auto grid grid-cols-2 gap-6 pb-1">
-                                        <div className="p-6 bg-emerald-500/5 rounded-[2.5rem] border-2 border-dashed border-emerald-500/20 flex items-center justify-between group">
-                                            <div className="space-y-0.5">
-                                                <p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest opacity-60">Received</p>
-                                                <p className="text-5xl font-black text-emerald-900 tabular-nums leading-none">₹{cashTotal.toFixed(2)}</p>
+                                    {paymentMethod === "CASH" ? (
+                                        <div className="flex-1 flex flex-col gap-8">
+                                            <div className="grid grid-cols-4 gap-2">
+                                                {DENOMINATIONS.map(den => (
+                                                    <button key={den} onClick={() => setCashReceived(prev => ({ ...prev, [den]: (prev[den] || 0) + 1 }))}
+                                                        className="h-16 rounded-[1.25rem] bg-white border-2 border-slate-100 text-xl font-black text-slate-800 hover:bg-emerald-50 hover:border-emerald-300 hover:text-emerald-700 active:scale-90 transition-all shadow-sm">
+                                                        ₹{den}
+                                                    </button>
+                                                ))}
                                             </div>
-                                            <button onClick={() => setCashReceived({})} className="w-12 h-12 rounded-[1rem] bg-emerald-500/10 flex items-center justify-center text-emerald-600 hover:bg-rose-500 hover:text-white transition-all shadow-lg active:scale-90 border border-emerald-500/20">
-                                                <Trash2 className="h-6 w-6" />
-                                            </button>
-                                        </div>
 
-                                        <div className={cn("p-6 rounded-[2.5rem] border-2 flex items-center justify-between transition-all",
-                                            changeDue >= 0 ? "bg-slate-900 border-slate-800 text-white shadow-2xl" : "bg-red-50 border-red-200")}>
-                                            <div className="space-y-0.5">
-                                                <p className={cn("text-[9px] font-black uppercase tracking-widest", changeDue >= 0 ? "text-slate-500" : "text-red-400")}>
-                                                    {changeDue >= 0 ? "Refund To Customer" : "Balance Due"}
-                                                </p>
-                                                <p className={cn("text-4xl font-black tabular-nums tracking-tighter leading-none", changeDue >= 0 ? "text-white" : "text-red-600")}>
-                                                    {changeDue >= 0 ? `₹${changeDue.toFixed(2)}` : "SHORT"}
-                                                </p>
-                                            </div>
-                                            <div className={cn("w-12 h-12 rounded-[1rem] flex items-center justify-center border-2", changeDue >= 0 ? "border-slate-800 bg-white/5" : "border-red-100 bg-red-200/20 text-red-600")}>
-                                                {changeDue >= 0 ? <CheckCircle2 className="h-8 w-8 text-emerald-400" /> : <AlertCircle className="h-8 w-8" />}
-                                            </div>
-                                        </div>
-                                    </div>
+                                            <div className="mt-auto grid grid-cols-2 gap-6 pb-1">
+                                                <div className="p-6 bg-emerald-500/5 rounded-[2.5rem] border-2 border-dashed border-emerald-500/20 flex items-center justify-between group">
+                                                    <div className="space-y-0.5">
+                                                        <p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest opacity-60">Received</p>
+                                                        <p className="text-5xl font-black text-emerald-900 tabular-nums leading-none">₹{cashTotal.toFixed(2)}</p>
+                                                    </div>
+                                                    <button onClick={() => setCashReceived({})} className="w-12 h-12 rounded-[1rem] bg-emerald-500/10 flex items-center justify-center text-emerald-600 hover:bg-rose-500 hover:text-white transition-all shadow-lg active:scale-90 border border-emerald-500/20">
+                                                        <Trash2 className="h-6 w-6" />
+                                                    </button>
+                                                </div>
 
-                                    {changeDue > 0 && (
-                                        <div className={cn("p-4 rounded-2xl border flex flex-col gap-2 mt-2", 
-                                            calculateOptimalChangeBreakdown(changeDue, drawerDenominations) 
-                                                ? "bg-emerald-50 border-emerald-200 text-emerald-800" 
-                                                : "bg-amber-50 border-amber-200 text-amber-800")}>
-                                            <div className="flex items-center gap-2">
-                                                <AlertTriangle className="h-4 w-4 shrink-0" />
-                                                <span className="text-[10px] font-black uppercase tracking-widest">
-                                                    {calculateOptimalChangeBreakdown(changeDue, drawerDenominations) 
-                                                        ? "Change Denominations Available" 
-                                                        : "Warning: Exact change denominations not available in drawer!"}
-                                                </span>
+                                                <div className={cn("p-6 rounded-[2.5rem] border-2 flex items-center justify-between transition-all",
+                                                    changeDue >= 0 ? "bg-slate-900 border-slate-800 text-white shadow-2xl" : "bg-red-50 border-red-200")}>
+                                                    <div className="space-y-0.5">
+                                                        <p className={cn("text-[9px] font-black uppercase tracking-widest", changeDue >= 0 ? "text-slate-500" : "text-red-400")}>
+                                                            {changeDue >= 0 ? "Refund To Customer" : "Balance Due"}
+                                                        </p>
+                                                        <p className={cn("text-4xl font-black tabular-nums tracking-tighter leading-none", changeDue >= 0 ? "text-white" : "text-red-600")}>
+                                                            {changeDue >= 0 ? `₹${changeDue.toFixed(2)}` : "SHORT"}
+                                                        </p>
+                                                    </div>
+                                                    <div className={cn("w-12 h-12 rounded-[1rem] flex items-center justify-center border-2", changeDue >= 0 ? "border-slate-800 bg-white/5" : "border-red-100 bg-red-200/20 text-red-600")}>
+                                                        {changeDue >= 0 ? <CheckCircle2 className="h-8 w-8 text-emerald-400" /> : <AlertCircle className="h-8 w-8" />}
+                                                    </div>
+                                                </div>
                                             </div>
-                                            {(() => {
-                                                const breakdown = calculateOptimalChangeBreakdown(changeDue, drawerDenominations);
-                                                if (breakdown) {
-                                                    return (
-                                                        <div className="flex flex-wrap gap-2 mt-1">
-                                                            {Object.entries(breakdown).map(([den, count]) => (
-                                                                <span key={den} className="px-2 py-1 bg-emerald-500/10 rounded-lg text-xs font-bold text-emerald-700 font-mono">
-                                                                    ₹{den} × {count}
-                                                                </span>
-                                                            ))}
-                                                        </div>
-                                                    );
-                                                }
-                                                return null;
-                                            })()}
-                                        </div>
-                                    )}
-                                </div>
-                            ) : paymentMethod === "SPLIT" ? (
-                                <div className="flex-1 flex flex-col gap-5 overflow-y-auto pr-1">
-                                    {/* Advance Wallet Option */}
-                                    {Number(selectedCustomer?.accountBalance || 0) > 0 && (
-                                        <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center justify-between">
-                                            <label className="flex items-center gap-2.5 cursor-pointer text-xs font-bold text-emerald-900">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={useWalletBalance}
-                                                    onChange={(e) => {
-                                                        const checked = e.target.checked;
-                                                        setUseWalletBalance(checked);
-                                                        const walletAmt = checked ? Math.min(Number(selectedCustomer.accountBalance), grandTotal) : 0;
-                                                        setSplitWalletAmount(walletAmt);
-                                                        const rem = Math.max(0, grandTotal - walletAmt);
-                                                        setSplitCashAmount(Number((rem * 0.5).toFixed(2)));
-                                                        setSplitOnlineAmount(Number((rem * 0.5).toFixed(2)));
-                                                    }}
-                                                    className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500"
-                                                />
-                                                <span>Deduct from Customer Advance Credit Wallet</span>
-                                            </label>
-                                            <span className="text-xs font-black text-emerald-700 font-mono">
-                                                Avail: ₹{Number(selectedCustomer.accountBalance).toFixed(2)}
-                                            </span>
-                                        </div>
-                                    )}
 
-                                    {/* Split Ratio Presets */}
-                                    <div className="space-y-1.5">
-                                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-                                            Quick Split Ratios (Cash / Easebuzz Online)
-                                        </span>
-                                        <div className="grid grid-cols-5 gap-2">
-                                            {[
-                                                { cash: 10, online: 90, label: "10 / 90" },
-                                                { cash: 20, online: 80, label: "20 / 80" },
-                                                { cash: 50, online: 50, label: "50 / 50" },
-                                                { cash: 70, online: 30, label: "70 / 30" },
-                                                { cash: 90, online: 10, label: "90 / 10" }
-                                            ].map(preset => (
-                                                <button
-                                                    key={preset.label}
-                                                    type="button"
-                                                    onClick={() => handleSelectSplitPreset(preset.cash)}
-                                                    className="py-2 px-1 bg-white hover:bg-emerald-50 border border-slate-200 hover:border-emerald-500 rounded-xl text-xs font-black text-slate-800 hover:text-emerald-700 transition-all shadow-xs cursor-pointer"
-                                                >
-                                                    {preset.label}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </div>
-
-                                    {/* Split Amount Manual Inputs */}
-                                    <div className="grid grid-cols-2 gap-4 pt-1">
-                                        {/* Cash Portion */}
-                                        <div className="p-5 bg-white rounded-2xl border-2 border-slate-200 space-y-3 shadow-xs">
-                                            <div className="flex justify-between items-center">
-                                                <span className="text-xs font-black text-slate-700 uppercase flex items-center gap-1.5">
-                                                    <Banknote className="w-4 h-4 text-emerald-500" /> Cash Portion (₹)
-                                                </span>
-                                            </div>
-                                            <div className="relative">
-                                                <input
-                                                    type="number"
-                                                    step="0.01"
-                                                    value={splitCashAmount}
-                                                    onChange={(e) => {
-                                                        const val = e.target.value === "" ? "" : Number(e.target.value);
-                                                        setSplitCashAmount(val);
-                                                        if (typeof val === "number") {
-                                                            const walletAmt = useWalletBalance ? Number(splitWalletAmount || 0) : 0;
-                                                            const rem = Math.max(0, grandTotal - walletAmt - val);
-                                                            setSplitOnlineAmount(Number(rem.toFixed(2)));
+                                            {changeDue > 0 && (
+                                                <div className={cn("p-4 rounded-2xl border flex flex-col gap-2 mt-2", 
+                                                    calculateOptimalChangeBreakdown(changeDue, drawerDenominations) 
+                                                        ? "bg-emerald-50 border-emerald-200 text-emerald-800" 
+                                                        : "bg-amber-50 border-amber-200 text-amber-800")}>
+                                                    <div className="flex items-center gap-2">
+                                                        <AlertTriangle className="h-4 w-4 shrink-0" />
+                                                        <span className="text-[10px] font-black uppercase tracking-widest">
+                                                            {calculateOptimalChangeBreakdown(changeDue, drawerDenominations) 
+                                                                ? "Change Denominations Available" 
+                                                                : "Warning: Exact change denominations not available in drawer!"}
+                                                        </span>
+                                                    </div>
+                                                    {(() => {
+                                                        const breakdown = calculateOptimalChangeBreakdown(changeDue, drawerDenominations);
+                                                        if (breakdown) {
+                                                            return (
+                                                                <div className="flex flex-wrap gap-2 mt-1">
+                                                                    {Object.entries(breakdown).map(([den, count]) => (
+                                                                        <span key={den} className="px-2 py-1 bg-emerald-500/10 rounded-lg text-xs font-bold text-emerald-700 font-mono">
+                                                                            ₹{den} × {count}
+                                                                        </span>
+                                                                    ))}
+                                                                </div>
+                                                            );
                                                         }
-                                                    }}
-                                                    placeholder="0.00"
-                                                    className="w-full h-12 pl-8 pr-3 text-xl font-black text-slate-900 border border-slate-200 rounded-xl outline-none focus:border-emerald-500"
-                                                />
-                                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">₹</span>
-                                            </div>
-                                        </div>
-
-                                        {/* Easebuzz Online Portion */}
-                                        <div className="p-5 bg-white rounded-2xl border-2 border-teal-500/30 space-y-3 shadow-xs">
-                                            <div className="flex justify-between items-center">
-                                                <span className="text-xs font-black text-teal-700 uppercase flex items-center gap-1.5">
-                                                    <Smartphone className="w-4 h-4 text-teal-500" /> Easebuzz Online (₹)
-                                                </span>
-                                            </div>
-                                            <div className="relative">
-                                                <input
-                                                    type="number"
-                                                    step="0.01"
-                                                    value={splitOnlineAmount}
-                                                    onChange={(e) => {
-                                                        const val = e.target.value === "" ? "" : Number(e.target.value);
-                                                        setSplitOnlineAmount(val);
-                                                        if (typeof val === "number") {
-                                                            const walletAmt = useWalletBalance ? Number(splitWalletAmount || 0) : 0;
-                                                            const rem = Math.max(0, grandTotal - walletAmt - val);
-                                                            setSplitCashAmount(Number(rem.toFixed(2)));
-                                                        }
-                                                    }}
-                                                    placeholder="0.00"
-                                                    className="w-full h-12 pl-8 pr-3 text-xl font-black text-slate-900 border border-teal-200 rounded-xl outline-none focus:border-teal-500"
-                                                />
-                                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">₹</span>
-                                            </div>
-
-                                            {Number(splitOnlineAmount) > 0 && (
-                                                <button
-                                                    type="button"
-                                                    disabled={isProcessing}
-                                                    onClick={() => triggerEasebuzzCheckoutInPOS(Number(splitOnlineAmount))}
-                                                    className="w-full h-11 bg-teal-600 hover:bg-teal-700 active:scale-95 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
-                                                >
-                                                    <Smartphone className="h-4 w-4" /> 
-                                                    Pay ₹{Number(splitOnlineAmount).toFixed(2)} via Easebuzz Iframe
-                                                </button>
+                                                        return null;
+                                                    })()}
+                                                </div>
                                             )}
                                         </div>
-                                    </div>
+                                    ) : paymentMethod === "SPLIT" ? (
+                                        <div className="flex-1 flex flex-col gap-5 overflow-y-auto pr-1">
+                                            {/* Advance Wallet Option */}
+                                            {Number(selectedCustomer?.accountBalance || 0) > 0 && (
+                                                <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center justify-between">
+                                                    <label className="flex items-center gap-2.5 cursor-pointer text-xs font-bold text-emerald-900">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={useWalletBalance}
+                                                            onChange={(e) => {
+                                                                const checked = e.target.checked;
+                                                                setUseWalletBalance(checked);
+                                                                const walletAmt = checked ? Math.min(Number(selectedCustomer.accountBalance), grandTotal) : 0;
+                                                                setSplitWalletAmount(walletAmt);
+                                                                const rem = Math.max(0, grandTotal - walletAmt);
+                                                                setSplitCashAmount(Number((rem * 0.5).toFixed(2)));
+                                                                setSplitOnlineAmount(Number((rem * 0.5).toFixed(2)));
+                                                            }}
+                                                            className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500"
+                                                        />
+                                                        <span>Deduct from Customer Advance Credit Wallet</span>
+                                                    </label>
+                                                    <span className="text-xs font-black text-emerald-700 font-mono">
+                                                        Avail: ₹{Number(selectedCustomer.accountBalance).toFixed(2)}
+                                                    </span>
+                                                </div>
+                                            )}
 
-                                    {/* Reconciliation Summary Bar */}
-                                    <div className="p-4 bg-slate-900 text-white rounded-2xl flex items-center justify-between text-xs">
-                                        <div className="space-y-0.5">
-                                            <span className="text-slate-400 uppercase text-[10px] font-bold">Total Bill: ₹{grandTotal.toFixed(2)}</span>
-                                            <p className="font-bold">
-                                                Cash: ₹{Number(splitCashAmount || 0).toFixed(2)} + Online: ₹{Number(splitOnlineAmount || 0).toFixed(2)}
-                                                {useWalletBalance && ` + Wallet: ₹${Number(splitWalletAmount || 0).toFixed(2)}`}
-                                            </p>
-                                        </div>
-                                        <div className="text-right">
-                                            {(() => {
-                                                const totalPaid = Number(splitCashAmount || 0) + Number(splitOnlineAmount || 0) + (useWalletBalance ? Number(splitWalletAmount || 0) : 0);
-                                                const diff = grandTotal - totalPaid;
-                                                if (Math.abs(diff) < 0.05) {
-                                                    return <span className="text-emerald-400 font-bold">✓ Fully Balanced (₹{totalPaid.toFixed(2)})</span>;
-                                                } else if (diff > 0) {
-                                                    return <span className="text-amber-400 font-bold">Partial Settlement (Due: ₹{diff.toFixed(2)})</span>;
-                                                } else {
-                                                    return <span className="text-rose-400 font-bold">Overpaid: ₹{(-diff).toFixed(2)}</span>;
-                                                }
-                                            })()}
-                                        </div>
-                                    </div>
-                                </div>
-                            ) : paymentMethod === "CREDIT" ? (
-                                <div className="flex-1 flex flex-col items-center justify-center text-center gap-6 p-8 bg-white rounded-[3.5rem] border-4 border-dashed border-slate-200 shadow-inner">
-                                    <div className="w-24 h-24 bg-slate-900 rounded-[2.5rem] flex items-center justify-center shadow-2xl shadow-slate-900/40 border-6 border-white">
-                                        <BookOpen className="h-10 w-10 text-white" />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <h3 className="text-3xl font-black uppercase text-slate-900 tracking-tighter">Debit On Account</h3>
-                                        <p className="text-sm font-bold text-slate-500 max-w-[450px] leading-relaxed">
-                                            The amount of <strong className="text-slate-900">₹{grandTotal.toFixed(2)}</strong> will be recorded as outstanding for <strong className="text-emerald-600 underline underline-offset-8 decoration-4">{selectedCustomer?.name}</strong>.
-                                        </p>
-                                    </div>
-                                    
-                                    <div className="flex flex-col sm:flex-row gap-3 w-full max-w-lg pt-2">
-                                        <button
-                                            onClick={() => forwardWhatsAppLink("BILL")}
-                                            className="flex-1 px-4 py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-black text-xs uppercase tracking-wider shadow-lg flex items-center justify-center gap-2 active:scale-95 transition-all"
-                                        >
-                                            <Smartphone className="h-4 w-4" /> Forward Bill Link (WhatsApp)
-                                        </button>
-                                        <button
-                                            onClick={() => forwardWhatsAppLink("ALL_DUES")}
-                                            className="flex-1 px-4 py-3.5 bg-slate-900 hover:bg-black text-white rounded-2xl font-black text-xs uppercase tracking-wider shadow-lg flex items-center justify-center gap-2 active:scale-95 transition-all"
-                                        >
-                                            <BookOpen className="h-4 w-4 text-amber-400" /> Forward All Dues Link
-                                        </button>
-                                    </div>
-                                </div>
-                            ) : (
-                                <div className="flex-1 flex flex-col items-center justify-center text-center gap-6 p-8 bg-teal-500/5 rounded-[3.5rem] border-4 border-dashed border-teal-500/10">
-                                    <div className="w-24 h-24 bg-teal-500 rounded-[2.5rem] flex items-center justify-center shadow-2xl shadow-teal-500/40 border-6 border-white/20">
-                                        <Smartphone className="h-10 w-10 text-white animate-bounce" />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <p className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Easebuzz Secure Checkout</p>
-                                        <p className="text-xs font-bold text-slate-400 max-w-sm">
-                                            The Easebuzz checkout dialog has been launched automatically. To re-initiate the payment, click the button below.
-                                        </p>
-                                    </div>
+                                            {/* Split Ratio Presets */}
+                                            <div className="space-y-1.5">
+                                                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                                                    Quick Split Ratios (Cash / Easebuzz Online)
+                                                </span>
+                                                <div className="grid grid-cols-5 gap-2">
+                                                    {[
+                                                        { cash: 10, online: 90, label: "10 / 90" },
+                                                        { cash: 20, online: 80, label: "20 / 80" },
+                                                        { cash: 50, online: 50, label: "50 / 50" },
+                                                        { cash: 70, online: 30, label: "70 / 30" },
+                                                        { cash: 90, online: 10, label: "90 / 10" }
+                                                    ].map(preset => (
+                                                        <button
+                                                            key={preset.label}
+                                                            type="button"
+                                                            onClick={() => handleSelectSplitPreset(preset.cash)}
+                                                            className="py-2 px-1 bg-white hover:bg-emerald-50 border border-slate-200 hover:border-emerald-500 rounded-xl text-xs font-black text-slate-800 hover:text-emerald-700 transition-all shadow-xs cursor-pointer"
+                                                        >
+                                                            {preset.label}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
 
-                                    <div className="flex flex-col gap-3 w-full max-w-md pt-2">
-                                        <Button
-                                            onClick={() => triggerEasebuzzCheckoutInPOS()}
-                                            disabled={isProcessing}
-                                            className="h-14 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs uppercase tracking-wider shadow-xl rounded-2xl transition-all active:scale-95 disabled:opacity-50"
-                                        >
-                                            <CreditCard className="h-4 w-4 mr-2" /> Pay by Easebuzz
-                                        </Button>
-                                        <button
-                                            onClick={() => forwardWhatsAppLink("BILL")}
-                                            className="h-14 border-slate-200 text-slate-500 hover:bg-slate-100 rounded-2xl font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 active:scale-95 transition-all"
-                                        >
-                                            <Smartphone className="h-4 w-4" /> Share link on WhatsApp
-                                        </button>
-                                    </div>
-                                </div>
-                            )}
+                                            {/* Split Inputs */}
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div className="p-4 bg-white rounded-2xl border border-slate-200 space-y-2">
+                                                    <div className="flex justify-between items-center">
+                                                        <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                                                            <Banknote className="h-4 w-4 text-emerald-600" /> Cash Component
+                                                        </span>
+                                                        <span className="text-[10px] text-slate-400 font-mono">
+                                                            {grandTotal > 0 ? `${((Number(splitCashAmount || 0) / grandTotal) * 100).toFixed(0)}%` : "0%"}
+                                                        </span>
+                                                    </div>
+                                                    <div className="relative">
+                                                        <input
+                                                            type="number"
+                                                            value={splitCashAmount || ""}
+                                                            onChange={(e) => {
+                                                                const val = e.target.value === "" ? "" : Number(e.target.value);
+                                                                setSplitCashAmount(val);
+                                                                if (typeof val === "number") {
+                                                                    const walletAmt = useWalletBalance ? Number(splitWalletAmount || 0) : 0;
+                                                                    const rem = Math.max(0, grandTotal - walletAmt - val);
+                                                                    setSplitOnlineAmount(Number(rem.toFixed(2)));
+                                                                }
+                                                            }}
+                                                            placeholder="0.00"
+                                                            className="w-full h-12 pl-8 pr-3 text-xl font-black text-slate-900 border border-slate-200 rounded-xl outline-none focus:border-emerald-500"
+                                                        />
+                                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">₹</span>
+                                                    </div>
+                                                </div>
+
+                                                <div className="p-4 bg-white rounded-2xl border border-teal-200 space-y-2">
+                                                    <div className="flex justify-between items-center">
+                                                        <span className="text-xs font-bold text-teal-700 flex items-center gap-1.5">
+                                                            <Smartphone className="h-4 w-4 text-teal-600" /> Easebuzz Online
+                                                        </span>
+                                                        <span className="text-[10px] text-teal-500 font-mono">
+                                                            {grandTotal > 0 ? `${((Number(splitOnlineAmount || 0) / grandTotal) * 100).toFixed(0)}%` : "0%"}
+                                                        </span>
+                                                    </div>
+                                                    <div className="relative">
+                                                        <input
+                                                            type="number"
+                                                            value={splitOnlineAmount || ""}
+                                                            onChange={(e) => {
+                                                                const val = e.target.value === "" ? "" : Number(e.target.value);
+                                                                setSplitOnlineAmount(val);
+                                                                if (typeof val === "number") {
+                                                                    const walletAmt = useWalletBalance ? Number(splitWalletAmount || 0) : 0;
+                                                                    const rem = Math.max(0, grandTotal - walletAmt - val);
+                                                                    setSplitCashAmount(Number(rem.toFixed(2)));
+                                                                }
+                                                            }}
+                                                            placeholder="0.00"
+                                                            className="w-full h-12 pl-8 pr-3 text-xl font-black text-slate-900 border border-teal-200 rounded-xl outline-none focus:border-teal-500"
+                                                        />
+                                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">₹</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* Reconciliation Summary Bar */}
+                                            <div className="p-4 bg-slate-900 text-white rounded-2xl flex items-center justify-between text-xs">
+                                                <div className="space-y-0.5">
+                                                    <span className="text-slate-400 uppercase text-[10px] font-bold">Total Bill: ₹{grandTotal.toFixed(2)}</span>
+                                                    <p className="font-bold">
+                                                        Cash: ₹{Number(splitCashAmount || 0).toFixed(2)} + Online: ₹{Number(splitOnlineAmount || 0).toFixed(2)}
+                                                        {useWalletBalance && ` + Wallet: ₹${Number(splitWalletAmount || 0).toFixed(2)}`}
+                                                    </p>
+                                                </div>
+                                                <div className="text-right">
+                                                    {(() => {
+                                                        const totalPaid = Number(splitCashAmount || 0) + Number(splitOnlineAmount || 0) + (useWalletBalance ? Number(splitWalletAmount || 0) : 0);
+                                                        const diff = grandTotal - totalPaid;
+                                                        if (Math.abs(diff) < 0.05) {
+                                                            return <span className="text-emerald-400 font-bold">✓ Fully Balanced (₹{totalPaid.toFixed(2)})</span>;
+                                                        } else if (diff > 0) {
+                                                            return <span className="text-amber-400 font-bold">Partial Settlement (Due: ₹{diff.toFixed(2)})</span>;
+                                                        } else {
+                                                            return <span className="text-rose-400 font-bold">Overpaid: ₹{(-diff).toFixed(2)}</span>;
+                                                        }
+                                                    })()}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ) : paymentMethod === "WALLET" ? (
+                                        <div className="flex-1 flex flex-col gap-6 overflow-y-auto pr-1 justify-between">
+                                            <div className="p-6 bg-emerald-500/10 rounded-[2.5rem] border-2 border-emerald-500/30 flex items-center justify-between shadow-sm">
+                                                <div className="flex items-center gap-4">
+                                                    <div className="w-16 h-16 rounded-[1.5rem] bg-emerald-500 text-white flex items-center justify-center shadow-lg shadow-emerald-500/30">
+                                                        <Wallet className="h-8 w-8" />
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-[10px] font-black text-emerald-700 uppercase tracking-widest">Customer Advance Wallet</p>
+                                                        <h4 className="text-3xl font-black text-emerald-950 tabular-nums">
+                                                            ₹{Number(selectedCustomer?.accountBalance || 0).toFixed(2)}
+                                                        </h4>
+                                                        <p className="text-xs font-bold text-emerald-600 mt-0.5">
+                                                            Available credit deposited for {selectedCustomer?.name}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                <div className="text-right">
+                                                    <span className="px-3 py-1.5 bg-emerald-500/20 rounded-full border border-emerald-500/40 text-[10px] font-black text-emerald-800 uppercase tracking-wider">
+                                                        Instant Auto-Deduct
+                                                    </span>
+                                                </div>
+                                            </div>
+
+                                            <div className="grid grid-cols-3 gap-4">
+                                                <div className="p-5 bg-white rounded-2xl border-2 border-slate-100 shadow-sm space-y-1">
+                                                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Current Bill</p>
+                                                    <p className="text-2xl font-black text-slate-900 tabular-nums font-mono">₹{grandTotal.toFixed(2)}</p>
+                                                </div>
+                                                <div className="p-5 bg-emerald-50 rounded-2xl border-2 border-emerald-200 shadow-sm space-y-1">
+                                                    <p className="text-[9px] font-black text-emerald-600 uppercase tracking-wider">Deduct From Wallet</p>
+                                                    <p className="text-2xl font-black text-emerald-800 tabular-nums font-mono">
+                                                        -₹{Math.min(grandTotal, Number(selectedCustomer?.accountBalance || 0)).toFixed(2)}
+                                                    </p>
+                                                </div>
+                                                <div className="p-5 bg-slate-900 rounded-2xl border-2 border-slate-800 text-white shadow-md space-y-1">
+                                                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Remaining Advance</p>
+                                                    <p className="text-2xl font-black text-emerald-400 tabular-nums font-mono">
+                                                        ₹{Math.max(0, Number(selectedCustomer?.accountBalance || 0) - grandTotal).toFixed(2)}
+                                                    </p>
+                                                </div>
+                                            </div>
+
+                                            {Number(selectedCustomer?.accountBalance || 0) < grandTotal ? (
+                                                <div className="p-5 bg-amber-50 rounded-2xl border-2 border-amber-200 flex items-center justify-between">
+                                                    <div className="space-y-0.5">
+                                                        <p className="text-xs font-black text-amber-900">
+                                                            ⚠️ Advance balance is short by ₹{(grandTotal - Number(selectedCustomer?.accountBalance || 0)).toFixed(2)}
+                                                        </p>
+                                                        <p className="text-[11px] font-semibold text-amber-700">
+                                                            Use Split Pay to pay the remaining ₹{(grandTotal - Number(selectedCustomer?.accountBalance || 0)).toFixed(2)} via Cash or Easebuzz.
+                                                        </p>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setPaymentMethod("SPLIT");
+                                                            setUseWalletBalance(true);
+                                                            const walletAmt = Number(selectedCustomer?.accountBalance || 0);
+                                                            setSplitWalletAmount(walletAmt);
+                                                            const rem = Math.max(0, grandTotal - walletAmt);
+                                                            setSplitCashAmount(Number((rem * 0.5).toFixed(2)));
+                                                            setSplitOnlineAmount(Number((rem * 0.5).toFixed(2)));
+                                                        }}
+                                                        className="px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-slate-900 font-black text-xs uppercase tracking-wider rounded-xl shadow-md transition-all active:scale-95 cursor-pointer"
+                                                    >
+                                                        Switch to Split Pay
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                <div className="p-4 bg-emerald-100/60 rounded-2xl border border-emerald-300 flex items-center gap-3">
+                                                    <CheckCircle2 className="h-6 w-6 text-emerald-700 shrink-0" />
+                                                    <p className="text-xs font-bold text-emerald-900">
+                                                        This bill of <strong>₹{grandTotal.toFixed(2)}</strong> will be 100% paid using the customer's advance balance. Click <strong>Finalize Transaction</strong> below to checkout.
+                                                    </p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ) : paymentMethod === "CREDIT" ? (
+                                        <div className="flex-1 flex flex-col items-center justify-center text-center gap-6 p-8 bg-white rounded-[3.5rem] border-4 border-dashed border-slate-200 shadow-inner">
+                                            <div className="w-24 h-24 bg-slate-900 rounded-[2.5rem] flex items-center justify-center shadow-2xl shadow-slate-900/40 border-6 border-white">
+                                                <BookOpen className="h-10 w-10 text-white" />
+                                            </div>
+                                            <div className="space-y-2">
+                                                <h3 className="text-3xl font-black uppercase text-slate-900 tracking-tighter">Debit On Account</h3>
+                                                <p className="text-sm font-bold text-slate-500 max-w-[450px] leading-relaxed">
+                                                    The amount of <strong className="text-slate-900">₹{grandTotal.toFixed(2)}</strong> will be recorded as outstanding for <strong className="text-emerald-600 underline underline-offset-8 decoration-4">{selectedCustomer?.name}</strong>.
+                                                </p>
+                                            </div>
+                                            
+                                            <div className="flex flex-col sm:flex-row gap-3 w-full max-w-lg pt-2">
+                                                <button
+                                                    onClick={() => forwardWhatsAppLink("BILL")}
+                                                    className="flex-1 px-4 py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-black text-xs uppercase tracking-wider shadow-lg flex items-center justify-center gap-2 active:scale-95 transition-all"
+                                                >
+                                                    <Smartphone className="h-4 w-4" /> Forward Bill Link (WhatsApp)
+                                                </button>
+                                                <button
+                                                    onClick={() => forwardWhatsAppLink("ALL_DUES")}
+                                                    className="flex-1 px-4 py-3.5 bg-slate-900 hover:bg-black text-white rounded-2xl font-black text-xs uppercase tracking-wider shadow-lg flex items-center justify-center gap-2 active:scale-95 transition-all"
+                                                >
+                                                    <BookOpen className="h-4 w-4 text-amber-400" /> Forward All Dues Link
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="flex-1 flex flex-col items-center justify-center text-center gap-6 p-8 bg-teal-500/5 rounded-[3.5rem] border-4 border-dashed border-teal-500/10">
+                                            <div className="w-24 h-24 bg-teal-500 rounded-[2.5rem] flex items-center justify-center shadow-2xl shadow-teal-500/40 border-6 border-white/20">
+                                                <Smartphone className="h-10 w-10 text-white animate-bounce" />
+                                            </div>
+                                            <div className="space-y-2">
+                                                <p className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Easebuzz Secure Checkout</p>
+                                                <p className="text-xs font-bold text-slate-400 max-w-sm">
+                                                    The Easebuzz checkout dialog has been launched automatically. To re-initiate the payment, click the button below.
+                                                </p>
+                                            </div>
+
+                                            <div className="flex flex-col gap-3 w-full max-w-md pt-2">
+                                                <Button
+                                                    onClick={() => triggerEasebuzzCheckoutInPOS()}
+                                                    disabled={isProcessing}
+                                                    className="h-14 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs uppercase tracking-wider shadow-xl rounded-2xl transition-all active:scale-95 disabled:opacity-50"
+                                                >
+                                                    <CreditCard className="h-4 w-4 mr-2" /> Pay by Easebuzz
+                                                </Button>
+                                                <button
+                                                    onClick={() => forwardWhatsAppLink("BILL")}
+                                                    className="h-14 border-slate-200 text-slate-500 hover:bg-slate-100 rounded-2xl font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 active:scale-95 transition-all"
+                                                >
+                                                    <Smartphone className="h-4 w-4" /> Share link on WhatsApp
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
                         </div>
                     </div>
                 </DialogContent>

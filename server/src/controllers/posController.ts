@@ -6,6 +6,7 @@ import { getIo } from "../sockets/io";
 import { generateOrderId } from "../utils/idGenerator";
 import { InventoryService, InventoryLogType } from "../services/inventoryService";
 import { SearchService } from "../services/searchService";
+import { syncCustomerTotalDue } from "./orderController";
 
 interface AuthenticatedRequest extends Request {
     user?: { userId: string; role: string; locationId?: string };
@@ -760,6 +761,12 @@ export const processPOSOrder = async (req: AuthenticatedRequest, res: Response, 
                     settledFromOld += toApply;
                 }
             }
+        }
+
+        if (customerId) {
+            try {
+                await syncCustomerTotalDue(customerId);
+            } catch (_) {}
         }
 
         const finalOrder: any = await prisma.order.findUnique({ 
