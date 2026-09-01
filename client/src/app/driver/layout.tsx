@@ -44,17 +44,27 @@ export default function DriverLayout({ children }: { children: React.ReactNode }
         );
     }
 
+    if (isLoginPage) {
+        return (
+            <div className="min-h-screen bg-slate-950 text-slate-800 antialiased font-sans flex flex-col">
+                <main className="flex-1 flex flex-col">
+                    {children}
+                </main>
+            </div>
+        );
+    }
+
     return (
-        <div className="min-h-screen bg-slate-50 flex justify-center text-slate-800 antialiased font-sans select-none">
-            {/* Mobile App Container Frame */}
-            <div className="w-full max-w-md bg-white min-h-screen shadow-2xl relative flex flex-col overflow-x-hidden">
+        <div className="min-h-screen bg-slate-100 flex justify-center text-slate-800 antialiased font-sans select-none sm:py-4">
+            {/* Mobile / Handheld App Container Frame */}
+            <div className="w-full max-w-md bg-white min-h-screen sm:min-h-[92vh] sm:rounded-3xl shadow-2xl relative flex flex-col overflow-x-hidden border border-slate-200/60">
                 <main className={cn("flex-1 flex flex-col", !hideBottomNav && "pb-20")}>
                     {children}
                 </main>
 
                 {/* Bottom Navigation Bar */}
                 {!hideBottomNav && (
-                    <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white border-t border-slate-100 px-6 py-2 flex items-center justify-between z-40 shadow-2xl">
+                    <nav className="fixed sm:absolute bottom-0 left-0 right-0 max-w-md mx-auto bg-white/95 backdrop-blur-md border-t border-slate-100 px-6 py-2 flex items-center justify-between z-40 shadow-2xl sm:rounded-b-3xl">
                         <button
                             onClick={() => router.push("/driver")}
                             className={cn(
