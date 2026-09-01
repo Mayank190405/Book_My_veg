@@ -1,17 +1,48 @@
 "use client";
 
+import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { Home, Package, History as HistoryIcon, MoreHorizontal } from "lucide-react";
+import { Home, Package, History as HistoryIcon, MoreHorizontal, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useUserStore } from "@/store/useUserStore";
 
 export default function DriverLayout({ children }: { children: React.ReactNode }) {
     const pathname = usePathname();
     const router = useRouter();
+    const { token, user, _hasHydrated } = useUserStore();
 
     // Hide bottom navigation on auth and scanner pages
     const isLoginPage = pathname?.includes("/driver/login");
     const isScanPage = pathname?.includes("/driver/scan");
     const hideBottomNav = isLoginPage || isScanPage;
+
+    const isAllowedRole = user?.role === "DELIVERY_PARTNER" || user?.role === "ADMIN" || user?.role === "STORE_ADMIN" || user?.role === "MANAGER";
+
+    useEffect(() => {
+        if (!_hasHydrated) return;
+
+        if ((!token || !user || !isAllowedRole) && !isLoginPage) {
+            router.replace("/driver/login");
+        } else if (token && user && isAllowedRole && isLoginPage) {
+            router.replace("/driver");
+        }
+    }, [_hasHydrated, token, user, isLoginPage, isAllowedRole, router]);
+
+    if (!_hasHydrated) {
+        return (
+            <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+                <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+            </div>
+        );
+    }
+
+    if ((!token || !user || !isAllowedRole) && !isLoginPage) {
+        return (
+            <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+                <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+            </div>
+        );
+    }
 
     return (
         <div className="min-h-screen bg-slate-50 flex justify-center text-slate-800 antialiased font-sans select-none">
