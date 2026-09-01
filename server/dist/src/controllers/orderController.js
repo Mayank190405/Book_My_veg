@@ -158,19 +158,24 @@ const getOrders = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
 exports.getOrders = getOrders;
 // ─── get single order ────────────────────────────────────────────────────────
 const getOrderById = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a;
+    var _a, _b;
     const userId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.userId;
+    const role = (_b = req.user) === null || _b === void 0 ? void 0 : _b.role;
     const id = req.params.id;
     if (!userId)
         return res.status(401).json({ message: "Unauthorized" });
     try {
+        const isStaff = role && role !== "USER";
+        const whereClause = isStaff ? { id } : { id, userId };
         const order = yield prisma_1.default.order.findFirst({
-            where: { id, userId },
+            where: whereClause,
             include: {
+                user: { select: { id: true, name: true, phone: true, email: true, totalDue: true } },
                 items: { include: { product: true } },
                 statusHistory: { orderBy: { createdAt: "asc" } },
                 payments: true,
-                deliveryPartner: { select: { name: true, phone: true } },
+                deliveryPartner: { select: { id: true, name: true, phone: true } },
+                packer: { select: { id: true, name: true, phone: true } },
                 location: true,
             },
         });

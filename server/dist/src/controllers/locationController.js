@@ -29,6 +29,9 @@ const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const getLocationById = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { id } = req.params;
+        if (!id || id === "null" || id === "undefined") {
+            return res.json(null);
+        }
         const location = yield prisma_1.default.location.findUnique({
             where: { id },
             select: {

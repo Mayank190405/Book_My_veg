@@ -5,6 +5,9 @@ import bcrypt from "bcryptjs";
 export const getLocationById = async (req: Request, res: Response) => {
     try {
         const { id } = req.params;
+        if (!id || id === "null" || id === "undefined") {
+            return res.json(null);
+        }
         const location = await (prisma.location as any).findUnique({
             where: { id },
             select: {

@@ -158,17 +158,23 @@ export const getOrders = async (req: AuthenticatedRequest, res: Response) => {
 
 export const getOrderById = async (req: AuthenticatedRequest, res: Response) => {
     const userId = req.user?.userId;
+    const role = req.user?.role;
     const id = req.params.id as string;
     if (!userId) return res.status(401).json({ message: "Unauthorized" });
 
     try {
+        const isStaff = role && role !== "USER";
+        const whereClause = isStaff ? { id } : { id, userId };
+
         const order = await prisma.order.findFirst({
-            where: { id, userId },
+            where: whereClause,
             include: {
+                user: { select: { id: true, name: true, phone: true, email: true, totalDue: true } },
                 items: { include: { product: true } },
                 statusHistory: { orderBy: { createdAt: "asc" } },
                 payments: true,
-                deliveryPartner: { select: { name: true, phone: true } },
+                deliveryPartner: { select: { id: true, name: true, phone: true } },
+                packer: { select: { id: true, name: true, phone: true } },
                 location: true,
             },
         });
