@@ -54,58 +54,58 @@ export default function PackerLayout({ children }: { children: React.ReactNode }
     }
 
     return (
-        <div className="min-h-screen bg-slate-100 flex justify-center text-slate-800 antialiased font-sans select-none sm:py-4">
-            {/* Mobile / Handheld Scanner Container Frame */}
-            <div className="w-full max-w-md bg-white min-h-screen sm:min-h-[92vh] sm:rounded-3xl shadow-2xl relative flex flex-col overflow-x-hidden border border-slate-200/60">
-                <main className={cn("flex-1 flex flex-col", !hideBottomNav && "pb-20")}>
+        <div className="min-h-screen bg-slate-100/80 flex justify-center text-slate-800 antialiased font-sans select-none sm:py-6 md:py-8 sm:px-4">
+            {/* Mobile / Tablet / Desktop Responsive Container Frame */}
+            <div className="w-full max-w-md sm:max-w-xl md:max-w-2xl lg:max-w-4xl bg-slate-50 min-h-screen sm:min-h-[88vh] sm:rounded-3xl shadow-xl shadow-slate-200/60 relative flex flex-col overflow-x-hidden border border-slate-200/60 transition-all duration-300">
+                <main className={cn("flex-1 flex flex-col", !hideBottomNav && "pb-22")}>
                     {children}
                 </main>
 
                 {/* Bottom Navigation Bar */}
                 {!hideBottomNav && (
-                    <nav className="fixed sm:absolute bottom-0 left-0 right-0 max-w-md mx-auto bg-white/95 backdrop-blur-md border-t border-slate-100 px-6 py-2 flex items-center justify-between z-40 shadow-2xl sm:rounded-b-3xl">
+                    <nav className="fixed sm:absolute bottom-0 left-0 right-0 max-w-md sm:max-w-xl md:max-w-2xl lg:max-w-4xl mx-auto bg-white/95 backdrop-blur-md border-t border-slate-100 px-6 sm:px-10 py-2.5 sm:py-3 flex items-center justify-between z-40 shadow-2xl sm:rounded-b-3xl">
                         <button
                             onClick={() => router.push("/packer")}
                             className={cn(
-                                "flex flex-col items-center gap-1 py-1 px-3 rounded-2xl transition-all",
-                                pathname === "/packer" ? "text-purple-600 font-bold" : "text-slate-400 font-medium hover:text-slate-600"
+                                "flex flex-col items-center gap-1 py-1 px-3 sm:px-5 rounded-2xl transition-all",
+                                pathname === "/packer" ? "text-purple-700 font-bold" : "text-slate-400 font-medium hover:text-slate-600"
                             )}
                         >
-                            <Home className="h-5 w-5" />
-                            <span className="text-[10px]">Dashboard</span>
+                            <Home className="h-5 w-5 stroke-[2.2]" />
+                            <span className="text-[10px] sm:text-xs font-bold">Dashboard</span>
                         </button>
 
                         <button
                             onClick={() => router.push("/packer/orders")}
                             className={cn(
-                                "flex flex-col items-center gap-1 py-1 px-3 rounded-2xl transition-all",
-                                pathname?.startsWith("/packer/orders") ? "text-purple-600 font-bold" : "text-slate-400 font-medium hover:text-slate-600"
+                                "flex flex-col items-center gap-1 py-1 px-3 sm:px-5 rounded-2xl transition-all",
+                                pathname?.startsWith("/packer/orders") ? "text-purple-700 font-bold" : "text-slate-400 font-medium hover:text-slate-600"
                             )}
                         >
-                            <Package className="h-5 w-5" />
-                            <span className="text-[10px]">My Orders</span>
+                            <Package className="h-5 w-5 stroke-[2.2]" />
+                            <span className="text-[10px] sm:text-xs font-bold">My Orders</span>
                         </button>
 
                         <button
                             onClick={() => router.push("/packer/history")}
                             className={cn(
-                                "flex flex-col items-center gap-1 py-1 px-3 rounded-2xl transition-all",
-                                pathname === "/packer/history" ? "text-purple-600 font-bold" : "text-slate-400 font-medium hover:text-slate-600"
+                                "flex flex-col items-center gap-1 py-1 px-3 sm:px-5 rounded-2xl transition-all",
+                                pathname === "/packer/history" ? "text-purple-700 font-bold" : "text-slate-400 font-medium hover:text-slate-600"
                             )}
                         >
-                            <HistoryIcon className="h-5 w-5" />
-                            <span className="text-[10px]">History</span>
+                            <HistoryIcon className="h-5 w-5 stroke-[2.2]" />
+                            <span className="text-[10px] sm:text-xs font-bold">History</span>
                         </button>
 
                         <button
                             onClick={() => router.push("/packer/profile")}
                             className={cn(
-                                "flex flex-col items-center gap-1 py-1 px-3 rounded-2xl transition-all",
-                                pathname === "/packer/profile" ? "text-purple-600 font-bold" : "text-slate-400 font-medium hover:text-slate-600"
+                                "flex flex-col items-center gap-1 py-1 px-3 sm:px-5 rounded-2xl transition-all",
+                                pathname === "/packer/profile" ? "text-purple-700 font-bold" : "text-slate-400 font-medium hover:text-slate-600"
                             )}
                         >
-                            <User className="h-5 w-5" />
-                            <span className="text-[10px]">Profile</span>
+                            <User className="h-5 w-5 stroke-[2.2]" />
+                            <span className="text-[10px] sm:text-xs font-bold">Profile</span>
                         </button>
                     </nav>
                 )}
