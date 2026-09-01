@@ -2,6 +2,7 @@
 
 import { useState, Suspense, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { verifyOtp, sendOtp, loginWithPassword } from "@/services/authService";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -147,15 +148,17 @@ function PackerLoginForm() {
             {/* Main Clean Card */}
             <div className="w-full max-w-md bg-white rounded-3xl sm:rounded-[2rem] shadow-xl shadow-slate-200/70 border border-slate-200/80 p-6 sm:p-9 flex flex-col justify-between relative z-10 transition-all duration-300">
                 <div className="space-y-6">
-                    {/* Header Badge & Clean Icon */}
+                    {/* Branding Header with Official Logo */}
                     <div className="flex flex-col items-center text-center space-y-3">
-                        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200/70 text-emerald-700 text-[10px] font-black uppercase tracking-wider">
-                            <Sparkles className="h-3 w-3 text-emerald-600" />
-                            Warehouse & Hub Node
-                        </div>
-
-                        <div className="w-18 h-18 sm:w-20 sm:h-20 bg-slate-900 rounded-2xl sm:rounded-3xl flex items-center justify-center shadow-lg shadow-slate-900/10 text-white">
-                            <Package className="w-9 h-9 sm:w-10 sm:h-10 stroke-[1.8] text-emerald-400" />
+                        <div className="relative w-28 h-16 sm:w-32 sm:h-18 flex items-center justify-center">
+                            <Image 
+                                src="/logo.png" 
+                                alt="BookMyVeg Logo" 
+                                width={130} 
+                                height={65} 
+                                priority
+                                className="object-contain drop-shadow-sm"
+                            />
                         </div>
 
                         <div className="space-y-1">
@@ -293,8 +296,7 @@ function PackerLoginForm() {
                                         WhatsApp Registered Mobile
                                     </label>
                                     <div className="relative flex items-center">
-                                        <div className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center gap-1.5 text-slate-500 font-bold text-xs border-r border-slate-200 pr-2">
-                                            <span>🇮🇳</span>
+                                        <div className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center gap-1 text-slate-600 font-black text-xs border-r border-slate-200 pr-2.5">
                                             <span>+91</span>
                                         </div>
                                         <Input
@@ -302,7 +304,7 @@ function PackerLoginForm() {
                                             placeholder="10-digit mobile"
                                             value={otpPhone}
                                             onChange={(e) => setOtpPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                                            className="h-12 sm:h-13 pl-20 rounded-2xl bg-slate-50 border border-slate-200 text-xs sm:text-sm font-bold text-slate-900 placeholder:text-slate-400 focus:border-slate-900 focus:bg-white focus:ring-4 focus:ring-slate-100 transition-all tracking-wider"
+                                            className="h-12 sm:h-13 pl-16 rounded-2xl bg-slate-50 border border-slate-200 text-xs sm:text-sm font-bold text-slate-900 placeholder:text-slate-400 focus:border-slate-900 focus:bg-white focus:ring-4 focus:ring-slate-100 transition-all tracking-wider"
                                             required
                                             autoFocus
                                         />

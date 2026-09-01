@@ -2,6 +2,7 @@
 
 import { useState, Suspense, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { verifyOtp, sendOtp, loginWithPassword } from "@/services/authService";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,11 +14,9 @@ import {
     Lock, 
     Truck, 
     Shield, 
-    Sparkles, 
     ArrowRight, 
     Package, 
-    RefreshCw,
-    Navigation
+    RefreshCw
 } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
@@ -139,27 +138,25 @@ function DriverLoginForm() {
     };
 
     return (
-        <div className="min-h-screen w-full flex items-center justify-center p-4 sm:p-6 md:p-8 relative overflow-hidden bg-slate-950">
-            {/* Ambient Background Gradient Orbs */}
-            <div className="absolute -top-40 -left-40 w-96 h-96 bg-blue-600/30 rounded-full blur-3xl pointer-events-none animate-pulse" />
-            <div className="absolute -bottom-40 -right-40 w-96 h-96 bg-cyan-600/25 rounded-full blur-3xl pointer-events-none" />
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-blue-900/15 rounded-full blur-3xl pointer-events-none" />
+        <div className="min-h-screen w-full flex items-center justify-center p-4 sm:p-6 md:p-8 relative bg-slate-50 text-slate-800 selection:bg-blue-100 selection:text-blue-900">
+            {/* Subtle Clean Ambient Highlights */}
+            <div className="absolute top-0 right-0 w-96 h-96 bg-blue-100/40 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20" />
+            <div className="absolute bottom-0 left-0 w-96 h-96 bg-slate-200/50 rounded-full blur-3xl pointer-events-none -ml-20 -mb-20" />
 
-            {/* Main Responsive Card */}
-            <div className="w-full max-w-md bg-white/95 backdrop-blur-2xl rounded-3xl sm:rounded-[2.5rem] shadow-2xl shadow-blue-950/50 border border-white/40 p-6 sm:p-9 flex flex-col justify-between relative z-10 transition-all duration-300">
+            {/* Main Clean Card */}
+            <div className="w-full max-w-md bg-white rounded-3xl sm:rounded-[2rem] shadow-xl shadow-slate-200/70 border border-slate-200/80 p-6 sm:p-9 flex flex-col justify-between relative z-10 transition-all duration-300">
                 <div className="space-y-6">
-                    {/* Header Badge & Dynamic Icon */}
+                    {/* Header with Official Logo */}
                     <div className="flex flex-col items-center text-center space-y-3">
-                        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 border border-blue-200/70 text-blue-700 text-[10px] font-black uppercase tracking-wider">
-                            <Navigation className="h-3 w-3 text-blue-600 animate-spin-slow" />
-                            Fleet & Dispatch Node
-                        </div>
-
-                        <div className="relative group">
-                            <div className="absolute -inset-1 bg-gradient-to-r from-blue-600 to-cyan-500 rounded-3xl blur opacity-30 group-hover:opacity-60 transition duration-500" />
-                            <div className="relative w-20 h-20 sm:w-22 sm:h-22 bg-gradient-to-tr from-blue-600 to-cyan-500 rounded-3xl flex items-center justify-center shadow-xl shadow-blue-400/30 text-white">
-                                <Truck className="w-10 h-10 sm:w-11 sm:h-11 stroke-[1.8]" />
-                            </div>
+                        <div className="relative w-28 h-16 sm:w-32 sm:h-18 flex items-center justify-center">
+                            <Image 
+                                src="/logo.png" 
+                                alt="BookMyVeg Logo" 
+                                width={130} 
+                                height={65} 
+                                priority
+                                className="object-contain drop-shadow-sm"
+                            />
                         </div>
 
                         <div className="space-y-1">
@@ -173,13 +170,13 @@ function DriverLoginForm() {
                     </div>
 
                     {/* Mode Segmented Switcher */}
-                    <div className="grid grid-cols-2 bg-slate-100/90 p-1.5 rounded-2xl border border-slate-200/60">
+                    <div className="grid grid-cols-2 bg-slate-100 p-1.5 rounded-2xl border border-slate-200/60">
                         <button
                             type="button"
                             onClick={() => setLoginMode("PASSWORD")}
                             className={`py-2.5 sm:py-3 text-xs font-black rounded-xl transition-all duration-200 flex items-center justify-center gap-1.5 ${
                                 loginMode === "PASSWORD"
-                                    ? "bg-white text-blue-800 shadow-md shadow-slate-200/80 scale-[1.02]"
+                                    ? "bg-white text-slate-900 shadow-sm font-bold scale-[1.01]"
                                     : "text-slate-500 hover:text-slate-800"
                             }`}
                         >
@@ -191,7 +188,7 @@ function DriverLoginForm() {
                             onClick={() => setLoginMode("OTP")}
                             className={`py-2.5 sm:py-3 text-xs font-black rounded-xl transition-all duration-200 flex items-center justify-center gap-1.5 ${
                                 loginMode === "OTP"
-                                    ? "bg-white text-blue-800 shadow-md shadow-slate-200/80 scale-[1.02]"
+                                    ? "bg-white text-slate-900 shadow-sm font-bold scale-[1.01]"
                                     : "text-slate-500 hover:text-slate-800"
                             }`}
                         >
@@ -216,7 +213,7 @@ function DriverLoginForm() {
                                         placeholder="Enter registered mobile"
                                         value={identifier}
                                         onChange={(e) => setIdentifier(e.target.value)}
-                                        className="h-12 sm:h-13 pl-11 rounded-2xl bg-slate-50/80 border border-slate-200 text-xs sm:text-sm font-bold text-slate-800 placeholder:text-slate-400 focus:border-blue-600 focus:bg-white focus:ring-4 focus:ring-blue-100 transition-all"
+                                        className="h-12 sm:h-13 pl-11 rounded-2xl bg-slate-50 border border-slate-200 text-xs sm:text-sm font-bold text-slate-900 placeholder:text-slate-400 focus:border-slate-900 focus:bg-white focus:ring-4 focus:ring-slate-100 transition-all"
                                         required
                                         autoFocus
                                     />
@@ -245,7 +242,7 @@ function DriverLoginForm() {
                                         placeholder="Enter rider password"
                                         value={password}
                                         onChange={(e) => setPassword(e.target.value)}
-                                        className="h-12 sm:h-13 pl-11 pr-11 rounded-2xl bg-slate-50/80 border border-slate-200 text-xs sm:text-sm font-bold text-slate-800 placeholder:text-slate-400 focus:border-blue-600 focus:bg-white focus:ring-4 focus:ring-blue-100 transition-all"
+                                        className="h-12 sm:h-13 pl-11 pr-11 rounded-2xl bg-slate-50 border border-slate-200 text-xs sm:text-sm font-bold text-slate-900 placeholder:text-slate-400 focus:border-slate-900 focus:bg-white focus:ring-4 focus:ring-slate-100 transition-all"
                                         required
                                     />
                                     <button
@@ -265,7 +262,7 @@ function DriverLoginForm() {
                                         type="checkbox" 
                                         checked={rememberMe} 
                                         onChange={(e) => setRememberMe(e.target.checked)}
-                                        className="rounded-lg border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
+                                        className="rounded-lg border-slate-300 text-slate-900 focus:ring-slate-900 w-4 h-4 cursor-pointer"
                                     />
                                     Keep session active
                                 </label>
@@ -274,7 +271,7 @@ function DriverLoginForm() {
                             <Button 
                                 type="submit" 
                                 disabled={loading}
-                                className="w-full h-12 sm:h-13 rounded-2xl bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-black text-xs sm:text-sm uppercase tracking-wider shadow-lg shadow-blue-300/40 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                                className="w-full h-12 sm:h-13 rounded-2xl bg-slate-900 hover:bg-black text-white font-black text-xs sm:text-sm uppercase tracking-wider shadow-lg shadow-slate-900/10 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
                             >
                                 {loading ? (
                                     <>
@@ -297,8 +294,7 @@ function DriverLoginForm() {
                                         WhatsApp Registered Mobile
                                     </label>
                                     <div className="relative flex items-center">
-                                        <div className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center gap-1.5 text-slate-500 font-bold text-xs border-r border-slate-200 pr-2">
-                                            <span>🇮🇳</span>
+                                        <div className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center gap-1 text-slate-600 font-black text-xs border-r border-slate-200 pr-2.5">
                                             <span>+91</span>
                                         </div>
                                         <Input
@@ -306,7 +302,7 @@ function DriverLoginForm() {
                                             placeholder="10-digit mobile"
                                             value={otpPhone}
                                             onChange={(e) => setOtpPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                                            className="h-12 sm:h-13 pl-20 rounded-2xl bg-slate-50/80 border border-slate-200 text-xs sm:text-sm font-bold text-slate-800 placeholder:text-slate-400 focus:border-blue-600 focus:bg-white focus:ring-4 focus:ring-blue-100 transition-all tracking-wider"
+                                            className="h-12 sm:h-13 pl-16 rounded-2xl bg-slate-50 border border-slate-200 text-xs sm:text-sm font-bold text-slate-900 placeholder:text-slate-400 focus:border-slate-900 focus:bg-white focus:ring-4 focus:ring-slate-100 transition-all tracking-wider"
                                             required
                                             autoFocus
                                         />
@@ -319,7 +315,7 @@ function DriverLoginForm() {
                                 <Button 
                                     type="submit" 
                                     disabled={loading || otpPhone.length < 10}
-                                    className="w-full h-12 sm:h-13 rounded-2xl bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-black text-xs sm:text-sm uppercase tracking-wider shadow-lg shadow-blue-300/40 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                                    className="w-full h-12 sm:h-13 rounded-2xl bg-slate-900 hover:bg-black text-white font-black text-xs sm:text-sm uppercase tracking-wider shadow-lg shadow-slate-900/10 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
                                 >
                                     {loading ? (
                                         <>
@@ -345,7 +341,7 @@ function DriverLoginForm() {
                                         placeholder="• • • • • •"
                                         value={otp}
                                         onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                                        className="h-14 rounded-2xl bg-slate-50/80 border border-slate-200 text-center text-2xl font-black tracking-[0.4em] text-slate-900 focus:border-blue-600 focus:bg-white focus:ring-4 focus:ring-blue-100 transition-all"
+                                        className="h-14 rounded-2xl bg-slate-50 border border-slate-200 text-center text-2xl font-black tracking-[0.4em] text-slate-900 focus:border-slate-900 focus:bg-white focus:ring-4 focus:ring-slate-100 transition-all"
                                         required
                                         autoFocus
                                     />
@@ -364,7 +360,7 @@ function DriverLoginForm() {
                                 <Button 
                                     type="submit" 
                                     disabled={loading || otp.length < 4}
-                                    className="w-full h-12 sm:h-13 rounded-2xl bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-black text-xs sm:text-sm uppercase tracking-wider shadow-lg shadow-blue-300/40 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                                    className="w-full h-12 sm:h-13 rounded-2xl bg-slate-900 hover:bg-black text-white font-black text-xs sm:text-sm uppercase tracking-wider shadow-lg shadow-slate-900/10 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
                                 >
                                     {loading ? (
                                         <>
@@ -382,7 +378,7 @@ function DriverLoginForm() {
                                 <div className="text-center pt-1">
                                     {countdown > 0 ? (
                                         <p className="text-xs text-slate-400 font-semibold">
-                                            Resend OTP in <span className="text-blue-700 font-bold">{countdown}s</span>
+                                            Resend OTP in <span className="text-slate-900 font-bold">{countdown}s</span>
                                         </p>
                                     ) : (
                                         <button
@@ -404,7 +400,7 @@ function DriverLoginForm() {
                     <div className="pt-3 border-t border-slate-100 flex items-center justify-center gap-4 text-xs font-bold text-slate-500">
                         <Link 
                             href="/packer/login" 
-                            className="hover:text-purple-600 transition-colors flex items-center gap-1"
+                            className="hover:text-slate-900 transition-colors flex items-center gap-1"
                         >
                             <Package className="h-3.5 w-3.5" />
                             Packer Portal
@@ -412,7 +408,7 @@ function DriverLoginForm() {
                         <span className="text-slate-300">•</span>
                         <Link 
                             href="/admin/login" 
-                            className="hover:text-blue-600 transition-colors flex items-center gap-1"
+                            className="hover:text-slate-900 transition-colors flex items-center gap-1"
                         >
                             <Shield className="h-3.5 w-3.5" />
                             Admin Console
@@ -421,7 +417,7 @@ function DriverLoginForm() {
                 </div>
 
                 {/* Footer Security Badge */}
-                <div className="mt-6 pt-4 border-t border-slate-100/70 flex items-center justify-between text-[11px] text-slate-400 font-medium">
+                <div className="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400 font-medium">
                     <span className="flex items-center gap-1 text-slate-500">
                         <Shield className="h-3.5 w-3.5 text-emerald-600" />
                         256-bit Encrypted
@@ -436,8 +432,8 @@ function DriverLoginForm() {
 export default function DriverLoginPage() {
     return (
         <Suspense fallback={
-            <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-                <Loader2 className="h-10 w-10 animate-spin text-blue-500" />
+            <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+                <Loader2 className="h-10 w-10 animate-spin text-slate-900" />
             </div>
         }>
             <DriverLoginForm />
