@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { Home, Package, History as HistoryIcon, MoreHorizontal, Loader2 } from "lucide-react";
+import { Home, ClipboardList, History as HistoryIcon, SlidersHorizontal, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUserStore } from "@/store/useUserStore";
 
@@ -57,14 +57,14 @@ export default function DriverLayout({ children }: { children: React.ReactNode }
     return (
         <div className="min-h-screen bg-slate-100 flex justify-center text-slate-800 antialiased font-sans select-none sm:py-4">
             {/* Mobile / Handheld App Container Frame */}
-            <div className="w-full max-w-md bg-white min-h-screen sm:min-h-[92vh] sm:rounded-3xl shadow-2xl relative flex flex-col overflow-x-hidden border border-slate-200/60">
+            <div className="w-full max-w-md bg-slate-50 min-h-screen sm:min-h-[92vh] sm:rounded-3xl shadow-2xl relative flex flex-col overflow-x-hidden border border-slate-200/60">
                 <main className={cn("flex-1 flex flex-col", !hideBottomNav && "pb-20")}>
                     {children}
                 </main>
 
                 {/* Bottom Navigation Bar */}
                 {!hideBottomNav && (
-                    <nav className="fixed sm:absolute bottom-0 left-0 right-0 max-w-md mx-auto bg-white/95 backdrop-blur-md border-t border-slate-100 px-6 py-2 flex items-center justify-between z-40 shadow-2xl sm:rounded-b-3xl">
+                    <nav className="fixed sm:absolute bottom-0 left-0 right-0 max-w-md mx-auto bg-white/95 backdrop-blur-md border-t border-slate-100 px-6 py-2.5 flex items-center justify-between z-40 shadow-2xl sm:rounded-b-3xl">
                         <button
                             onClick={() => router.push("/driver")}
                             className={cn(
@@ -72,8 +72,8 @@ export default function DriverLayout({ children }: { children: React.ReactNode }
                                 pathname === "/driver" ? "text-blue-600 font-bold" : "text-slate-400 font-medium hover:text-slate-600"
                             )}
                         >
-                            <Home className="h-5 w-5" />
-                            <span className="text-[10px]">Home</span>
+                            <Home className="h-5 w-5 stroke-[2.2]" />
+                            <span className="text-[10px] font-bold">Home</span>
                         </button>
 
                         <button
@@ -83,8 +83,8 @@ export default function DriverLayout({ children }: { children: React.ReactNode }
                                 pathname?.startsWith("/driver/orders") ? "text-blue-600 font-bold" : "text-slate-400 font-medium hover:text-slate-600"
                             )}
                         >
-                            <Package className="h-5 w-5" />
-                            <span className="text-[10px]">Orders</span>
+                            <ClipboardList className="h-5 w-5 stroke-[2.2]" />
+                            <span className="text-[10px] font-bold">Orders</span>
                         </button>
 
                         <button
@@ -94,8 +94,8 @@ export default function DriverLayout({ children }: { children: React.ReactNode }
                                 pathname === "/driver/history" ? "text-blue-600 font-bold" : "text-slate-400 font-medium hover:text-slate-600"
                             )}
                         >
-                            <HistoryIcon className="h-5 w-5" />
-                            <span className="text-[10px]">History</span>
+                            <HistoryIcon className="h-5 w-5 stroke-[2.2]" />
+                            <span className="text-[10px] font-bold">History</span>
                         </button>
 
                         <button
@@ -105,8 +105,8 @@ export default function DriverLayout({ children }: { children: React.ReactNode }
                                 pathname === "/driver/more" ? "text-blue-600 font-bold" : "text-slate-400 font-medium hover:text-slate-600"
                             )}
                         >
-                            <MoreHorizontal className="h-5 w-5" />
-                            <span className="text-[10px]">More</span>
+                            <SlidersHorizontal className="h-5 w-5 stroke-[2.2]" />
+                            <span className="text-[10px] font-bold">More</span>
                         </button>
                     </nav>
                 )}
