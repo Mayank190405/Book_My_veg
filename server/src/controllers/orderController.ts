@@ -1128,6 +1128,134 @@ export const verifyCashCollectionOtp = async (req: AuthenticatedRequest, res: Re
     }
 };
 
+// ─── Direct Cash Collection (Instant Single or Multi Due Clearance) ───────────
+export const collectCashDirect = async (req: AuthenticatedRequest, res: Response) => {
+    const userId = req.user?.userId;
+    const { orderId, customerId, amount, clearAllDues } = req.body;
+
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+    if (!amount || Number(amount) <= 0) return res.status(400).json({ message: "Valid collection amount is required" });
+
+    const targetAmount = Number(amount);
+
+    try {
+        await prisma.$transaction(async (tx: any) => {
+            if (clearAllDues && customerId) {
+                const pendingOrders = await tx.order.findMany({
+                    where: {
+                        userId: customerId,
+                        paymentStatus: { in: ["PENDING", "PARTIAL"] },
+                        status: { notIn: ["CANCELLED", "FAILED"] }
+                    },
+                    include: { payments: true },
+                    orderBy: { createdAt: "asc" }
+                });
+
+                let remainingCollection = targetAmount;
+                for (const ord of pendingOrders) {
+                    if (remainingCollection <= 0) break;
+                    const paid = ord.payments
+                        .filter((p: any) => p.status === "SUCCESS")
+                        .reduce((sum: number, p: any) => sum + Number(p.amount), 0);
+                    const billDue = Math.max(0, Number(ord.totalAmount) - paid);
+                    const allocate = Math.min(remainingCollection, billDue);
+
+                    if (allocate > 0) {
+                        await tx.payment.create({
+                            data: {
+                                orderId: ord.id,
+                                amount: new Prisma.Decimal(allocate),
+                                method: "CASH",
+                                status: "SUCCESS",
+                                transactionId: `CASH_${Date.now()}_${ord.id.slice(-4)}`,
+                                metadata: {
+                                    collectedBy: userId,
+                                    collectorRole: req.user?.role,
+                                    directCollection: true,
+                                    timestamp: new Date().toISOString()
+                                }
+                            }
+                        });
+
+                        const newPaid = paid + allocate;
+                        const isPaid = newPaid >= Number(ord.totalAmount);
+
+                        await tx.order.update({
+                            where: { id: ord.id },
+                            data: {
+                                isPaid,
+                                paymentStatus: isPaid ? "COMPLETED" : "PARTIAL",
+                                cashCollected: { increment: new Prisma.Decimal(allocate) },
+                                statusHistory: {
+                                    create: {
+                                        status: ord.status,
+                                        remark: `Cash collected ₹${allocate.toFixed(2)} recorded by Driver`,
+                                        changedBy: userId
+                                    }
+                                }
+                            }
+                        });
+
+                        remainingCollection -= allocate;
+                    }
+                }
+            } else if (orderId) {
+                const ord = await tx.order.findUnique({
+                    where: { id: orderId },
+                    include: { payments: true }
+                });
+                if (!ord) throw new Error("Order not found");
+
+                const paid = ord.payments
+                    .filter((p: any) => p.status === "SUCCESS")
+                    .reduce((sum: number, p: any) => sum + Number(p.amount), 0);
+                const newPaid = paid + targetAmount;
+                const isPaid = newPaid >= Number(ord.totalAmount);
+
+                await tx.payment.create({
+                    data: {
+                        orderId: ord.id,
+                        amount: new Prisma.Decimal(targetAmount),
+                        method: "CASH",
+                        status: "SUCCESS",
+                        transactionId: `CASH_${Date.now()}_${ord.id.slice(-4)}`,
+                        metadata: {
+                            collectedBy: userId,
+                            collectorRole: req.user?.role,
+                            directCollection: true,
+                            timestamp: new Date().toISOString()
+                        }
+                    }
+                });
+
+                await tx.order.update({
+                    where: { id: ord.id },
+                    data: {
+                        isPaid,
+                        paymentStatus: isPaid ? "COMPLETED" : "PARTIAL",
+                        cashCollected: { increment: new Prisma.Decimal(targetAmount) },
+                        statusHistory: {
+                            create: {
+                                status: ord.status,
+                                remark: `Cash collected ₹${targetAmount.toFixed(2)} recorded by Driver`,
+                                changedBy: userId
+                            }
+                        }
+                    }
+                });
+            }
+        });
+
+        res.json({
+            success: true,
+            message: `Cash collection of ₹${targetAmount.toFixed(2)} recorded successfully`
+        });
+    } catch (error: any) {
+        logger.error("[collectCashDirect] Error:", error);
+        res.status(500).json({ message: error.message || "Failed to record cash collection" });
+    }
+};
+
 // ─── Mark Delivery Completed ──────────────────────────────────────────────────
 export const markOrderDelivered = async (req: AuthenticatedRequest, res: Response) => {
     const userId = req.user?.userId;

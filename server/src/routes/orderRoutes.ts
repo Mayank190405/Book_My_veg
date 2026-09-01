@@ -20,6 +20,7 @@ import {
     getCustomerOutstandingDues,
     sendCashCollectionOtp,
     verifyCashCollectionOtp,
+    collectCashDirect,
     markOrderDelivered,
     getDriverReturns,
 } from "../controllers/orderController";
@@ -47,6 +48,7 @@ router.patch("/packing/:id/details", authorize(["PACKING", "ADMIN", "STORE_ADMIN
 router.get("/driver/assigned", authorize(["DELIVERY_PARTNER", "ADMIN", "STORE_ADMIN"]), getAssignedOrders);
 router.get("/driver/returns", authorize(["DELIVERY_PARTNER", "ADMIN", "STORE_ADMIN"]), getDriverReturns);
 router.post("/driver/claim-qr", authorize(["DELIVERY_PARTNER", "ADMIN", "STORE_ADMIN"]), claimDeliveryQr);
+router.post("/driver/collect-cash", authorize(["DELIVERY_PARTNER", "ADMIN", "STORE_ADMIN"]), collectCashDirect);
 router.post("/driver/send-cash-otp", authorize(["DELIVERY_PARTNER", "ADMIN", "STORE_ADMIN"]), sendCashCollectionOtp);
 router.post("/driver/verify-cash-otp", authorize(["DELIVERY_PARTNER", "ADMIN", "STORE_ADMIN"]), verifyCashCollectionOtp);
 router.patch("/driver/:id/deliver", authorize(["DELIVERY_PARTNER", "ADMIN", "STORE_ADMIN"]), markOrderDelivered);

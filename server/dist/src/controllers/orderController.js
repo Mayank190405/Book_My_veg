@@ -23,7 +23,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getAssignedOrders = exports.getDriverReturns = exports.markOrderDelivered = exports.verifyCashCollectionOtp = exports.sendCashCollectionOtp = exports.getCustomerOutstandingDues = exports.claimDeliveryQr = exports.validatePackerQr = exports.createPackerOrder = exports.extractBillId = exports.sendDeliveryOtp = exports.updateOrderPaymentStatus = exports.updatePackingDetails = exports.getPackedOrdersCount = exports.getOrdersForPacking = exports.updateOrderStatus = exports.getAllOrders = exports.cancelOrder = exports.getOrderById = exports.getOrders = exports.createOrder = exports.assignDriver = exports.assignPacker = void 0;
+exports.getAssignedOrders = exports.getDriverReturns = exports.markOrderDelivered = exports.collectCashDirect = exports.verifyCashCollectionOtp = exports.sendCashCollectionOtp = exports.getCustomerOutstandingDues = exports.claimDeliveryQr = exports.validatePackerQr = exports.createPackerOrder = exports.extractBillId = exports.sendDeliveryOtp = exports.updateOrderPaymentStatus = exports.updatePackingDetails = exports.getPackedOrdersCount = exports.getOrdersForPacking = exports.updateOrderStatus = exports.getAllOrders = exports.cancelOrder = exports.getOrderById = exports.getOrders = exports.createOrder = exports.assignDriver = exports.assignPacker = void 0;
 const client_1 = require("@prisma/client");
 const prisma_1 = __importDefault(require("../config/prisma"));
 const logger_1 = __importDefault(require("../utils/logger"));
@@ -1097,6 +1097,130 @@ const verifyCashCollectionOtp = (req, res) => __awaiter(void 0, void 0, void 0, 
     }
 });
 exports.verifyCashCollectionOtp = verifyCashCollectionOtp;
+// ─── Direct Cash Collection (Instant Single or Multi Due Clearance) ───────────
+const collectCashDirect = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
+    const userId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.userId;
+    const { orderId, customerId, amount, clearAllDues } = req.body;
+    if (!userId)
+        return res.status(401).json({ message: "Unauthorized" });
+    if (!amount || Number(amount) <= 0)
+        return res.status(400).json({ message: "Valid collection amount is required" });
+    const targetAmount = Number(amount);
+    try {
+        yield prisma_1.default.$transaction((tx) => __awaiter(void 0, void 0, void 0, function* () {
+            var _a, _b;
+            if (clearAllDues && customerId) {
+                const pendingOrders = yield tx.order.findMany({
+                    where: {
+                        userId: customerId,
+                        paymentStatus: { in: ["PENDING", "PARTIAL"] },
+                        status: { notIn: ["CANCELLED", "FAILED"] }
+                    },
+                    include: { payments: true },
+                    orderBy: { createdAt: "asc" }
+                });
+                let remainingCollection = targetAmount;
+                for (const ord of pendingOrders) {
+                    if (remainingCollection <= 0)
+                        break;
+                    const paid = ord.payments
+                        .filter((p) => p.status === "SUCCESS")
+                        .reduce((sum, p) => sum + Number(p.amount), 0);
+                    const billDue = Math.max(0, Number(ord.totalAmount) - paid);
+                    const allocate = Math.min(remainingCollection, billDue);
+                    if (allocate > 0) {
+                        yield tx.payment.create({
+                            data: {
+                                orderId: ord.id,
+                                amount: new client_1.Prisma.Decimal(allocate),
+                                method: "CASH",
+                                status: "SUCCESS",
+                                transactionId: `CASH_${Date.now()}_${ord.id.slice(-4)}`,
+                                metadata: {
+                                    collectedBy: userId,
+                                    collectorRole: (_a = req.user) === null || _a === void 0 ? void 0 : _a.role,
+                                    directCollection: true,
+                                    timestamp: new Date().toISOString()
+                                }
+                            }
+                        });
+                        const newPaid = paid + allocate;
+                        const isPaid = newPaid >= Number(ord.totalAmount);
+                        yield tx.order.update({
+                            where: { id: ord.id },
+                            data: {
+                                isPaid,
+                                paymentStatus: isPaid ? "COMPLETED" : "PARTIAL",
+                                cashCollected: { increment: new client_1.Prisma.Decimal(allocate) },
+                                statusHistory: {
+                                    create: {
+                                        status: ord.status,
+                                        remark: `Cash collected ₹${allocate.toFixed(2)} recorded by Driver`,
+                                        changedBy: userId
+                                    }
+                                }
+                            }
+                        });
+                        remainingCollection -= allocate;
+                    }
+                }
+            }
+            else if (orderId) {
+                const ord = yield tx.order.findUnique({
+                    where: { id: orderId },
+                    include: { payments: true }
+                });
+                if (!ord)
+                    throw new Error("Order not found");
+                const paid = ord.payments
+                    .filter((p) => p.status === "SUCCESS")
+                    .reduce((sum, p) => sum + Number(p.amount), 0);
+                const newPaid = paid + targetAmount;
+                const isPaid = newPaid >= Number(ord.totalAmount);
+                yield tx.payment.create({
+                    data: {
+                        orderId: ord.id,
+                        amount: new client_1.Prisma.Decimal(targetAmount),
+                        method: "CASH",
+                        status: "SUCCESS",
+                        transactionId: `CASH_${Date.now()}_${ord.id.slice(-4)}`,
+                        metadata: {
+                            collectedBy: userId,
+                            collectorRole: (_b = req.user) === null || _b === void 0 ? void 0 : _b.role,
+                            directCollection: true,
+                            timestamp: new Date().toISOString()
+                        }
+                    }
+                });
+                yield tx.order.update({
+                    where: { id: ord.id },
+                    data: {
+                        isPaid,
+                        paymentStatus: isPaid ? "COMPLETED" : "PARTIAL",
+                        cashCollected: { increment: new client_1.Prisma.Decimal(targetAmount) },
+                        statusHistory: {
+                            create: {
+                                status: ord.status,
+                                remark: `Cash collected ₹${targetAmount.toFixed(2)} recorded by Driver`,
+                                changedBy: userId
+                            }
+                        }
+                    }
+                });
+            }
+        }));
+        res.json({
+            success: true,
+            message: `Cash collection of ₹${targetAmount.toFixed(2)} recorded successfully`
+        });
+    }
+    catch (error) {
+        logger_1.default.error("[collectCashDirect] Error:", error);
+        res.status(500).json({ message: error.message || "Failed to record cash collection" });
+    }
+});
+exports.collectCashDirect = collectCashDirect;
 // ─── Mark Delivery Completed ──────────────────────────────────────────────────
 const markOrderDelivered = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
