@@ -20,6 +20,46 @@ const authSchemas_1 = require("../schemas/authSchemas");
 const prisma_1 = __importDefault(require("../config/prisma"));
 const router = (0, express_1.Router)();
 router.put("/profile", auth_1.authenticate, (0, validate_1.validate)(authSchemas_1.updateProfileSchema), userController_1.updateProfile);
+// GET /api/v1/users — List/search users or customers
+router.get("/", auth_1.authenticate, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { role, search, query, limit } = req.query;
+        const where = {};
+        if (role && typeof role === "string") {
+            where.role = role;
+        }
+        const searchQuery = (search || query);
+        if (searchQuery && typeof searchQuery === "string" && searchQuery.trim()) {
+            const q = searchQuery.trim();
+            where.OR = [
+                { name: { contains: q, mode: "insensitive" } },
+                { phone: { contains: q } },
+                { email: { contains: q, mode: "insensitive" } }
+            ];
+        }
+        const take = limit ? Math.min(Number(limit), 100) : 50;
+        const users = yield prisma_1.default.user.findMany({
+            where,
+            select: {
+                id: true,
+                name: true,
+                phone: true,
+                email: true,
+                role: true,
+                addresses: {
+                    where: { isDefault: true },
+                    take: 1
+                }
+            },
+            orderBy: { createdAt: "desc" },
+            take
+        });
+        res.json(users);
+    }
+    catch (err) {
+        res.status(500).json({ message: err.message || "Failed to fetch users" });
+    }
+}));
 // Admin Identity Management
 router.get("/admin/all", auth_1.authenticate, (0, auth_1.authorize)(["ADMIN", "STORE_ADMIN", "MANAGER"]), userController_1.getUsersAdmin);
 router.post("/admin/create", auth_1.authenticate, (0, auth_1.authorize)(["ADMIN", "STORE_ADMIN", "MANAGER"]), userController_1.createUserAdmin);

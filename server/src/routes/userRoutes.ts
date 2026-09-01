@@ -9,6 +9,51 @@ const router = Router();
 
 router.put("/profile", authenticate, validate(updateProfileSchema), updateProfile);
 
+// GET /api/v1/users — List/search users or customers
+router.get("/", authenticate, async (req: Request, res: Response) => {
+    try {
+        const { role, search, query, limit } = req.query;
+        const where: any = {};
+
+        if (role && typeof role === "string") {
+            where.role = role;
+        }
+
+        const searchQuery = (search || query) as string;
+        if (searchQuery && typeof searchQuery === "string" && searchQuery.trim()) {
+            const q = searchQuery.trim();
+            where.OR = [
+                { name: { contains: q, mode: "insensitive" } },
+                { phone: { contains: q } },
+                { email: { contains: q, mode: "insensitive" } }
+            ];
+        }
+
+        const take = limit ? Math.min(Number(limit), 100) : 50;
+
+        const users = await prisma.user.findMany({
+            where,
+            select: {
+                id: true,
+                name: true,
+                phone: true,
+                email: true,
+                role: true,
+                addresses: {
+                    where: { isDefault: true },
+                    take: 1
+                }
+            },
+            orderBy: { createdAt: "desc" },
+            take
+        });
+
+        res.json(users);
+    } catch (err: any) {
+        res.status(500).json({ message: err.message || "Failed to fetch users" });
+    }
+});
+
 // Admin Identity Management
 router.get("/admin/all", authenticate, authorize(["ADMIN", "STORE_ADMIN", "MANAGER"]), getUsersAdmin);
 router.post("/admin/create", authenticate, authorize(["ADMIN", "STORE_ADMIN", "MANAGER"]), createUserAdmin);
