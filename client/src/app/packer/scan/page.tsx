@@ -80,13 +80,12 @@ export default function PackerScanPage() {
                         </div>
                     </div>
                 ) : (
-                    <div className="w-full max-w-xs aspect-square relative rounded-3xl overflow-hidden shadow-2xl border border-white/10">
-                        <QRScanner 
-                            title="Scan Bill QR" 
-                            onScan={handleScanValidate} 
-                            onClose={() => router.push("/packer")} 
-                        />
-                    </div>
+                    <QRScanner 
+                        title="Scan Bill QR" 
+                        isModal={false}
+                        onScan={handleScanValidate} 
+                        onClose={() => router.push("/packer")} 
+                    />
                 )}
             </div>
 

@@ -44,14 +44,13 @@ export default function DriverScanPage() {
             </div>
 
             {/* Central Camera / Viewfinder (Screen 3) */}
-            <div className="flex-1 flex items-center justify-center p-6 relative">
-                <div className="w-full max-w-xs aspect-square relative rounded-3xl overflow-hidden shadow-2xl border border-white/10">
-                    <QRScanner 
-                        title="Scan Bill QR" 
-                        onScan={handleScanClaim} 
-                        onClose={() => router.back()} 
-                    />
-                </div>
+            <div className="flex-1 flex flex-col items-center justify-center p-6 relative">
+                <QRScanner 
+                    title="Scan Bill QR" 
+                    isModal={false}
+                    onScan={handleScanClaim} 
+                    onClose={() => router.back()} 
+                />
             </div>
 
             {/* Bottom Controls (Screen 3) */}
