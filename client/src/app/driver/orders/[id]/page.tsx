@@ -164,21 +164,38 @@ export default function OrderDetailsPage({ params }: { params: Promise<{ id: str
                 </div>
             </div>
 
-            {/* Bottom Dual Action Buttons (Screen 6) */}
-            <div className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white p-4 border-t border-slate-100 grid grid-cols-2 gap-3 z-30 shadow-2xl">
+            {/* Bottom Action Bar (Screen 6) */}
+            <div className="fixed sm:absolute bottom-0 left-0 right-0 max-w-md sm:max-w-xl md:max-w-2xl lg:max-w-4xl mx-auto bg-white/95 backdrop-blur-md p-4 sm:p-5 border-t border-slate-100 grid grid-cols-2 gap-3 z-50 shadow-2xl sm:rounded-b-3xl">
                 <Button
                     variant="outline"
                     onClick={() => router.push(`/driver/orders/${order.id}/dues`)}
-                    className="h-13 rounded-2xl border-blue-600 text-blue-600 font-bold text-xs hover:bg-blue-50 active:scale-95"
+                    className="h-13 rounded-2xl border-2 border-slate-200 hover:border-blue-600 text-slate-700 hover:text-blue-600 font-black text-xs hover:bg-blue-50 active:scale-95 transition-all"
                 >
                     View All Due
                 </Button>
-                <Button
-                    onClick={() => router.push(`/driver/orders/${order.id}/collect`)}
-                    className="h-13 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-lg shadow-blue-200 active:scale-95"
-                >
-                    Collect Payment
-                </Button>
+                
+                {order.status === "DELIVERED" ? (
+                    <Button
+                        onClick={() => router.push("/driver/orders")}
+                        className="h-13 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-lg shadow-emerald-200 active:scale-95 transition-all"
+                    >
+                        Delivered ✓
+                    </Button>
+                ) : (order.isPaid || billDue === 0) ? (
+                    <Button
+                        onClick={() => router.push(`/driver/orders/${order.id}/deliver`)}
+                        className="h-13 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-lg shadow-emerald-200 active:scale-95 transition-all"
+                    >
+                        Deliver Order
+                    </Button>
+                ) : (
+                    <Button
+                        onClick={() => router.push(`/driver/orders/${order.id}/collect`)}
+                        className="h-13 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-black text-xs shadow-lg shadow-blue-500/25 active:scale-95 transition-all"
+                    >
+                        Collect Payment
+                    </Button>
+                )}
             </div>
 
             {/* Items Modal */}

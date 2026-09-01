@@ -11,10 +11,11 @@ export default function DriverLayout({ children }: { children: React.ReactNode }
     const router = useRouter();
     const { token, user, _hasHydrated } = useUserStore();
 
-    // Hide bottom navigation on auth and scanner pages
+    // Hide bottom navigation on auth, scanner, and order action sub-pages
     const isLoginPage = pathname?.includes("/driver/login");
     const isScanPage = pathname?.includes("/driver/scan");
-    const hideBottomNav = isLoginPage || isScanPage;
+    const isOrderSubPage = Boolean(pathname?.match(/\/driver\/orders\/[^\/]+/)) || pathname?.includes("/driver/order-added");
+    const hideBottomNav = isLoginPage || isScanPage || isOrderSubPage;
 
     const isAllowedRole = user?.role === "DELIVERY_PARTNER" || user?.role === "ADMIN" || user?.role === "STORE_ADMIN" || user?.role === "MANAGER";
 
