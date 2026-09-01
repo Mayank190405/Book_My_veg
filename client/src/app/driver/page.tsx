@@ -89,7 +89,7 @@ export default function DriverDashboardPage() {
     return (
         <div className="min-h-full flex flex-col bg-slate-50 antialiased animate-in fade-in duration-300">
             {/* 1. Deep Navy Blue Header */}
-            <div className="bg-[#0B1E48] px-6 sm:px-8 pt-7 sm:pt-9 pb-12 sm:pb-14 text-white relative sm:rounded-t-3xl transition-all">
+            <div className="bg-[#0B1E48] px-6 sm:px-8 pt-7 sm:pt-9 pb-16 sm:pb-20 text-white relative z-0 sm:rounded-t-3xl transition-all">
                 <div className="flex items-center justify-between">
                     <div className="space-y-1">
                         <h2 className="text-xl sm:text-2xl md:text-3xl font-black text-white tracking-tight flex items-center gap-2">
@@ -113,8 +113,8 @@ export default function DriverDashboardPage() {
                 </div>
             </div>
 
-            {/* 2. Floating Responsive Metrics Cards */}
-            <div className="px-5 sm:px-8 -mt-7 sm:-mt-8 space-y-6 flex-1 pb-6">
+            {/* 2. Floating Responsive Metrics Cards (Positioned over Navy Header with z-10) */}
+            <div className="px-5 sm:px-8 -mt-10 sm:-mt-12 space-y-6 flex-1 pb-6 relative z-10">
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5 sm:gap-4.5">
                     {/* Card 1: My Orders */}
                     <div 
