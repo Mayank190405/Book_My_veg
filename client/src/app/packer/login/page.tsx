@@ -12,13 +12,12 @@ import {
     Smartphone, 
     Lock, 
     Package, 
-    CheckCircle2, 
     Shield, 
     Sparkles, 
     ArrowRight, 
     Truck, 
     RefreshCw,
-    AlertCircle
+    CheckCircle2
 } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
@@ -140,32 +139,28 @@ function PackerLoginForm() {
     };
 
     return (
-        <div className="min-h-screen w-full flex items-center justify-center p-4 sm:p-6 md:p-8 relative overflow-hidden bg-slate-950">
-            {/* Ambient Background Gradient Orbs */}
-            <div className="absolute -top-40 -left-40 w-96 h-96 bg-purple-600/30 rounded-full blur-3xl pointer-events-none animate-pulse" />
-            <div className="absolute -bottom-40 -right-40 w-96 h-96 bg-indigo-600/25 rounded-full blur-3xl pointer-events-none" />
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-purple-900/15 rounded-full blur-3xl pointer-events-none" />
+        <div className="min-h-screen w-full flex items-center justify-center p-4 sm:p-6 md:p-8 relative bg-slate-50 text-slate-800 selection:bg-emerald-100 selection:text-emerald-900">
+            {/* Subtle Clean Ambient Highlights */}
+            <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-100/40 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20" />
+            <div className="absolute bottom-0 left-0 w-96 h-96 bg-slate-200/50 rounded-full blur-3xl pointer-events-none -ml-20 -mb-20" />
 
-            {/* Main Responsive Card */}
-            <div className="w-full max-w-md bg-white/95 backdrop-blur-2xl rounded-3xl sm:rounded-[2.5rem] shadow-2xl shadow-purple-950/50 border border-white/40 p-6 sm:p-9 flex flex-col justify-between relative z-10 transition-all duration-300">
+            {/* Main Clean Card */}
+            <div className="w-full max-w-md bg-white rounded-3xl sm:rounded-[2rem] shadow-xl shadow-slate-200/70 border border-slate-200/80 p-6 sm:p-9 flex flex-col justify-between relative z-10 transition-all duration-300">
                 <div className="space-y-6">
-                    {/* Header Badge & 3D Icon */}
+                    {/* Header Badge & Clean Icon */}
                     <div className="flex flex-col items-center text-center space-y-3">
-                        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-50 border border-purple-200/70 text-purple-700 text-[10px] font-black uppercase tracking-wider">
-                            <Sparkles className="h-3 w-3 text-purple-600" />
-                            Hub & Warehouse Node
+                        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200/70 text-emerald-700 text-[10px] font-black uppercase tracking-wider">
+                            <Sparkles className="h-3 w-3 text-emerald-600" />
+                            Warehouse & Hub Node
                         </div>
 
-                        <div className="relative group">
-                            <div className="absolute -inset-1 bg-gradient-to-r from-purple-600 to-indigo-600 rounded-3xl blur opacity-30 group-hover:opacity-60 transition duration-500" />
-                            <div className="relative w-20 h-20 sm:w-22 sm:h-22 bg-gradient-to-tr from-purple-700 to-indigo-600 rounded-3xl flex items-center justify-center shadow-xl shadow-purple-400/30 text-white">
-                                <Package className="w-10 h-10 sm:w-11 sm:h-11 stroke-[1.8]" />
-                            </div>
+                        <div className="w-18 h-18 sm:w-20 sm:h-20 bg-slate-900 rounded-2xl sm:rounded-3xl flex items-center justify-center shadow-lg shadow-slate-900/10 text-white">
+                            <Package className="w-9 h-9 sm:w-10 sm:h-10 stroke-[1.8] text-emerald-400" />
                         </div>
 
                         <div className="space-y-1">
                             <h1 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900">
-                                Packer Portal
+                                Packer Terminal
                             </h1>
                             <p className="text-xs sm:text-sm text-slate-500 font-medium max-w-xs">
                                 Sign in to manage packing queues, print bills, and verify order QR codes.
@@ -174,13 +169,13 @@ function PackerLoginForm() {
                     </div>
 
                     {/* Mode Segmented Switcher */}
-                    <div className="grid grid-cols-2 bg-slate-100/90 p-1.5 rounded-2xl border border-slate-200/60">
+                    <div className="grid grid-cols-2 bg-slate-100 p-1.5 rounded-2xl border border-slate-200/60">
                         <button
                             type="button"
                             onClick={() => setLoginMode("PASSWORD")}
                             className={`py-2.5 sm:py-3 text-xs font-black rounded-xl transition-all duration-200 flex items-center justify-center gap-1.5 ${
                                 loginMode === "PASSWORD"
-                                    ? "bg-white text-purple-800 shadow-md shadow-slate-200/80 scale-[1.02]"
+                                    ? "bg-white text-slate-900 shadow-sm font-bold scale-[1.01]"
                                     : "text-slate-500 hover:text-slate-800"
                             }`}
                         >
@@ -192,7 +187,7 @@ function PackerLoginForm() {
                             onClick={() => setLoginMode("OTP")}
                             className={`py-2.5 sm:py-3 text-xs font-black rounded-xl transition-all duration-200 flex items-center justify-center gap-1.5 ${
                                 loginMode === "OTP"
-                                    ? "bg-white text-purple-800 shadow-md shadow-slate-200/80 scale-[1.02]"
+                                    ? "bg-white text-slate-900 shadow-sm font-bold scale-[1.01]"
                                     : "text-slate-500 hover:text-slate-800"
                             }`}
                         >
@@ -217,7 +212,7 @@ function PackerLoginForm() {
                                         placeholder="Enter registered mobile"
                                         value={identifier}
                                         onChange={(e) => setIdentifier(e.target.value)}
-                                        className="h-12 sm:h-13 pl-11 rounded-2xl bg-slate-50/80 border border-slate-200 text-xs sm:text-sm font-bold text-slate-800 placeholder:text-slate-400 focus:border-purple-600 focus:bg-white focus:ring-4 focus:ring-purple-100 transition-all"
+                                        className="h-12 sm:h-13 pl-11 rounded-2xl bg-slate-50 border border-slate-200 text-xs sm:text-sm font-bold text-slate-900 placeholder:text-slate-400 focus:border-slate-900 focus:bg-white focus:ring-4 focus:ring-slate-100 transition-all"
                                         required
                                         autoFocus
                                     />
@@ -232,7 +227,7 @@ function PackerLoginForm() {
                                     <button
                                         type="button"
                                         onClick={() => toast.info("Please contact your Store Hub Manager to reset your password.")}
-                                        className="text-[11px] font-bold text-purple-700 hover:underline"
+                                        className="text-[11px] font-bold text-emerald-700 hover:underline"
                                     >
                                         Forgot?
                                     </button>
@@ -246,7 +241,7 @@ function PackerLoginForm() {
                                         placeholder="Enter security password"
                                         value={password}
                                         onChange={(e) => setPassword(e.target.value)}
-                                        className="h-12 sm:h-13 pl-11 pr-11 rounded-2xl bg-slate-50/80 border border-slate-200 text-xs sm:text-sm font-bold text-slate-800 placeholder:text-slate-400 focus:border-purple-600 focus:bg-white focus:ring-4 focus:ring-purple-100 transition-all"
+                                        className="h-12 sm:h-13 pl-11 pr-11 rounded-2xl bg-slate-50 border border-slate-200 text-xs sm:text-sm font-bold text-slate-900 placeholder:text-slate-400 focus:border-slate-900 focus:bg-white focus:ring-4 focus:ring-slate-100 transition-all"
                                         required
                                     />
                                     <button
@@ -266,7 +261,7 @@ function PackerLoginForm() {
                                         type="checkbox" 
                                         checked={rememberMe} 
                                         onChange={(e) => setRememberMe(e.target.checked)}
-                                        className="rounded-lg border-slate-300 text-purple-600 focus:ring-purple-500 w-4 h-4 cursor-pointer"
+                                        className="rounded-lg border-slate-300 text-slate-900 focus:ring-slate-900 w-4 h-4 cursor-pointer"
                                     />
                                     Keep session active
                                 </label>
@@ -275,7 +270,7 @@ function PackerLoginForm() {
                             <Button 
                                 type="submit" 
                                 disabled={loading}
-                                className="w-full h-12 sm:h-13 rounded-2xl bg-gradient-to-r from-purple-700 to-indigo-600 hover:from-purple-800 hover:to-indigo-700 text-white font-black text-xs sm:text-sm uppercase tracking-wider shadow-lg shadow-purple-300/40 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                                className="w-full h-12 sm:h-13 rounded-2xl bg-slate-900 hover:bg-black text-white font-black text-xs sm:text-sm uppercase tracking-wider shadow-lg shadow-slate-900/10 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
                             >
                                 {loading ? (
                                     <>
@@ -307,7 +302,7 @@ function PackerLoginForm() {
                                             placeholder="10-digit mobile"
                                             value={otpPhone}
                                             onChange={(e) => setOtpPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                                            className="h-12 sm:h-13 pl-20 rounded-2xl bg-slate-50/80 border border-slate-200 text-xs sm:text-sm font-bold text-slate-800 placeholder:text-slate-400 focus:border-purple-600 focus:bg-white focus:ring-4 focus:ring-purple-100 transition-all tracking-wider"
+                                            className="h-12 sm:h-13 pl-20 rounded-2xl bg-slate-50 border border-slate-200 text-xs sm:text-sm font-bold text-slate-900 placeholder:text-slate-400 focus:border-slate-900 focus:bg-white focus:ring-4 focus:ring-slate-100 transition-all tracking-wider"
                                             required
                                             autoFocus
                                         />
@@ -320,7 +315,7 @@ function PackerLoginForm() {
                                 <Button 
                                     type="submit" 
                                     disabled={loading || otpPhone.length < 10}
-                                    className="w-full h-12 sm:h-13 rounded-2xl bg-gradient-to-r from-purple-700 to-indigo-600 hover:from-purple-800 hover:to-indigo-700 text-white font-black text-xs sm:text-sm uppercase tracking-wider shadow-lg shadow-purple-300/40 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                                    className="w-full h-12 sm:h-13 rounded-2xl bg-slate-900 hover:bg-black text-white font-black text-xs sm:text-sm uppercase tracking-wider shadow-lg shadow-slate-900/10 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
                                 >
                                     {loading ? (
                                         <>
@@ -346,7 +341,7 @@ function PackerLoginForm() {
                                         placeholder="• • • • • •"
                                         value={otp}
                                         onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                                        className="h-14 rounded-2xl bg-slate-50/80 border border-slate-200 text-center text-2xl font-black tracking-[0.4em] text-slate-900 focus:border-purple-600 focus:bg-white focus:ring-4 focus:ring-purple-100 transition-all"
+                                        className="h-14 rounded-2xl bg-slate-50 border border-slate-200 text-center text-2xl font-black tracking-[0.4em] text-slate-900 focus:border-slate-900 focus:bg-white focus:ring-4 focus:ring-slate-100 transition-all"
                                         required
                                         autoFocus
                                     />
@@ -355,7 +350,7 @@ function PackerLoginForm() {
                                         <button
                                             type="button"
                                             onClick={() => setStep("PHONE")}
-                                            className="text-purple-700 font-bold hover:underline"
+                                            className="text-emerald-700 font-bold hover:underline"
                                         >
                                             Change Number
                                         </button>
@@ -365,7 +360,7 @@ function PackerLoginForm() {
                                 <Button 
                                     type="submit" 
                                     disabled={loading || otp.length < 4}
-                                    className="w-full h-12 sm:h-13 rounded-2xl bg-gradient-to-r from-purple-700 to-indigo-600 hover:from-purple-800 hover:to-indigo-700 text-white font-black text-xs sm:text-sm uppercase tracking-wider shadow-lg shadow-purple-300/40 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                                    className="w-full h-12 sm:h-13 rounded-2xl bg-slate-900 hover:bg-black text-white font-black text-xs sm:text-sm uppercase tracking-wider shadow-lg shadow-slate-900/10 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
                                 >
                                     {loading ? (
                                         <>
@@ -383,14 +378,14 @@ function PackerLoginForm() {
                                 <div className="text-center pt-1">
                                     {countdown > 0 ? (
                                         <p className="text-xs text-slate-400 font-semibold">
-                                            Resend OTP in <span className="text-purple-700 font-bold">{countdown}s</span>
+                                            Resend OTP in <span className="text-slate-900 font-bold">{countdown}s</span>
                                         </p>
                                     ) : (
                                         <button
                                             type="button"
                                             onClick={handleResendOtp}
                                             disabled={loading}
-                                            className="text-xs font-bold text-purple-700 hover:underline inline-flex items-center gap-1.5"
+                                            className="text-xs font-bold text-emerald-700 hover:underline inline-flex items-center gap-1.5"
                                         >
                                             <RefreshCw className="h-3 w-3" />
                                             Resend OTP via WhatsApp
@@ -405,7 +400,7 @@ function PackerLoginForm() {
                     <div className="pt-3 border-t border-slate-100 flex items-center justify-center gap-4 text-xs font-bold text-slate-500">
                         <Link 
                             href="/driver/login" 
-                            className="hover:text-blue-600 transition-colors flex items-center gap-1"
+                            className="hover:text-slate-900 transition-colors flex items-center gap-1"
                         >
                             <Truck className="h-3.5 w-3.5" />
                             Driver Portal
@@ -413,7 +408,7 @@ function PackerLoginForm() {
                         <span className="text-slate-300">•</span>
                         <Link 
                             href="/admin/login" 
-                            className="hover:text-purple-600 transition-colors flex items-center gap-1"
+                            className="hover:text-slate-900 transition-colors flex items-center gap-1"
                         >
                             <Shield className="h-3.5 w-3.5" />
                             Admin Console
@@ -422,7 +417,7 @@ function PackerLoginForm() {
                 </div>
 
                 {/* Footer Security Badge */}
-                <div className="mt-6 pt-4 border-t border-slate-100/70 flex items-center justify-between text-[11px] text-slate-400 font-medium">
+                <div className="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400 font-medium">
                     <span className="flex items-center gap-1 text-slate-500">
                         <Shield className="h-3.5 w-3.5 text-emerald-600" />
                         256-bit Encrypted
@@ -437,8 +432,8 @@ function PackerLoginForm() {
 export default function PackerLoginPage() {
     return (
         <Suspense fallback={
-            <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-                <Loader2 className="h-10 w-10 animate-spin text-purple-500" />
+            <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+                <Loader2 className="h-10 w-10 animate-spin text-slate-900" />
             </div>
         }>
             <PackerLoginForm />
