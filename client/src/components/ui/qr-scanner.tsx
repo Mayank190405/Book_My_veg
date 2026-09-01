@@ -130,22 +130,48 @@ export default function QRScanner({
 
     const scannerContent = (
         <div className="flex flex-col items-center w-full relative">
+            {/* Scoped CSS to eliminate duplicate html5-qrcode boxes & letterboxing */}
+            <style jsx global>{`
+                #${readerId} {
+                    width: 100% !important;
+                    height: 100% !important;
+                    border: none !important;
+                    padding: 0 !important;
+                    overflow: hidden !important;
+                }
+                #${readerId} video {
+                    width: 100% !important;
+                    height: 100% !important;
+                    object-fit: cover !important;
+                    border-radius: 1.5rem !important;
+                }
+                #${readerId} #qr-shaded-region {
+                    display: none !important;
+                }
+                #${readerId} img {
+                    display: none !important;
+                }
+                #${readerId} canvas {
+                    display: none !important;
+                }
+            `}</style>
+
             {/* Viewfinder Frame Container */}
-            <div className="relative w-full aspect-square max-w-xs rounded-3xl overflow-hidden bg-slate-950 border border-slate-700 shadow-2xl flex items-center justify-center">
+            <div className="relative w-full aspect-square max-w-xs rounded-3xl overflow-hidden bg-slate-950 border-2 border-slate-700/80 shadow-2xl flex items-center justify-center">
                 <div id={readerId} className="w-full h-full object-cover" />
 
-                {/* Animated Target Viewfinder Overlay */}
+                {/* Single Sleek Target Viewfinder Overlay */}
                 {status === "SCANNING" && (
                     <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-                        {/* 4 Corner Brackets */}
-                        <div className="w-52 h-52 relative border border-white/20 rounded-2xl">
-                            <div className="absolute top-0 left-0 w-6 h-6 border-t-4 border-l-4 border-blue-500 rounded-tl-xl" />
-                            <div className="absolute top-0 right-0 w-6 h-6 border-t-4 border-r-4 border-blue-500 rounded-tr-xl" />
-                            <div className="absolute bottom-0 left-0 w-6 h-6 border-b-4 border-l-4 border-blue-500 rounded-bl-xl" />
-                            <div className="absolute bottom-0 right-0 w-6 h-6 border-b-4 border-r-4 border-blue-500 rounded-br-xl" />
+                        <div className="w-48 h-48 sm:w-52 sm:h-52 relative rounded-2xl border border-white/20">
+                            {/* 4 Crisp Corner Brackets */}
+                            <div className="absolute top-0 left-0 w-7 h-7 border-t-[3.5px] border-l-[3.5px] border-blue-500 rounded-tl-xl" />
+                            <div className="absolute top-0 right-0 w-7 h-7 border-t-[3.5px] border-r-[3.5px] border-blue-500 rounded-tr-xl" />
+                            <div className="absolute bottom-0 left-0 w-7 h-7 border-b-[3.5px] border-l-[3.5px] border-blue-500 rounded-bl-xl" />
+                            <div className="absolute bottom-0 right-0 w-7 h-7 border-b-[3.5px] border-r-[3.5px] border-blue-500 rounded-br-xl" />
                             
-                            {/* Scanning animated laser bar */}
-                            <div className="w-full h-0.5 bg-gradient-to-r from-transparent via-blue-400 to-transparent shadow-[0_0_15px_rgba(59,130,246,0.8)] animate-pulse absolute top-1/2 -translate-y-1/2" />
+                            {/* Animated Scanning Laser Line */}
+                            <div className="w-full h-0.5 bg-gradient-to-r from-transparent via-blue-400 to-transparent shadow-[0_0_12px_rgba(59,130,246,0.9)] animate-pulse absolute top-1/2 -translate-y-1/2" />
                         </div>
                     </div>
                 )}
