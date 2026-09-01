@@ -55,58 +55,58 @@ export default function DriverLayout({ children }: { children: React.ReactNode }
     }
 
     return (
-        <div className="min-h-screen bg-slate-100 flex justify-center text-slate-800 antialiased font-sans select-none sm:py-4">
-            {/* Mobile / Handheld App Container Frame */}
-            <div className="w-full max-w-md bg-slate-50 min-h-screen sm:min-h-[92vh] sm:rounded-3xl shadow-2xl relative flex flex-col overflow-x-hidden border border-slate-200/60">
-                <main className={cn("flex-1 flex flex-col", !hideBottomNav && "pb-20")}>
+        <div className="min-h-screen bg-slate-100/80 flex justify-center text-slate-800 antialiased font-sans select-none sm:py-6 md:py-8 sm:px-4">
+            {/* Mobile / Tablet / Desktop Responsive Container Frame */}
+            <div className="w-full max-w-md sm:max-w-xl md:max-w-2xl lg:max-w-4xl bg-slate-50 min-h-screen sm:min-h-[88vh] sm:rounded-3xl shadow-xl shadow-slate-200/60 relative flex flex-col overflow-x-hidden border border-slate-200/60 transition-all duration-300">
+                <main className={cn("flex-1 flex flex-col", !hideBottomNav && "pb-22")}>
                     {children}
                 </main>
 
                 {/* Bottom Navigation Bar */}
                 {!hideBottomNav && (
-                    <nav className="fixed sm:absolute bottom-0 left-0 right-0 max-w-md mx-auto bg-white/95 backdrop-blur-md border-t border-slate-100 px-6 py-2.5 flex items-center justify-between z-40 shadow-2xl sm:rounded-b-3xl">
+                    <nav className="fixed sm:absolute bottom-0 left-0 right-0 max-w-md sm:max-w-xl md:max-w-2xl lg:max-w-4xl mx-auto bg-white/95 backdrop-blur-md border-t border-slate-100 px-6 sm:px-10 py-2.5 sm:py-3 flex items-center justify-between z-40 shadow-2xl sm:rounded-b-3xl">
                         <button
                             onClick={() => router.push("/driver")}
                             className={cn(
-                                "flex flex-col items-center gap-1 py-1 px-3 rounded-2xl transition-all",
+                                "flex flex-col items-center gap-1 py-1 px-3 sm:px-5 rounded-2xl transition-all",
                                 pathname === "/driver" ? "text-blue-600 font-bold" : "text-slate-400 font-medium hover:text-slate-600"
                             )}
                         >
                             <Home className="h-5 w-5 stroke-[2.2]" />
-                            <span className="text-[10px] font-bold">Home</span>
+                            <span className="text-[10px] sm:text-xs font-bold">Home</span>
                         </button>
 
                         <button
                             onClick={() => router.push("/driver/orders")}
                             className={cn(
-                                "flex flex-col items-center gap-1 py-1 px-3 rounded-2xl transition-all",
+                                "flex flex-col items-center gap-1 py-1 px-3 sm:px-5 rounded-2xl transition-all",
                                 pathname?.startsWith("/driver/orders") ? "text-blue-600 font-bold" : "text-slate-400 font-medium hover:text-slate-600"
                             )}
                         >
                             <ClipboardList className="h-5 w-5 stroke-[2.2]" />
-                            <span className="text-[10px] font-bold">Orders</span>
+                            <span className="text-[10px] sm:text-xs font-bold">Orders</span>
                         </button>
 
                         <button
                             onClick={() => router.push("/driver/history")}
                             className={cn(
-                                "flex flex-col items-center gap-1 py-1 px-3 rounded-2xl transition-all",
+                                "flex flex-col items-center gap-1 py-1 px-3 sm:px-5 rounded-2xl transition-all",
                                 pathname === "/driver/history" ? "text-blue-600 font-bold" : "text-slate-400 font-medium hover:text-slate-600"
                             )}
                         >
                             <HistoryIcon className="h-5 w-5 stroke-[2.2]" />
-                            <span className="text-[10px] font-bold">History</span>
+                            <span className="text-[10px] sm:text-xs font-bold">History</span>
                         </button>
 
                         <button
                             onClick={() => router.push("/driver/more")}
                             className={cn(
-                                "flex flex-col items-center gap-1 py-1 px-3 rounded-2xl transition-all",
+                                "flex flex-col items-center gap-1 py-1 px-3 sm:px-5 rounded-2xl transition-all",
                                 pathname === "/driver/more" ? "text-blue-600 font-bold" : "text-slate-400 font-medium hover:text-slate-600"
                             )}
                         >
                             <SlidersHorizontal className="h-5 w-5 stroke-[2.2]" />
-                            <span className="text-[10px] font-bold">More</span>
+                            <span className="text-[10px] sm:text-xs font-bold">More</span>
                         </button>
                     </nav>
                 )}
