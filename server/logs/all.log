@@ -14934,3 +14934,33 @@
 2026-09-01 15:41:29:4129 [32minfo[39m: [32m[Easebuzz Date Sync] Switching to secondary hash sequence (without merchant_email)...[39m
 2026-09-01 15:41:29:4129 [32minfo[39m: [32m[Easebuzz Sync] Running bulk date-range pagination sync from 01-01-2024 to 01-09-2026...[39m
 2026-09-01 15:41:29:4129 [32minfo[39m: [32m[Easebuzz Sync Summary] Total Pending Verified: 0, Settled: 0, Failed: 0, Kept Pending: 0, Total Bulk Fetched: 0.[39m
+2026-09-01 15:42:17:4217 [32minfo[39m: [32mServer started on port 5001[39m
+2026-09-01 15:42:17:4217 [32minfo[39m: [32mRedis Client Connected[39m
+2026-09-01 15:42:17:4217 [32minfo[39m: [32mSocket.io Redis Adapter connected[39m
+2026-09-01 15:42:17:4217 [32minfo[39m: [32m✅ PostgreSQL 'Role' enum synchronized with all roles including PURCHASE_MANAGER[39m
+2026-09-01 15:42:17:4217 [32minfo[39m: [32m✅ PostgreSQL 'Order' delivery/packer columns synchronized[39m
+2026-09-01 15:42:17:4217 [32minfo[39m: [32m[Metrics Flush Worker] Daemon initialized.[39m
+2026-09-01 15:42:17:4217 [32minfo[39m: [32m[Payment & Retention Reminder Worker] Daemon initialized.[39m
+2026-09-01 15:42:17:4217 [32minfo[39m: [32m⏰ Easebuzz Transaction Sync Cron initialized (Primary: Easebuzz v2.1 API)[39m
+2026-09-01 15:42:30:4230 [32minfo[39m: [32mServer started on port 5001[39m
+2026-09-01 15:42:30:4230 [32minfo[39m: [32mRedis Client Connected[39m
+2026-09-01 15:42:30:4230 [32minfo[39m: [32mSocket.io Redis Adapter connected[39m
+2026-09-01 15:42:31:4231 [32minfo[39m: [32m✅ PostgreSQL 'Role' enum synchronized with all roles including PURCHASE_MANAGER[39m
+2026-09-01 15:42:31:4231 [32minfo[39m: [32m✅ PostgreSQL 'Order' delivery/packer columns synchronized[39m
+2026-09-01 15:42:31:4231 [32minfo[39m: [32m[Metrics Flush Worker] Daemon initialized.[39m
+2026-09-01 15:42:31:4231 [32minfo[39m: [32m[Payment & Retention Reminder Worker] Daemon initialized.[39m
+2026-09-01 15:42:31:4231 [32minfo[39m: [32m⏰ Easebuzz Transaction Sync Cron initialized (Primary: Easebuzz v2.1 API)[39m
+2026-09-01 15:42:39:4239 [32minfo[39m: [32mServer started on port 5001[39m
+2026-09-01 15:42:39:4239 [32minfo[39m: [32mRedis Client Connected[39m
+2026-09-01 15:42:39:4239 [32minfo[39m: [32mSocket.io Redis Adapter connected[39m
+2026-09-01 15:42:39:4239 [32minfo[39m: [32m✅ PostgreSQL 'Role' enum synchronized with all roles including PURCHASE_MANAGER[39m
+2026-09-01 15:42:39:4239 [32minfo[39m: [32m✅ PostgreSQL 'Order' delivery/packer columns synchronized[39m
+2026-09-01 15:42:39:4239 [32minfo[39m: [32m[Metrics Flush Worker] Daemon initialized.[39m
+2026-09-01 15:42:39:4239 [32minfo[39m: [32m[Payment & Retention Reminder Worker] Daemon initialized.[39m
+2026-09-01 15:42:39:4239 [32minfo[39m: [32m⏰ Easebuzz Transaction Sync Cron initialized (Primary: Easebuzz v2.1 API)[39m
+2026-09-01 15:42:54:4254 [32minfo[39m: [32m[Payment & Retention Worker] Running background tasks (Dues, Inactivity & Feedback)...[39m
+2026-09-01 15:43:09:439 [32minfo[39m: [32m[Easebuzz Sync] Starting payment reconciliation...[39m
+2026-09-01 15:43:09:439 [32minfo[39m: [32m[Easebuzz Sync] Found 0 pending/unpaid orders to verify.[39m
+2026-09-01 15:43:09:439 [32minfo[39m: [32m[Easebuzz Date Sync] Switching to secondary hash sequence (without merchant_email)...[39m
+2026-09-01 15:43:09:439 [32minfo[39m: [32m[Easebuzz Sync] Running bulk date-range pagination sync from 01-01-2024 to 01-09-2026...[39m
+2026-09-01 15:43:09:439 [32minfo[39m: [32m[Easebuzz Sync Summary] Total Pending Verified: 0, Settled: 0, Failed: 0, Kept Pending: 0, Total Bulk Fetched: 0.[39m

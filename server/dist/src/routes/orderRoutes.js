@@ -22,8 +22,11 @@ router.get("/driver/assigned", (0, auth_1.authorize)(["DELIVERY_PARTNER", "ADMIN
 router.get("/driver/returns", (0, auth_1.authorize)(["DELIVERY_PARTNER", "ADMIN", "STORE_ADMIN"]), orderController_1.getDriverReturns);
 router.post("/driver/claim-qr", (0, auth_1.authorize)(["DELIVERY_PARTNER", "ADMIN", "STORE_ADMIN"]), orderController_1.claimDeliveryQr);
 router.post("/driver/collect-cash", (0, auth_1.authorize)(["DELIVERY_PARTNER", "ADMIN", "STORE_ADMIN"]), orderController_1.collectCashDirect);
+router.post("/driver/:id/collect-cash", (0, auth_1.authorize)(["DELIVERY_PARTNER", "ADMIN", "STORE_ADMIN"]), orderController_1.collectCashDirect);
 router.post("/driver/send-cash-otp", (0, auth_1.authorize)(["DELIVERY_PARTNER", "ADMIN", "STORE_ADMIN"]), orderController_1.sendCashCollectionOtp);
+router.post("/driver/:id/send-cash-otp", (0, auth_1.authorize)(["DELIVERY_PARTNER", "ADMIN", "STORE_ADMIN"]), orderController_1.sendCashCollectionOtp);
 router.post("/driver/verify-cash-otp", (0, auth_1.authorize)(["DELIVERY_PARTNER", "ADMIN", "STORE_ADMIN"]), orderController_1.verifyCashCollectionOtp);
+router.post("/driver/:id/verify-cash-otp", (0, auth_1.authorize)(["DELIVERY_PARTNER", "ADMIN", "STORE_ADMIN"]), orderController_1.verifyCashCollectionOtp);
 router.patch("/driver/:id/deliver", (0, auth_1.authorize)(["DELIVERY_PARTNER", "ADMIN", "STORE_ADMIN"]), orderController_1.markOrderDelivered);
 router.post("/driver/:id/otp", (0, auth_1.authorize)(["DELIVERY_PARTNER", "ADMIN", "STORE_ADMIN"]), orderController_1.sendDeliveryOtp);
 // ── Customer / Shared Queries ────────────────────────────────────────────────

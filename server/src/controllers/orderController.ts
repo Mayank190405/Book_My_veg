@@ -932,7 +932,8 @@ export const getCustomerOutstandingDues = async (req: AuthenticatedRequest, res:
 // ─── Cash Collection OTP (Send & Verify) ──────────────────────────────────────
 export const sendCashCollectionOtp = async (req: AuthenticatedRequest, res: Response) => {
     const userId = req.user?.userId;
-    const { orderId, customerId, amount } = req.body;
+    const orderId = req.params.id || req.body.orderId;
+    const { customerId, amount } = req.body;
 
     if (!userId) return res.status(401).json({ message: "Unauthorized" });
     if (!amount || Number(amount) <= 0) {
@@ -993,7 +994,8 @@ export const sendCashCollectionOtp = async (req: AuthenticatedRequest, res: Resp
 
 export const verifyCashCollectionOtp = async (req: AuthenticatedRequest, res: Response) => {
     const userId = req.user?.userId;
-    const { orderId, customerId, amount, otp, clearAllDues } = req.body;
+    const orderId = req.params.id || req.body.orderId;
+    const { customerId, amount, otp, clearAllDues } = req.body;
 
     if (!userId) return res.status(401).json({ message: "Unauthorized" });
     if (!otp) return res.status(400).json({ message: "OTP is required" });
@@ -1131,7 +1133,8 @@ export const verifyCashCollectionOtp = async (req: AuthenticatedRequest, res: Re
 // ─── Direct Cash Collection (Instant Single or Multi Due Clearance) ───────────
 export const collectCashDirect = async (req: AuthenticatedRequest, res: Response) => {
     const userId = req.user?.userId;
-    const { orderId, customerId, amount, clearAllDues } = req.body;
+    const orderId = req.params.id || req.body.orderId;
+    const { customerId, amount, clearAllDues } = req.body;
 
     if (!userId) return res.status(401).json({ message: "Unauthorized" });
     if (!amount || Number(amount) <= 0) return res.status(400).json({ message: "Valid collection amount is required" });

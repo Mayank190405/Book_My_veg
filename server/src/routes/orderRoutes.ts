@@ -49,8 +49,11 @@ router.get("/driver/assigned", authorize(["DELIVERY_PARTNER", "ADMIN", "STORE_AD
 router.get("/driver/returns", authorize(["DELIVERY_PARTNER", "ADMIN", "STORE_ADMIN"]), getDriverReturns);
 router.post("/driver/claim-qr", authorize(["DELIVERY_PARTNER", "ADMIN", "STORE_ADMIN"]), claimDeliveryQr);
 router.post("/driver/collect-cash", authorize(["DELIVERY_PARTNER", "ADMIN", "STORE_ADMIN"]), collectCashDirect);
+router.post("/driver/:id/collect-cash", authorize(["DELIVERY_PARTNER", "ADMIN", "STORE_ADMIN"]), collectCashDirect);
 router.post("/driver/send-cash-otp", authorize(["DELIVERY_PARTNER", "ADMIN", "STORE_ADMIN"]), sendCashCollectionOtp);
+router.post("/driver/:id/send-cash-otp", authorize(["DELIVERY_PARTNER", "ADMIN", "STORE_ADMIN"]), sendCashCollectionOtp);
 router.post("/driver/verify-cash-otp", authorize(["DELIVERY_PARTNER", "ADMIN", "STORE_ADMIN"]), verifyCashCollectionOtp);
+router.post("/driver/:id/verify-cash-otp", authorize(["DELIVERY_PARTNER", "ADMIN", "STORE_ADMIN"]), verifyCashCollectionOtp);
 router.patch("/driver/:id/deliver", authorize(["DELIVERY_PARTNER", "ADMIN", "STORE_ADMIN"]), markOrderDelivered);
 router.post("/driver/:id/otp", authorize(["DELIVERY_PARTNER", "ADMIN", "STORE_ADMIN"]), sendDeliveryOtp);
 

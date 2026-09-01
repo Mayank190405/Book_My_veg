@@ -911,7 +911,8 @@ exports.getCustomerOutstandingDues = getCustomerOutstandingDues;
 const sendCashCollectionOtp = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a, _b;
     const userId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.userId;
-    const { orderId, customerId, amount } = req.body;
+    const orderId = req.params.id || req.body.orderId;
+    const { customerId, amount } = req.body;
     if (!userId)
         return res.status(401).json({ message: "Unauthorized" });
     if (!amount || Number(amount) <= 0) {
@@ -967,7 +968,8 @@ exports.sendCashCollectionOtp = sendCashCollectionOtp;
 const verifyCashCollectionOtp = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
     const userId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.userId;
-    const { orderId, customerId, amount, otp, clearAllDues } = req.body;
+    const orderId = req.params.id || req.body.orderId;
+    const { customerId, amount, otp, clearAllDues } = req.body;
     if (!userId)
         return res.status(401).json({ message: "Unauthorized" });
     if (!otp)
@@ -1101,7 +1103,8 @@ exports.verifyCashCollectionOtp = verifyCashCollectionOtp;
 const collectCashDirect = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
     const userId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.userId;
-    const { orderId, customerId, amount, clearAllDues } = req.body;
+    const orderId = req.params.id || req.body.orderId;
+    const { customerId, amount, clearAllDues } = req.body;
     if (!userId)
         return res.status(401).json({ message: "Unauthorized" });
     if (!amount || Number(amount) <= 0)
