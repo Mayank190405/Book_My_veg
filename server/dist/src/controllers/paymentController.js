@@ -36,6 +36,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.cleanupDuplicatePaymentsController = exports.cleanUpDuplicatePayments = exports.sendPaymentReminderController = exports.triggerEasebuzzSync = exports.saveOrderFeedback = exports.publicCustomerOnboard = exports.initiatePayDue = exports.getPayInfo = exports.checkPaymentEligibility = exports.refundPayment = exports.handleEasebuzzCallback = exports.handleWebhook = exports.verifyPayment = exports.getOrderStatus = exports.completeOrderPayment = exports.settleDuesForCustomer = exports.generatePaymentLink = exports.initiatePayment = void 0;
+const client_1 = require("@prisma/client");
 const prisma_1 = __importDefault(require("../config/prisma"));
 const juspayService_1 = require("../services/juspayService");
 const productController_1 = require("./productController");
@@ -660,9 +661,10 @@ const completeOrderPayment = (orderId, paymentDetails) => __awaiter(void 0, void
             // Do NOT revert DELIVERED/SHIPPED/etc. orders back to CONFIRMED
             const nonRevertableStatuses = ["DELIVERED", "SHIPPED", "OUT_FOR_DELIVERY", "COMPLETED"];
             const shouldUpdateStatus = !nonRevertableStatuses.includes(existing.status);
+            const paymentAmountDecimal = new client_1.Prisma.Decimal(paymentDetails.amount || existing.totalAmount);
             yield tx.order.update({
                 where: { id: resolvedOrderId },
-                data: Object.assign({ isPaid: isFull, paymentStatus: newPaymentStatus }, (shouldUpdateStatus && { status: "CONFIRMED" })),
+                data: Object.assign({ isPaid: isFull, paymentStatus: newPaymentStatus, easebuzzCollected: { increment: paymentAmountDecimal } }, (shouldUpdateStatus && { status: "CONFIRMED" })),
             });
             // Create in-app system notification for the user
             const notifTitle = isFull ? "Payment Complete" : "Payment Received";
@@ -686,13 +688,25 @@ const completeOrderPayment = (orderId, paymentDetails) => __awaiter(void 0, void
                     changedBy: "SYSTEM",
                 },
             });
+            // Synchronize Customer Balance & Ledger
+            if (existing.userId) {
+                yield (0, orderController_1.syncCustomerTotalDue)(existing.userId, tx);
+            }
         }));
-        // ── Real-time Notification for Logistics ──────────────────────────
-        (0, io_1.getIo)().emit("OP_NEW_ORDER", {
-            id: orderId,
-            status: "CONFIRMED",
-            timestamp: new Date()
-        });
+        // ── Real-time Notification for Logistics & Driver Portal ─────────
+        try {
+            (0, io_1.getIo)().emit("OP_NEW_ORDER", {
+                id: orderId,
+                status: "CONFIRMED",
+                timestamp: new Date()
+            });
+            (0, io_1.getIo)().emit("order:updated", {
+                orderId: resolvedOrderId,
+                isPaid: true,
+                paymentStatus: "COMPLETED"
+            });
+        }
+        catch (_) { }
         // ── WhatsApp Notification Dispatch ────────────────────────────────
         const user = existing.user;
         if (user && user.phone) {

@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from "express";
-import { OrderStatus as PrismaOrderStatus } from "@prisma/client";
+import { Prisma, OrderStatus as PrismaOrderStatus } from "@prisma/client";
 import prisma from "../config/prisma";
 import { createJuspaySession, getJuspayOrderStatus, refundJuspayOrder } from "../services/juspayService";
 import { trackTrendingOnOrder } from "./productController";
@@ -704,11 +704,13 @@ export const completeOrderPayment = async (orderId: string, paymentDetails: any)
             const nonRevertableStatuses = ["DELIVERED", "SHIPPED", "OUT_FOR_DELIVERY", "COMPLETED"];
             const shouldUpdateStatus = !nonRevertableStatuses.includes(existing.status);
 
+            const paymentAmountDecimal = new Prisma.Decimal(paymentDetails.amount || existing.totalAmount);
             await tx.order.update({
                 where: { id: resolvedOrderId },
                 data: {
                     isPaid: isFull,
                     paymentStatus: newPaymentStatus,
+                    easebuzzCollected: { increment: paymentAmountDecimal },
                     ...(shouldUpdateStatus && { status: "CONFIRMED" as PrismaOrderStatus }),
                 },
             });
@@ -737,14 +739,26 @@ export const completeOrderPayment = async (orderId: string, paymentDetails: any)
                     changedBy: "SYSTEM",
                 },
             });
+
+            // Synchronize Customer Balance & Ledger
+            if (existing.userId) {
+                await syncCustomerTotalDue(existing.userId, tx);
+            }
         });
 
-        // ── Real-time Notification for Logistics ──────────────────────────
-        getIo().emit("OP_NEW_ORDER", { 
-            id: orderId, 
-            status: "CONFIRMED", 
-            timestamp: new Date() 
-        });
+        // ── Real-time Notification for Logistics & Driver Portal ─────────
+        try {
+            getIo().emit("OP_NEW_ORDER", { 
+                id: orderId, 
+                status: "CONFIRMED", 
+                timestamp: new Date() 
+            });
+            getIo().emit("order:updated", {
+                orderId: resolvedOrderId,
+                isPaid: true,
+                paymentStatus: "COMPLETED"
+            });
+        } catch (_) {}
 
         // ── WhatsApp Notification Dispatch ────────────────────────────────
         const user = existing.user;

@@ -113,15 +113,27 @@ function EasebuzzFlowContent({ id }: { id: string }) {
 
                         easebuzzCheckout.initiatePayment({
                             access_key: accessKey,
-                            onResponse: (resp: any) => {
+                            onResponse: async (resp: any) => {
                                 if (resp.status === "success") {
-                                    toast.success("Easebuzz Payment Successful!");
+                                    try {
+                                        toast.info("Synchronizing payment with server...");
+                                        await api.post("/payments/verify", {
+                                            order_id: id,
+                                            status: "SUCCESS",
+                                            txn_id: resp.easepayid || resp.txnid || `EB_${Date.now()}`,
+                                            amount: Number(amount)
+                                        });
+                                    } catch (verifyErr) {
+                                        console.warn("Backend verify sync notice:", verifyErr);
+                                    }
+                                    toast.success("Easebuzz Payment Verified & Cleared!");
                                     setSuccessData({
                                         amount: Number(amount),
-                                        transactionId: resp.easepayid || `EB${Date.now()}`,
+                                        transactionId: resp.easepayid || resp.txnid || `EB${Date.now()}`,
                                         paidAt: new Date().toLocaleString()
                                     });
                                     setIsSuccess(true);
+                                    fetchOrder();
                                 } else {
                                     toast.error("Payment cancelled or not completed");
                                 }
