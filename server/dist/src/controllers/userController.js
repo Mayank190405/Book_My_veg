@@ -122,6 +122,9 @@ const createUserAdmin = (req, res) => __awaiter(void 0, void 0, void 0, function
         const hashedPassword = password && String(password).trim().length > 0
             ? yield bcryptjs_1.default.hash(String(password).trim(), 10)
             : undefined;
+        const cleanLocationId = (targetLocationId && String(targetLocationId).trim().length > 0) ? String(targetLocationId).trim() : null;
+        const cleanBaseSalary = (baseSalary !== undefined && baseSalary !== "" && !isNaN(parseFloat(String(baseSalary)))) ? parseFloat(String(baseSalary)) : null;
+        const cleanJoiningDate = (joiningDate && !isNaN(new Date(joiningDate).getTime())) ? new Date(joiningDate) : null;
         // Check if user with phone already exists
         const existingByPhone = yield prisma_1.default.user.findUnique({
             where: { phone: cleanPhone },
@@ -131,7 +134,7 @@ const createUserAdmin = (req, res) => __awaiter(void 0, void 0, void 0, function
             // Update and elevate existing user profile
             const user = yield prisma_1.default.user.update({
                 where: { id: existingByPhone.id },
-                data: Object.assign(Object.assign({ name: name ? String(name).trim() : existingByPhone.name, email: cleanEmail !== undefined ? cleanEmail : existingByPhone.email, role: role || existingByPhone.role, locationId: targetLocationId || existingByPhone.locationId }, (hashedPassword ? { password: hashedPassword } : {})), { isActive: true, baseSalary: baseSalary ? parseFloat(String(baseSalary)) : existingByPhone.baseSalary, joiningDate: joiningDate ? new Date(joiningDate) : existingByPhone.joiningDate }),
+                data: Object.assign(Object.assign({ name: name ? String(name).trim() : existingByPhone.name, email: cleanEmail !== undefined ? cleanEmail : existingByPhone.email, role: role || existingByPhone.role, locationId: cleanLocationId || existingByPhone.locationId }, (hashedPassword ? { password: hashedPassword } : {})), { isActive: true, baseSalary: cleanBaseSalary !== null ? cleanBaseSalary : existingByPhone.baseSalary, joiningDate: cleanJoiningDate || existingByPhone.joiningDate }),
                 include: {
                     location: { select: { id: true, name: true } }
                 }
@@ -153,11 +156,11 @@ const createUserAdmin = (req, res) => __awaiter(void 0, void 0, void 0, function
                 name: name ? String(name).trim() : null,
                 email: cleanEmail,
                 role: role || "USER",
-                locationId: targetLocationId,
+                locationId: cleanLocationId,
                 password: hashedPassword,
                 isActive: true,
-                baseSalary: baseSalary ? parseFloat(String(baseSalary)) : null,
-                joiningDate: joiningDate ? new Date(joiningDate) : null
+                baseSalary: cleanBaseSalary,
+                joiningDate: cleanJoiningDate
             },
             include: {
                 location: { select: { id: true, name: true } }

@@ -16,9 +16,9 @@ const getSocketURL = () => {
             return `${url.protocol}//${url.host}`;
         }
         if (!isClientLocal) return window.location.origin;
-        return `http://${window.location.hostname}:5000`;
+        return `${window.location.protocol}//${window.location.hostname}:5001`;
     }
-    return "http://localhost:5000";
+    return process.env.NEXT_PUBLIC_API_URL?.replace("/api/v1", "") || "http://localhost:5001";
 };
 
 export const initSocket = (userId: string) => {

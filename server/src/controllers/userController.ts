@@ -119,6 +119,10 @@ export const createUserAdmin = async (req: AuthenticatedRequest, res: Response) 
             ? await bcrypt.hash(String(password).trim(), 10) 
             : undefined;
 
+        const cleanLocationId = (targetLocationId && String(targetLocationId).trim().length > 0) ? String(targetLocationId).trim() : null;
+        const cleanBaseSalary = (baseSalary !== undefined && baseSalary !== "" && !isNaN(parseFloat(String(baseSalary)))) ? parseFloat(String(baseSalary)) : null;
+        const cleanJoiningDate = (joiningDate && !isNaN(new Date(joiningDate).getTime())) ? new Date(joiningDate) : null;
+
         // Check if user with phone already exists
         const existingByPhone = await prisma.user.findUnique({
             where: { phone: cleanPhone },
@@ -133,11 +137,11 @@ export const createUserAdmin = async (req: AuthenticatedRequest, res: Response) 
                     name: name ? String(name).trim() : existingByPhone.name,
                     email: cleanEmail !== undefined ? cleanEmail : existingByPhone.email,
                     role: role || existingByPhone.role,
-                    locationId: targetLocationId || existingByPhone.locationId,
+                    locationId: cleanLocationId || existingByPhone.locationId,
                     ...(hashedPassword ? { password: hashedPassword } : {}),
                     isActive: true,
-                    baseSalary: baseSalary ? parseFloat(String(baseSalary)) : existingByPhone.baseSalary,
-                    joiningDate: joiningDate ? new Date(joiningDate) : existingByPhone.joiningDate
+                    baseSalary: cleanBaseSalary !== null ? cleanBaseSalary : existingByPhone.baseSalary,
+                    joiningDate: cleanJoiningDate || existingByPhone.joiningDate
                 },
                 include: {
                     location: { select: { id: true, name: true } }
@@ -163,11 +167,11 @@ export const createUserAdmin = async (req: AuthenticatedRequest, res: Response) 
                 name: name ? String(name).trim() : null,
                 email: cleanEmail,
                 role: role || "USER",
-                locationId: targetLocationId,
+                locationId: cleanLocationId,
                 password: hashedPassword,
                 isActive: true,
-                baseSalary: baseSalary ? parseFloat(String(baseSalary)) : null,
-                joiningDate: joiningDate ? new Date(joiningDate) : null
+                baseSalary: cleanBaseSalary,
+                joiningDate: cleanJoiningDate
             },
             include: {
                 location: { select: { id: true, name: true } }
