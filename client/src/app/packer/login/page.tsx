@@ -140,13 +140,13 @@ function PackerLoginForm() {
     };
 
     return (
-        <div className="min-h-screen w-full flex items-center justify-center p-4 sm:p-6 md:p-8 relative bg-slate-50 text-slate-800 selection:bg-emerald-100 selection:text-emerald-900">
+        <div className="min-h-screen w-full flex-1 flex items-center justify-center p-4 sm:p-6 md:p-8 relative bg-slate-50 text-slate-800 selection:bg-emerald-100 selection:text-emerald-900 overflow-y-auto">
             {/* Subtle Clean Ambient Highlights */}
             <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-100/40 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20" />
             <div className="absolute bottom-0 left-0 w-96 h-96 bg-slate-200/50 rounded-full blur-3xl pointer-events-none -ml-20 -mb-20" />
 
             {/* Main Clean Card */}
-            <div className="w-full max-w-md bg-white rounded-3xl sm:rounded-[2rem] shadow-xl shadow-slate-200/70 border border-slate-200/80 p-6 sm:p-9 flex flex-col justify-between relative z-10 transition-all duration-300">
+            <div className="w-full max-w-md bg-white rounded-3xl sm:rounded-[2rem] shadow-xl shadow-slate-200/70 border border-slate-200/80 p-6 sm:p-9 flex flex-col justify-between relative z-10 mx-auto my-auto transition-all duration-300">
                 <div className="space-y-6">
                     {/* Branding Header with Official Logo */}
                     <div className="flex flex-col items-center text-center space-y-3">
@@ -433,12 +433,14 @@ function PackerLoginForm() {
 
 export default function PackerLoginPage() {
     return (
-        <Suspense fallback={
-            <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-                <Loader2 className="h-10 w-10 animate-spin text-slate-900" />
-            </div>
-        }>
-            <PackerLoginForm />
-        </Suspense>
+        <div className="w-full min-h-screen flex-1 flex items-center justify-center bg-slate-50">
+            <Suspense fallback={
+                <div className="min-h-screen w-full bg-slate-50 flex items-center justify-center">
+                    <Loader2 className="h-10 w-10 animate-spin text-slate-900" />
+                </div>
+            }>
+                <PackerLoginForm />
+            </Suspense>
+        </div>
     );
 }

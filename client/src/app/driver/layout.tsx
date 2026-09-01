@@ -46,8 +46,8 @@ export default function DriverLayout({ children }: { children: React.ReactNode }
 
     if (isLoginPage) {
         return (
-            <div className="min-h-screen bg-slate-50 text-slate-800 antialiased font-sans flex flex-col">
-                <main className="flex-1 flex flex-col">
+            <div className="min-h-screen w-full bg-slate-50 text-slate-800 antialiased font-sans flex flex-col items-center justify-center">
+                <main className="w-full flex-1 flex flex-col items-center justify-center">
                     {children}
                 </main>
             </div>
