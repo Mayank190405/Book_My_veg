@@ -1,81 +1,74 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRouter, usePathname } from "next/navigation";
-import { ThemeProvider } from "next-themes";
-import { Toaster } from "sonner";
-import { useUserStore } from "@/store/useUserStore";
-import { LogOut, Package, ClipboardCheck, LayoutDashboard } from "lucide-react";
-import { logout } from "@/services/authService";
+import { usePathname, useRouter } from "next/navigation";
+import { Home, Package, History as HistoryIcon, User } from "lucide-react";
 import { cn } from "@/lib/utils";
-import GlobalNotificationListener from "@/components/features/GlobalNotificationListener";
 
 export default function PackerLayout({ children }: { children: React.ReactNode }) {
-    const router = useRouter();
     const pathname = usePathname();
-    const { user, _hasHydrated } = useUserStore();
+    const router = useRouter();
 
-    useEffect(() => {
-        if (_hasHydrated) {
-            // Allow specialized login page access
-            if (pathname.endsWith("/login")) return;
-
-            if (!user) {
-                router.push(`/packer/login?redirect=${pathname}`);
-            } else if (user.role !== "PACKING") {
-                router.push("/");
-            }
-        }
-    }, [user, _hasHydrated, pathname, router]);
-
-    const handleLogout = async () => {
-        if (confirm("Are you sure you want to log out?")) {
-            await logout();
-            router.push("/login");
-        }
-    };
-
-    const isLoginPage = pathname.endsWith("/login");
-
-    if (!_hasHydrated || (!isLoginPage && (!user || user.role !== "PACKING"))) {
-        return (
-            <div className="h-screen w-full bg-slate-50 flex items-center justify-center">
-                <div className="w-12 h-12 border-4 border-slate-200 border-t-emerald-600 rounded-full animate-spin" />
-            </div>
-        );
-    }
+    const isLoginPage = pathname?.includes("/packer/login");
+    const isScanPage = pathname?.includes("/packer/scan");
+    const hideBottomNav = isLoginPage || isScanPage;
 
     return (
-        <ThemeProvider attribute="class" forcedTheme="light" enableSystem={false}>
-            <div className="min-h-screen bg-slate-50 text-slate-900 pb-20">
-                {/* Mobile-first Header */}
-                <header className="sticky top-0 z-50 bg-white border-b border-slate-100 shadow-sm">
-                    <div className="flex items-center justify-between px-4 h-16">
-                        <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center text-blue-600">
-                                <Package className="h-5 w-5" />
-                            </div>
-                            <div>
-                                <h1 className="text-lg font-bold tracking-tight">Packer Portal</h1>
-                                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">BMV Logistics</p>
-                            </div>
-                        </div>
-                        <button 
-                            onClick={handleLogout}
-                            className="w-10 h-10 rounded-xl bg-slate-50 hover:bg-slate-100 flex items-center justify-center text-slate-400 hover:text-red-500 transition-colors"
-                        >
-                            <LogOut className="h-5 w-5" />
-                        </button>
-                    </div>
-                </header>
-
-                <main className="p-4 max-w-lg mx-auto">
+        <div className="min-h-screen bg-slate-50 flex justify-center text-slate-800 antialiased font-sans select-none">
+            {/* Mobile App Container Frame */}
+            <div className="w-full max-w-md bg-white min-h-screen shadow-2xl relative flex flex-col overflow-x-hidden">
+                <main className={cn("flex-1 flex flex-col", !hideBottomNav && "pb-20")}>
                     {children}
                 </main>
 
-                <Toaster richColors position="top-center" theme="light" />
-                <GlobalNotificationListener />
+                {/* Bottom Navigation Bar (Screens 2, 12, 13) */}
+                {!hideBottomNav && (
+                    <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white border-t border-slate-100 px-6 py-2 flex items-center justify-between z-40 shadow-2xl">
+                        <button
+                            onClick={() => router.push("/packer")}
+                            className={cn(
+                                "flex flex-col items-center gap-1 py-1 px-3 rounded-2xl transition-all",
+                                pathname === "/packer" ? "text-purple-600 font-bold" : "text-slate-400 font-medium hover:text-slate-600"
+                            )}
+                        >
+                            <Home className="h-5 w-5" />
+                            <span className="text-[10px]">Dashboard</span>
+                        </button>
+
+                        <button
+                            onClick={() => router.push("/packer/orders")}
+                            className={cn(
+                                "flex flex-col items-center gap-1 py-1 px-3 rounded-2xl transition-all",
+                                pathname?.startsWith("/packer/orders") ? "text-purple-600 font-bold" : "text-slate-400 font-medium hover:text-slate-600"
+                            )}
+                        >
+                            <Package className="h-5 w-5" />
+                            <span className="text-[10px]">My Orders</span>
+                        </button>
+
+                        <button
+                            onClick={() => router.push("/packer/history")}
+                            className={cn(
+                                "flex flex-col items-center gap-1 py-1 px-3 rounded-2xl transition-all",
+                                pathname === "/packer/history" ? "text-purple-600 font-bold" : "text-slate-400 font-medium hover:text-slate-600"
+                            )}
+                        >
+                            <HistoryIcon className="h-5 w-5" />
+                            <span className="text-[10px]">History</span>
+                        </button>
+
+                        <button
+                            onClick={() => router.push("/packer/profile")}
+                            className={cn(
+                                "flex flex-col items-center gap-1 py-1 px-3 rounded-2xl transition-all",
+                                pathname === "/packer/profile" ? "text-purple-600 font-bold" : "text-slate-400 font-medium hover:text-slate-600"
+                            )}
+                        >
+                            <User className="h-5 w-5" />
+                            <span className="text-[10px]">Profile</span>
+                        </button>
+                    </nav>
+                )}
             </div>
-        </ThemeProvider>
+        </div>
     );
 }
