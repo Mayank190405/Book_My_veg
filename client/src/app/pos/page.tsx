@@ -3174,6 +3174,32 @@ export default function POSOperator() {
                                                         <button
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
+                                                                const mappedItems = order.items.map((oi: any) => ({
+                                                                    id: oi.productId,
+                                                                    name: oi.product?.name || oi.productName || "Unknown Product",
+                                                                    sku: oi.product?.sku || oi.productId?.slice(0, 8),
+                                                                    quantity: Number(oi.quantity),
+                                                                    price: Number(oi.product?.pricing?.[0]?.price || oi.sellingPrice || 0),
+                                                                    overridePrice: Number(oi.sellingPrice),
+                                                                    pricing: oi.product?.pricing || [{ price: Number(oi.sellingPrice) }]
+                                                                }));
+                                                                setCart(mappedItems);
+                                                                setDiscount(Number(order.discountAmount || 0));
+                                                                if (order.user) {
+                                                                    setSelectedCustomer(order.user);
+                                                                }
+                                                                setEditingOrderId(order.id);
+                                                                setShowCustomerDialog(false);
+                                                                toast.success(`Loaded Bill #${order.id.slice(-6)} into cart for editing.`);
+                                                            }}
+                                                            className="px-2 py-0.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-md text-[8px] font-black uppercase tracking-wider flex items-center gap-1 transition-all active:scale-95"
+                                                            title="Edit / Modify Bill"
+                                                        >
+                                                            <SquarePen className="h-2.5 w-2.5 text-blue-600" /> Edit
+                                                        </button>
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
                                                                 handleViewHistoricalReceipt(order);
                                                                 setTimeout(() => {
                                                                     handlePrintReceipt();
@@ -3549,7 +3575,7 @@ export default function POSOperator() {
 
             {/* ── WHATSAPP DUE REMINDERS DIALOG ── */}
             <Dialog open={showWhatsappRemindersDialog} onOpenChange={setShowWhatsappRemindersDialog}>
-                <DialogContent className="w-[95vw] max-w-5xl max-h-[85vh] flex flex-col p-6 sm:p-7 rounded-3xl bg-white border border-slate-200 shadow-2xl">
+                <DialogContent className="w-[95vw] sm:max-w-5xl max-w-5xl max-h-[85vh] flex flex-col p-6 sm:p-7 rounded-3xl bg-white border border-slate-200 shadow-2xl">
                     <DialogHeader className="border-b pb-4 flex flex-row items-center justify-between">
                         <div>
                             <DialogTitle className="text-xl font-black text-slate-900 flex items-center gap-2">

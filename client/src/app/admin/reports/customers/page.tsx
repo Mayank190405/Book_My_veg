@@ -59,6 +59,10 @@ export default function CustomerDuesReport() {
     const [sortBy, setSortBy] = useState("totalDue");
     const [sortOrder, setSortOrder] = useState("desc");
 
+    // Bulk Settlement states
+    const [selectedCustomerIds, setSelectedCustomerIds] = useState<string[]>([]);
+    const [isSettling, setIsSettling] = useState(false);
+
     const fetchData = async () => {
         setLoading(true);
         try {
@@ -149,6 +153,53 @@ export default function CustomerDuesReport() {
             toast.error(err.response?.data?.message || "Failed to trigger Easebuzz payment sync");
         } finally {
             setSyncingEasebuzz(false);
+        }
+    };
+
+    const handleBulkSettle = async () => {
+        if (selectedCustomerIds.length === 0) return;
+        
+        setIsSettling(true);
+        try {
+            let successCount = 0;
+            for (const customerId of selectedCustomerIds) {
+                const customer = customers.find(c => c.id === customerId);
+                if (customer && customer.totalDue > 0) {
+                    const res = await api.post(`/pos/customers/${customerId}/settle`, {
+                        amount: customer.totalDue,
+                        method: "CASH",
+                    });
+                    if (res.data?.success || res.status === 200) {
+                        successCount++;
+                    }
+                }
+            }
+            toast.success(`Successfully settled dues for ${successCount} customers.`);
+            setSelectedCustomerIds([]);
+            fetchData();
+        } catch (error: any) {
+            console.error("Bulk settle error:", error);
+            toast.error(error.response?.data?.message || "Failed to process some settlements.");
+            fetchData();
+        } finally {
+            setIsSettling(false);
+        }
+    };
+
+    const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.checked) {
+            const ids = customers.filter(c => c.totalDue > 0).map(c => c.id);
+            setSelectedCustomerIds(ids);
+        } else {
+            setSelectedCustomerIds([]);
+        }
+    };
+
+    const handleSelectCustomer = (id: string, checked: boolean) => {
+        if (checked) {
+            setSelectedCustomerIds(prev => [...prev, id]);
+        } else {
+            setSelectedCustomerIds(prev => prev.filter(customerId => customerId !== id));
         }
     };
 
@@ -433,12 +484,31 @@ export default function CustomerDuesReport() {
                         <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight">Customer Balance Ledger</h3>
                         <p className="text-[10px] text-slate-400 font-bold tracking-widest mt-0.5 uppercase">Accounts Audit Summary</p>
                     </div>
+                    {selectedCustomerIds.length > 0 && (
+                        <button
+                            onClick={handleBulkSettle}
+                            disabled={isSettling}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-widest transition-colors flex items-center gap-2"
+                        >
+                            {isSettling ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Coins className="h-4 w-4" />}
+                            Settle {selectedCustomerIds.length} Customer{selectedCustomerIds.length > 1 ? 's' : ''}
+                        </button>
+                    )}
                 </div>
 
                 <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse">
                         <thead>
                             <tr className="bg-slate-50/50">
+                                <th className="px-8 py-4 border-b border-slate-100 w-10">
+                                    <input 
+                                        type="checkbox" 
+                                        className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 w-4 h-4 cursor-pointer"
+                                        checked={customers.length > 0 && customers.filter(c => c.totalDue > 0).length > 0 && selectedCustomerIds.length === customers.filter(c => c.totalDue > 0).length}
+                                        onChange={handleSelectAll}
+                                        title="Select all customers with outstanding dues"
+                                    />
+                                </th>
                                 <th 
                                     className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 cursor-pointer hover:bg-slate-100 transition-colors"
                                     onClick={() => handleSort("name")}
@@ -494,11 +564,20 @@ export default function CustomerDuesReport() {
                             {loading ? (
                                 [1, 2, 3, 4, 5].map(i => (
                                     <tr key={i} className="animate-pulse">
-                                        <td colSpan={7} className="px-8 py-6 h-16 bg-slate-50/30" />
+                                        <td colSpan={8} className="px-8 py-6 h-16 bg-slate-50/30" />
                                     </tr>
                                 ))
                             ) : customers.map((c) => (
                                 <tr key={c.id} className="hover:bg-slate-50/50 transition-colors group">
+                                    <td className="px-8 py-5 w-10">
+                                        <input 
+                                            type="checkbox" 
+                                            className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 w-4 h-4 cursor-pointer disabled:opacity-50"
+                                            checked={selectedCustomerIds.includes(c.id)}
+                                            onChange={(e) => handleSelectCustomer(c.id, e.target.checked)}
+                                            disabled={c.totalDue <= 0}
+                                        />
+                                    </td>
                                     <td className="px-8 py-5">
                                         <div className="flex flex-col">
                                             <span className="text-xs font-black text-slate-900">{c.name}</span>

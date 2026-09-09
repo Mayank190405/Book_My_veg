@@ -224,11 +224,7 @@ function PayContent({ slugParams }: PayPageProps) {
         }
     };
 
-    const isAmountLocked = useMemo(() => {
-        return searchParams.get("lockAmount") === "true" || 
-               searchParams.get("locked") === "true" || 
-               searchParams.get("fixed") === "true";
-    }, [searchParams]);
+    const isAmountLocked = true;
 
     if (loading) {
         return (
