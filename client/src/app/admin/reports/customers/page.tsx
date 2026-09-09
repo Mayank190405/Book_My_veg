@@ -31,7 +31,7 @@ import { toast } from "sonner";
 import { format, subDays, startOfWeek, startOfMonth } from "date-fns";
 import Link from "next/link";
 import { initSocket } from "@/services/socketService";
-
+import { useRouter, useSearchParams } from "next/navigation";
 export default function CustomerDuesReport() {
     const todayStr = format(new Date(), "yyyy-MM-dd");
 
@@ -49,8 +49,30 @@ export default function CustomerDuesReport() {
     const [startDate, setStartDate] = useState(todayStr);
     const [endDate, setEndDate] = useState(todayStr);
     
+    const router = useRouter();
+    const searchParams = useSearchParams();
+
     // Pagination states
-    const [page, setPage] = useState(1);
+    const initialPage = Number(searchParams.get("page")) || 1;
+    const [page, setPage] = useState(initialPage);
+
+    // Sync state when URL changes (e.g. via Back/Forward buttons)
+    useEffect(() => {
+        const urlPage = Number(searchParams.get("page")) || 1;
+        if (page !== urlPage) {
+            setPage(urlPage);
+        }
+    }, [searchParams]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // Sync URL when state changes (e.g. via setPage)
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const urlPage = Number(params.get("page")) || 1;
+        if (page !== urlPage) {
+            params.set("page", String(page));
+            router.replace(`?${params.toString()}`, { scroll: false });
+        }
+    }, [page, router]);
     const [limit, setLimit] = useState(10);
     const [totalPages, setTotalPages] = useState(1);
     const [totalCustomers, setTotalCustomers] = useState(0);

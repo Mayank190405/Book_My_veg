@@ -19,6 +19,8 @@ function PayContent({ slugParams }: PayPageProps) {
     const router = useRouter();
     const routeParams = useParams();
 
+    const isAmountLocked = true;
+
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [payData, setPayData] = useState<any>(null);
@@ -89,7 +91,7 @@ function PayContent({ slugParams }: PayPageProps) {
 
             if (data.bill && !data.bill.isPaid) {
                 setSelectedBillId(data.bill.id);
-                setCustomAmount(data.bill.dueAmount.toString());
+                setCustomAmount(isAmountLocked && data.totalDue > 0 ? data.totalDue.toString() : data.bill.dueAmount.toString());
             } else if (data.totalDue > 0) {
                 setCustomAmount(data.totalDue.toString());
             }
@@ -113,7 +115,7 @@ function PayContent({ slugParams }: PayPageProps) {
             setCustomAmount((payData?.totalDue || 0).toString());
         } else {
             setSelectedBillId(billObj.id);
-            setCustomAmount(billObj.dueAmount.toString());
+            setCustomAmount(isAmountLocked && payData?.totalDue > 0 ? payData.totalDue.toString() : billObj.dueAmount.toString());
         }
     };
 
@@ -126,7 +128,8 @@ function PayContent({ slugParams }: PayPageProps) {
 
         setProcessing(true);
         try {
-            const targetBillId = selectedBillId || extractedParams.billid || payData?.bill?.id;
+            const isFullSettle = payAmount >= (payData?.totalDue || 0) && (payData?.totalDue > 0);
+            const targetBillId = isFullSettle ? undefined : (selectedBillId || extractedParams.billid || payData?.bill?.id);
             const res = await fetch(`${getBaseURL()}/pay/pay-due`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -224,7 +227,6 @@ function PayContent({ slugParams }: PayPageProps) {
         }
     };
 
-    const isAmountLocked = true;
 
     if (loading) {
         return (
@@ -488,7 +490,7 @@ function PayContent({ slugParams }: PayPageProps) {
                                 <div className="flex justify-between items-center">
                                     <label className="block text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
                                         <Tag className="w-3.5 h-3.5 text-emerald-500" />
-                                        {selectedBillId ? `Settlement Amount for Bill #${selectedBillId} (₹)` : "Payment Amount (₹)"}
+                                        {selectedBillId && (!isAmountLocked || (payData?.totalDue || 0) <= 0) ? `Settlement Amount for Bill #${selectedBillId} (₹)` : "Total Settlement Amount (₹)"}
                                     </label>
                                     {isAmountLocked ? (
                                         <span className="text-[10px] font-bold bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 px-2.5 py-0.5 rounded-full border border-amber-200 dark:border-amber-500/20 flex items-center gap-1">
