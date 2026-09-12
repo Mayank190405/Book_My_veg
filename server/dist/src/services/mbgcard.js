@@ -16,8 +16,9 @@ exports.sendRegistrationThankYouViaWhatsapp = exports.sendOrderStatusUpdateViaWh
 const axios_1 = __importDefault(require("axios"));
 const dotenv_1 = __importDefault(require("dotenv"));
 dotenv_1.default.config();
-const MBGCARD_API_URL = process.env.MBGCARD_API_URL || "https://chatbot.digitalmbg.com/v1/whatsapp/send_templet";
-const MBGCARD_API_TOKEN = process.env.MBGCARD_API_TOKEN || "91edd77281c02b04c4bdfb36aa5e4978";
+const MBGCARD_API_URL = process.env.MBGCARD_API_URL || "https://chatbotbe.digitalmbg.com/api/whatsapp/send_meta_templet";
+const MBGCARD_API_TOKEN = process.env.MBGCARD_API_TOKEN || "4a20fc02acefc015777b88b49d279ffa";
+const MBGCARD_TEMPLATES_URL = process.env.MBGCARD_TEMPLATES_URL || "https://chatbotbe.digitalmbg.com/api/whatsapp/get_my_meta_templets";
 const MBGCARD_TEMPLATE_ID = process.env.MBGCARD_TEMPLATE_ID || "login";
 const MBGCARD_OTP_FLOW_ID = process.env.MBGCARD_OTP_FLOW_ID || "flow_1782732506015";
 const MBGCARD_SENDER_NUMBER = process.env.MBGCARD_SENDER_NUMBER || "917879431560";
@@ -31,10 +32,8 @@ const sendOtpViaWhatsapp = (phone, otp) => __awaiter(void 0, void 0, void 0, fun
     const formattedPhone = cleanPhone.startsWith("91") ? cleanPhone : `91${cleanPhone}`;
     const payload = {
         templateName: MBGCARD_TEMPLATE_ID, // defaults to "login"
-        senderId: formattedPhone,
         to: formattedPhone,
         variables: {
-            header: [],
             body: [otp]
         }
     };
@@ -136,7 +135,7 @@ exports.sendFlowViaChatHub = sendFlowViaChatHub;
  * Fetch approved WhatsApp templates from MBG Card.
  */
 const getMyMetaTemplates = () => __awaiter(void 0, void 0, void 0, function* () {
-    const url = process.env.MBGCARD_TEMPLATES_URL || "https://chatbot.digitalmbg.com/v1/whatsapp/get_my_meta_templets";
+    const url = process.env.MBGCARD_TEMPLATES_URL || "https://chatbotbe.digitalmbg.com/api/whatsapp/get_my_meta_templets";
     try {
         console.log(`Fetching Meta templates from MBG Card (${url})...`);
         const response = yield axios_1.default.get(url, {
@@ -146,7 +145,7 @@ const getMyMetaTemplates = () => __awaiter(void 0, void 0, void 0, function* () 
                 'x-api-key': MBGCARD_API_TOKEN,
                 'User-Agent': 'BookMyVeg-Server/1.0'
             },
-            timeout: 8000
+            timeout: 10000
         });
         return response.data;
     }
@@ -179,17 +178,20 @@ const sendTemplateViaChatHub = (phone, templateName, variables, dynamicMedia) =>
     const formattedPhone = cleanPhone.startsWith("91") ? cleanPhone : `91${cleanPhone}`;
     const payload = {
         templateName,
-        senderId: formattedPhone,
         to: formattedPhone,
         variables: {
-            header: (variables === null || variables === void 0 ? void 0 : variables.header) || [],
             body: (variables === null || variables === void 0 ? void 0 : variables.body) || []
-        },
-        dynamicMedia
+        }
     };
-    const url = MBGCARD_API_URL;
+    if ((variables === null || variables === void 0 ? void 0 : variables.header) && variables.header.length > 0) {
+        payload.variables.header = variables.header;
+    }
+    if (dynamicMedia) {
+        payload.dynamicMedia = dynamicMedia;
+    }
+    const url = process.env.MBGCARD_API_URL || "https://chatbotbe.digitalmbg.com/api/whatsapp/send_meta_templet";
     try {
-        console.log(`[ChatHub Template] Sending template ${templateName} to ${formattedPhone} via ${url}`);
+        console.log(`[MBG WhatsApp Template] Sending template ${templateName} to ${formattedPhone} via ${url}`);
         const response = yield axios_1.default.post(url, payload, {
             timeout: 10000,
             headers: {
@@ -199,7 +201,7 @@ const sendTemplateViaChatHub = (phone, templateName, variables, dynamicMedia) =>
                 'User-Agent': 'BookMyVeg-Server/1.0'
             }
         });
-        console.log("[ChatHub Template] Response:", response.data);
+        console.log("[MBG WhatsApp Template] Response:", response.data);
         return response.data;
     }
     catch (error) {

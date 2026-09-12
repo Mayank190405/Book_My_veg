@@ -3,8 +3,9 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-const MBGCARD_API_URL = process.env.MBGCARD_API_URL || "https://chatbot.digitalmbg.com/v1/whatsapp/send_templet";
-const MBGCARD_API_TOKEN = process.env.MBGCARD_API_TOKEN || "91edd77281c02b04c4bdfb36aa5e4978";
+const MBGCARD_API_URL = process.env.MBGCARD_API_URL || "https://chatbotbe.digitalmbg.com/api/whatsapp/send_meta_templet";
+const MBGCARD_API_TOKEN = process.env.MBGCARD_API_TOKEN || "4a20fc02acefc015777b88b49d279ffa";
+const MBGCARD_TEMPLATES_URL = process.env.MBGCARD_TEMPLATES_URL || "https://chatbotbe.digitalmbg.com/api/whatsapp/get_my_meta_templets";
 const MBGCARD_TEMPLATE_ID = process.env.MBGCARD_TEMPLATE_ID || "login";
 const MBGCARD_OTP_FLOW_ID = process.env.MBGCARD_OTP_FLOW_ID || "flow_1782732506015";
 const MBGCARD_SENDER_NUMBER = process.env.MBGCARD_SENDER_NUMBER || "917879431560";
@@ -20,10 +21,8 @@ export const sendOtpViaWhatsapp = async (phone: string, otp: string) => {
 
     const payload = {
         templateName: MBGCARD_TEMPLATE_ID, // defaults to "login"
-        senderId: formattedPhone,
         to: formattedPhone,
         variables: {
-            header: [],
             body: [otp]
         }
     };
@@ -141,7 +140,7 @@ export const sendFlowViaChatHub = async (
  * Fetch approved WhatsApp templates from MBG Card.
  */
 export const getMyMetaTemplates = async () => {
-    const url = process.env.MBGCARD_TEMPLATES_URL || "https://chatbot.digitalmbg.com/v1/whatsapp/get_my_meta_templets";
+    const url = process.env.MBGCARD_TEMPLATES_URL || "https://chatbotbe.digitalmbg.com/api/whatsapp/get_my_meta_templets";
     try {
         console.log(`Fetching Meta templates from MBG Card (${url})...`);
         const response = await axios.get(url, {
@@ -151,7 +150,7 @@ export const getMyMetaTemplates = async () => {
                 'x-api-key': MBGCARD_API_TOKEN,
                 'User-Agent': 'BookMyVeg-Server/1.0'
             },
-            timeout: 8000
+            timeout: 10000
         });
         return response.data;
     } catch (error: any) {
@@ -186,21 +185,24 @@ export const sendTemplateViaChatHub = async (
     const cleanPhone = phone.replace(/\D/g, "");
     const formattedPhone = cleanPhone.startsWith("91") ? cleanPhone : `91${cleanPhone}`;
 
-    const payload = {
+    const payload: any = {
         templateName,
-        senderId: formattedPhone,
         to: formattedPhone,
         variables: {
-            header: variables?.header || [],
             body: variables?.body || []
-        },
-        dynamicMedia
+        }
     };
+    if (variables?.header && variables.header.length > 0) {
+        payload.variables.header = variables.header;
+    }
+    if (dynamicMedia) {
+        payload.dynamicMedia = dynamicMedia;
+    }
 
-    const url = MBGCARD_API_URL;
+    const url = process.env.MBGCARD_API_URL || "https://chatbotbe.digitalmbg.com/api/whatsapp/send_meta_templet";
 
     try {
-        console.log(`[ChatHub Template] Sending template ${templateName} to ${formattedPhone} via ${url}`);
+        console.log(`[MBG WhatsApp Template] Sending template ${templateName} to ${formattedPhone} via ${url}`);
 
         const response = await axios.post(url, payload, {
             timeout: 10000,
@@ -212,7 +214,7 @@ export const sendTemplateViaChatHub = async (
             }
         });
 
-        console.log("[ChatHub Template] Response:", response.data);
+        console.log("[MBG WhatsApp Template] Response:", response.data);
         return response.data;
     } catch (error: any) {
         console.error("Error sending template via ChatHub:", {
