@@ -338,13 +338,16 @@ const generatePaymentLink = (req, res) => __awaiter(void 0, void 0, void 0, func
                 const customerPhone = (addressObj === null || addressObj === void 0 ? void 0 : addressObj.phone) || order.user.phone || "9999999999";
                 const useIframe = process.env.EASEBUZZ_IFRAME !== "0";
                 const apiName = useIframe ? "initiate_payment_iframe" : "initiate_payment";
+                const shortNonce = Date.now().toString(36).slice(-5).toUpperCase();
+                const baseId = order.id.length <= 32 ? order.id : order.id.replace(/[^a-zA-Z0-9]/g, "").slice(0, 31);
+                const linkTxnid = requestedAmount ? `${baseId}_P${shortNonce}` : (order.id.length <= 40 ? order.id : order.id.replace(/[^a-zA-Z0-9]/g, "").slice(0, 40));
                 const easebuzzRes = yield axios_1.default.post(`${process.env.EASEBUZZ_SERVICE_URL.replace(/\/$/, "")}/easebuzz?api_name=${apiName}`, {
-                    txnid: requestedAmount ? `${order.id}_P${Date.now()}` : order.id,
+                    txnid: linkTxnid,
                     amount: amountToCharge,
                     firstname: customerName,
                     email: order.user.email || "customer@example.com",
                     phone: sanitizePhone(customerPhone),
-                    productinfo: `Order ${order.id}`,
+                    productinfo: `Order ${order.id.slice(0, 20)}`,
                     surl: callbackUrl,
                     furl: callbackUrl,
                 }, {
@@ -485,13 +488,32 @@ exports.settleDuesForCustomer = settleDuesForCustomer;
 const completeOrderPayment = (orderId, paymentDetails) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
     let resolvedOrderId = orderId;
-    if (orderId && !orderId.startsWith("DUE_") && !orderId.startsWith("SETTLE_")) {
+    if (orderId && !orderId.startsWith("DUE_") && !orderId.startsWith("SET_") && !orderId.startsWith("SETTLE_")) {
         resolvedOrderId = orderId.replace(/_\d{3,}$/, "");
+    }
+    // 1. Resolve exact orderId from Payment record if it was initiated with a unique txnid
+    const paymentRecord = yield prisma_1.default.payment.findFirst({
+        where: { transactionId: orderId },
+        select: { orderId: true }
+    });
+    if (paymentRecord === null || paymentRecord === void 0 ? void 0 : paymentRecord.orderId) {
+        resolvedOrderId = paymentRecord.orderId;
     }
     let existing = yield prisma_1.default.order.findUnique({
         where: { id: resolvedOrderId },
         include: { items: true, user: true },
     });
+    // 2. If not found and resolvedOrderId looks like 32-char hex (compact UUID without hyphens), try standard UUID format
+    if (!existing && resolvedOrderId.length === 32 && /^[0-9a-fA-F]{32}$/.test(resolvedOrderId)) {
+        const formattedUuid = `${resolvedOrderId.slice(0, 8)}-${resolvedOrderId.slice(8, 12)}-${resolvedOrderId.slice(12, 16)}-${resolvedOrderId.slice(16, 20)}-${resolvedOrderId.slice(20)}`;
+        existing = yield prisma_1.default.order.findUnique({
+            where: { id: formattedUuid },
+            include: { items: true, user: true },
+        });
+        if (existing) {
+            resolvedOrderId = existing.id;
+        }
+    }
     if (!existing) {
         // Collect all possible candidate Order IDs from orderId, resolvedOrderId, productinfo, etc.
         const candidates = [orderId, resolvedOrderId];
@@ -533,7 +555,7 @@ const completeOrderPayment = (orderId, paymentDetails) => __awaiter(void 0, void
         }
     }
     if (!existing) {
-        if (orderId.startsWith("SETTLE_")) {
+        if (orderId.startsWith("SETTLE_") || orderId.startsWith("SET_")) {
             const parts = orderId.split("_");
             const targetId = parts[1];
             if (paymentDetails.status === "CHARGED" || paymentDetails.status === "SUCCESS") {
@@ -780,10 +802,18 @@ const verifyPayment = (req, res) => __awaiter(void 0, void 0, void 0, function* 
     logger_1.default.info(`[Payment] verifyPayment hit for order: ${order_id}`);
     try {
         let resolvedOrderId = order_id || "";
-        if (order_id && !order_id.startsWith("DUE_") && !order_id.startsWith("SETTLE_")) {
+        if (order_id && !order_id.startsWith("DUE_") && !order_id.startsWith("SET_") && !order_id.startsWith("SETTLE_")) {
             resolvedOrderId = order_id.replace(/_\d{3,}$/, "");
         }
-        if (resolvedOrderId && (resolvedOrderId.startsWith("SETTLE_") || resolvedOrderId.startsWith("DUE_"))) {
+        // Try to resolve via Payment transactionId if present
+        const txPayment = yield prisma_1.default.payment.findFirst({
+            where: { transactionId: order_id },
+            select: { orderId: true }
+        });
+        if (txPayment === null || txPayment === void 0 ? void 0 : txPayment.orderId) {
+            resolvedOrderId = txPayment.orderId;
+        }
+        if (resolvedOrderId && (resolvedOrderId.startsWith("SETTLE_") || resolvedOrderId.startsWith("SET_") || resolvedOrderId.startsWith("DUE_"))) {
             const SUCCESS_STATUSES = ["CHARGED", "SUCCESS", "PAYMENT_SUCCESS", "AUTHORIZED"];
             const isSuccess = rawStatus ? SUCCESS_STATUSES.includes(rawStatus.toUpperCase()) : false;
             if (!isSuccess) {
@@ -804,10 +834,32 @@ const verifyPayment = (req, res) => __awaiter(void 0, void 0, void 0, function* 
             });
         }
         // 1. Check DB first (Idempotency)
-        const existing = yield prisma_1.default.order.findUnique({
+        let existing = yield prisma_1.default.order.findUnique({
             where: { id: resolvedOrderId },
             select: { id: true, status: true, paymentStatus: true, totalAmount: true },
         });
+        if (!existing && resolvedOrderId.length === 32 && /^[0-9a-fA-F]{32}$/.test(resolvedOrderId)) {
+            const formattedUuid = `${resolvedOrderId.slice(0, 8)}-${resolvedOrderId.slice(8, 12)}-${resolvedOrderId.slice(12, 16)}-${resolvedOrderId.slice(16, 20)}-${resolvedOrderId.slice(20)}`;
+            existing = yield prisma_1.default.order.findUnique({
+                where: { id: formattedUuid },
+                select: { id: true, status: true, paymentStatus: true, totalAmount: true },
+            });
+            if (existing)
+                resolvedOrderId = existing.id;
+        }
+        if (!existing) {
+            existing = yield prisma_1.default.order.findFirst({
+                where: {
+                    OR: [
+                        { id: { equals: resolvedOrderId, mode: "insensitive" } },
+                        { id: { contains: resolvedOrderId, mode: "insensitive" } }
+                    ]
+                },
+                select: { id: true, status: true, paymentStatus: true, totalAmount: true },
+            });
+            if (existing)
+                resolvedOrderId = existing.id;
+        }
         if (!existing)
             return res.status(404).json({ message: "Order not found" });
         // If already completed, return success
@@ -977,8 +1029,15 @@ const handleWebhook = (req, res) => __awaiter(void 0, void 0, void 0, function* 
         const isSuccess = (status || "").toLowerCase() === "success";
         // Resolve original orderId from txnid (strip timestamp suffix)
         let resolvedOrderId = txnid;
-        if (!txnid.startsWith("DUE_") && !txnid.startsWith("SETTLE_")) {
+        if (!txnid.startsWith("DUE_") && !txnid.startsWith("SET_") && !txnid.startsWith("SETTLE_")) {
             resolvedOrderId = txnid.replace(/_\d{3,}$/, "");
+        }
+        const txPayment = yield prisma_1.default.payment.findFirst({
+            where: { transactionId: txnid },
+            select: { orderId: true }
+        });
+        if (txPayment === null || txPayment === void 0 ? void 0 : txPayment.orderId) {
+            resolvedOrderId = txPayment.orderId;
         }
         try {
             yield (0, exports.completeOrderPayment)(resolvedOrderId, {
@@ -1039,9 +1098,16 @@ const handleEasebuzzCallback = (req, res) => __awaiter(void 0, void 0, void 0, f
     const isSuccess = (status || "").toLowerCase() === "success";
     // Recover the original orderId from the txnid.
     let resolvedOrderId = txnid;
-    if (!txnid.startsWith("DUE_") && !txnid.startsWith("SETTLE_")) {
+    if (!txnid.startsWith("DUE_") && !txnid.startsWith("SET_") && !txnid.startsWith("SETTLE_")) {
         // Strip the _NNNNNN timestamp suffix added for uniqueness
         resolvedOrderId = txnid.replace(/_\d{3,}$/, "");
+    }
+    const cbPayment = yield prisma_1.default.payment.findFirst({
+        where: { transactionId: txnid },
+        select: { orderId: true }
+    });
+    if (cbPayment === null || cbPayment === void 0 ? void 0 : cbPayment.orderId) {
+        resolvedOrderId = cbPayment.orderId;
     }
     try {
         yield (0, exports.completeOrderPayment)(resolvedOrderId, {
@@ -1150,11 +1216,11 @@ exports.checkPaymentEligibility = checkPaymentEligibility;
 // ─── Public Pay Info & Pay Due Functions ────────────────────────────────────
 const getPayInfo = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const userid = (req.query.userid || req.query.userId);
-        const number = (req.query.number || req.query.phone);
-        const billid = (req.query.billid || req.query.billId);
+        const userid = ((req.query.userid || req.query.userId || req.query.user_id) || "").trim();
+        const number = ((req.query.number || req.query.phone || req.query.mobile) || "").trim();
+        const billid = ((req.query.billid || req.query.billId || req.query.orderid || req.query.orderId || req.query.order_id || req.query.id) || "").replace(/^#/, "").trim();
         if (!userid && !number && !billid) {
-            return res.status(400).json({ message: "Missing required parameters (userid, number, or billid)" });
+            return res.status(400).json({ message: "Missing required parameters (userid, number, or billid/orderId)" });
         }
         let customer = null;
         if (userid) {
@@ -1174,7 +1240,7 @@ const getPayInfo = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
         }
         let singleBill = null;
         if (billid) {
-            const order = yield prisma_1.default.order.findUnique({
+            let order = yield prisma_1.default.order.findUnique({
                 where: { id: billid },
                 include: {
                     user: { select: { id: true, name: true, phone: true, email: true } },
@@ -1182,6 +1248,21 @@ const getPayInfo = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
                     payments: true
                 }
             });
+            if (!order) {
+                order = yield prisma_1.default.order.findFirst({
+                    where: {
+                        OR: [
+                            { id: { equals: billid, mode: "insensitive" } },
+                            { id: { contains: billid, mode: "insensitive" } }
+                        ]
+                    },
+                    include: {
+                        user: { select: { id: true, name: true, phone: true, email: true } },
+                        items: { include: { product: true } },
+                        payments: true
+                    }
+                });
+            }
             if (order) {
                 if (!customer && order.user) {
                     customer = order.user;
@@ -1262,7 +1343,9 @@ const getPayInfo = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
 exports.getPayInfo = getPayInfo;
 const initiatePayDue = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const { userId, phone, billId, amount } = req.body;
+        const { userId, phone, amount } = req.body;
+        const rawBillId = (req.body.billId || req.body.orderId || req.body.order_id || req.body.billid || "").toString().trim();
+        const cleanBillId = rawBillId.replace(/^#/, "").trim();
         let customer = null;
         if (userId)
             customer = yield prisma_1.default.user.findUnique({ where: { id: userId } });
@@ -1272,37 +1355,76 @@ const initiatePayDue = (req, res) => __awaiter(void 0, void 0, void 0, function*
                 where: { OR: [{ phone }, { phone: cleanPhone }, { phone: `+91${cleanPhone}` }] }
             });
         }
-        const effectiveUserId = (customer === null || customer === void 0 ? void 0 : customer.id) || userId || "ANONYMOUS";
+        let order = null;
+        if (cleanBillId) {
+            order = yield prisma_1.default.order.findUnique({ where: { id: cleanBillId } });
+            if (!order) {
+                order = yield prisma_1.default.order.findFirst({
+                    where: {
+                        OR: [
+                            { id: { equals: cleanBillId, mode: "insensitive" } },
+                            { id: { contains: cleanBillId, mode: "insensitive" } }
+                        ]
+                    }
+                });
+            }
+        }
+        if (!customer && (order === null || order === void 0 ? void 0 : order.userId)) {
+            customer = yield prisma_1.default.user.findUnique({ where: { id: order.userId } });
+        }
+        const effectiveUserId = (customer === null || customer === void 0 ? void 0 : customer.id) || (order === null || order === void 0 ? void 0 : order.userId) || userId || "ANONYMOUS";
         const customerName = (customer === null || customer === void 0 ? void 0 : customer.name) || "Customer";
         const customerPhone = (customer === null || customer === void 0 ? void 0 : customer.phone) || phone || "9999999999";
         const rawEmail = ((customer === null || customer === void 0 ? void 0 : customer.email) || "").trim();
         const isValidEmail = rawEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail);
         const customerEmail = isValidEmail ? rawEmail : `pay.${(customerPhone || "0000000000").replace(/\D/g, "").slice(-10)}@bookmyveg.co.in`;
-        // Easebuzz requires a unique txnid for every initiation attempt.
-        // Always generate a unique one — never reuse order.id directly since it may
-        // have been consumed by a previous (possibly failed) Easebuzz transaction.
+        // Easebuzz requires a unique txnid <= 40 characters matching ^[a-zA-Z0-9_|/\-]{1,40}$
         const timestamp = Date.now();
+        const shortNonce = String(timestamp).slice(-6); // 6 digits
         let txnid;
         let productInfoLabel;
-        if (billId) {
-            const order = yield prisma_1.default.order.findUnique({ where: { id: billId } });
-            if (order && !order.isPaid) {
-                // Unique txnid referencing the order, with a short suffix to avoid collisions
-                txnid = `${order.id}_${String(timestamp).slice(-6)}`;
-                productInfoLabel = `Bill Payment ${order.id}`;
+        if (order) {
+            // Keep txnid strictly <= 40 characters
+            if (order.id.length <= 33) {
+                txnid = `${order.id}_${shortNonce}`;
             }
             else {
-                txnid = `DUE_${billId}_${timestamp}`;
-                productInfoLabel = `Bill Payment ${billId}`;
+                // For long IDs (e.g. 36-char UUIDs), strip non-alphanumeric chars and limit prefix to 31 chars
+                const compactId = order.id.replace(/[^a-zA-Z0-9]/g, "").slice(0, 31);
+                txnid = `${compactId}_${shortNonce}`;
             }
+            productInfoLabel = `Bill Payment ${order.id.slice(0, 20)}`;
+        }
+        else if (cleanBillId) {
+            const compactBill = cleanBillId.replace(/[^a-zA-Z0-9]/g, "").slice(0, 25);
+            txnid = `DUE_${compactBill}_${shortNonce}`;
+            productInfoLabel = `Bill Payment ${cleanBillId.slice(0, 20)}`;
         }
         else {
-            txnid = `SETTLE_${effectiveUserId}_${timestamp}`;
-            productInfoLabel = `Account Settlement ${effectiveUserId}`;
+            const compactUser = String(effectiveUserId).replace(/[^a-zA-Z0-9]/g, "").slice(0, 20);
+            txnid = `SET_${compactUser}_${shortNonce}`;
+            productInfoLabel = `Account Settlement ${String(effectiveUserId).slice(0, 15)}`;
         }
         const amountToPay = Number(amount);
         if (!amountToPay || amountToPay <= 0) {
             return res.status(400).json({ message: "Invalid payment amount" });
+        }
+        // Record a pending payment record so any webhook/callback/verify can resolve orderId immediately
+        if (order) {
+            try {
+                yield prisma_1.default.payment.create({
+                    data: {
+                        orderId: order.id,
+                        amount: amountToPay,
+                        method: "ONLINE",
+                        status: "PENDING",
+                        transactionId: txnid
+                    }
+                });
+            }
+            catch (pErr) {
+                logger_1.default.warn(`[Initiate Pay Due] Could not create pending payment record: ${pErr}`);
+            }
         }
         const protocol = req.headers["x-forwarded-proto"] || (req.secure ? "https" : "http");
         const callbackUrl = `${protocol}://${req.headers.host}/api/v1/payments/easebuzz/callback`;
@@ -1325,12 +1447,13 @@ const initiatePayDue = (req, res) => __awaiter(void 0, void 0, void 0, function*
                     productinfo: productInfoLabel,
                     callbackUrl
                 });
-                return res.json(Object.assign({ txnid }, easeResult));
+                return res.json(Object.assign({ txnid, orderId: (order === null || order === void 0 ? void 0 : order.id) || cleanBillId || undefined }, easeResult));
             }
             catch (easebuzzError) {
                 logger_1.default.error(`[Initiate Pay Due] Easebuzz initiation failed, falling back to mock gateway. Error: ${easebuzzError.message}`);
                 return res.json({
                     txnid,
+                    orderId: (order === null || order === void 0 ? void 0 : order.id) || cleanBillId || undefined,
                     paymentLink: `${baseUrl.replace(/\/$/, "")}/payment/mock-gateway?orderId=${txnid}&amount=${amountToPay}`,
                 });
             }
@@ -1338,6 +1461,7 @@ const initiatePayDue = (req, res) => __awaiter(void 0, void 0, void 0, function*
         // Mock gateway fallback when Easebuzz is not configured
         return res.json({
             txnid,
+            orderId: (order === null || order === void 0 ? void 0 : order.id) || cleanBillId || undefined,
             paymentLink: `${baseUrl.replace(/\/$/, "")}/payment/mock-gateway?orderId=${txnid}&amount=${amountToPay}`,
         });
     }

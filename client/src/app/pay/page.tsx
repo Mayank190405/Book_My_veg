@@ -32,44 +32,66 @@ function PayContent({ slugParams }: PayPageProps) {
 
     // Extract userid, number, billid from query or path slug
     const extractedParams = useMemo(() => {
-        let userid = searchParams.get("userid") || searchParams.get("userId") || "";
-        let number = searchParams.get("number") || searchParams.get("phone") || "";
-        let billid = searchParams.get("billid") || searchParams.get("billId") || "";
+        let userid = searchParams.get("userid") || searchParams.get("userId") || searchParams.get("user_id") || searchParams.get("uid") || "";
+        let number = searchParams.get("number") || searchParams.get("phone") || searchParams.get("mobile") || "";
+        let billid = searchParams.get("billid") || searchParams.get("billId") || searchParams.get("bill_id") || searchParams.get("orderId") || searchParams.get("orderid") || searchParams.get("order_id") || searchParams.get("id") || "";
 
         const slug = slugParams || (routeParams?.slug as string[]);
         if (slug && slug.length > 0) {
             const pathStr = decodeURIComponent(slug.join("/"));
-            const kvPairs = pathStr.split("&");
-            for (const pair of kvPairs) {
-                const [k, v] = pair.split("=");
-                if (k && v) {
-                    const cleanK = k.trim().toLowerCase();
-                    const cleanV = v.trim();
-                    if (cleanK === "userid" || cleanK === "user_id") userid = cleanV;
-                    if (cleanK === "number" || cleanK === "phone") number = cleanV;
-                    if (cleanK === "billid" || cleanK === "bill_id" || cleanK === "orderid") billid = cleanV;
+            if (pathStr.includes("=")) {
+                const kvPairs = pathStr.split("&");
+                for (const pair of kvPairs) {
+                    const [k, v] = pair.split("=");
+                    if (k && v) {
+                        const cleanK = k.trim().toLowerCase();
+                        const cleanV = v.trim();
+                        if ((cleanK === "userid" || cleanK === "user_id" || cleanK === "uid") && !userid) userid = cleanV;
+                        if ((cleanK === "number" || cleanK === "phone" || cleanK === "mobile") && !number) number = cleanV;
+                        if ((cleanK === "billid" || cleanK === "bill_id" || cleanK === "orderid" || cleanK === "order_id" || cleanK === "order" || cleanK === "id") && !billid) billid = cleanV;
+                    }
+                }
+            } else {
+                // The slug is directly an order ID / bill ID e.g. /pay/BMVA1B2C3D4E5F6
+                const cleanSlug = pathStr.replace(/^[/?#]+/, "").trim();
+                if (cleanSlug && !billid) {
+                    billid = cleanSlug;
                 }
             }
         }
 
-        if (typeof window !== "undefined" && (!userid || !number)) {
+        if (typeof window !== "undefined" && (!userid || !number || !billid)) {
             const rawPath = window.location.pathname;
             if (rawPath.includes("/pay/")) {
                 const pathSub = rawPath.split("/pay/")[1];
                 if (pathSub) {
-                    const pairs = pathSub.split("&");
-                    for (const pair of pairs) {
-                        const [k, v] = pair.split("=");
-                        if (k && v) {
-                            const cleanK = k.trim().toLowerCase();
-                            const cleanV = v.trim();
-                            if ((cleanK === "userid" || cleanK === "user_id") && !userid) userid = cleanV;
-                            if ((cleanK === "number" || cleanK === "phone") && !number) number = cleanV;
-                            if ((cleanK === "billid" || cleanK === "bill_id") && !billid) billid = cleanV;
+                    const decodedSub = decodeURIComponent(pathSub);
+                    if (decodedSub.includes("=")) {
+                        const pairs = decodedSub.split("&");
+                        for (const pair of pairs) {
+                            const [k, v] = pair.split("=");
+                            if (k && v) {
+                                const cleanK = k.trim().toLowerCase();
+                                const cleanV = v.trim();
+                                if ((cleanK === "userid" || cleanK === "user_id" || cleanK === "uid") && !userid) userid = cleanV;
+                                if ((cleanK === "number" || cleanK === "phone" || cleanK === "mobile") && !number) number = cleanV;
+                                if ((cleanK === "billid" || cleanK === "bill_id" || cleanK === "orderid" || cleanK === "order_id" || cleanK === "order" || cleanK === "id") && !billid) billid = cleanV;
+                            }
+                        }
+                    } else {
+                        // Directly an order ID in the URL e.g. /pay/BMVA1B2C3D4E5F6
+                        const cleanSub = decodedSub.split("?")[0].replace(/^[/?#]+/, "").trim();
+                        if (cleanSub && !billid) {
+                            billid = cleanSub;
                         }
                     }
                 }
             }
+        }
+
+        // Clean billid of any leading '#'
+        if (billid) {
+            billid = billid.replace(/^#/, "").trim();
         }
 
         return { userid, number, billid };
@@ -82,10 +104,16 @@ function PayContent({ slugParams }: PayPageProps) {
             const query = new URLSearchParams();
             if (extractedParams.userid) query.set("userid", extractedParams.userid);
             if (extractedParams.number) query.set("number", extractedParams.number);
-            if (extractedParams.billid) query.set("billid", extractedParams.billid);
+            if (extractedParams.billid) {
+                query.set("billid", extractedParams.billid);
+                query.set("orderId", extractedParams.billid);
+            }
 
             const res = await fetch(`${getBaseURL()}/pay/pay-info?${query.toString()}`);
-            if (!res.ok) throw new Error("Failed to load payment details");
+            if (!res.ok) {
+                const errData = await res.json().catch(() => ({}));
+                throw new Error(errData.message || "Failed to load payment details");
+            }
             const data = await res.json();
             setPayData(data);
 
@@ -128,8 +156,8 @@ function PayContent({ slugParams }: PayPageProps) {
 
         setProcessing(true);
         try {
-            const isFullSettle = payAmount >= (payData?.totalDue || 0) && (payData?.totalDue > 0);
-            const targetBillId = isFullSettle ? undefined : (selectedBillId || extractedParams.billid || payData?.bill?.id);
+            // Keep target bill if user selected one or arrived with bill/order in link
+            const targetBillId = selectedBillId || extractedParams.billid || payData?.bill?.id;
             const res = await fetch(`${getBaseURL()}/pay/pay-due`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -137,6 +165,7 @@ function PayContent({ slugParams }: PayPageProps) {
                     userId: extractedParams.userid || payData?.customer?.id,
                     phone: extractedParams.number || payData?.customer?.phone,
                     billId: targetBillId || undefined,
+                    orderId: targetBillId || undefined,
                     amount: payAmount
                 })
             });
@@ -179,7 +208,7 @@ function PayContent({ slugParams }: PayPageProps) {
                                                 method: "POST",
                                                 headers: { "Content-Type": "application/json" },
                                                 body: JSON.stringify({
-                                                    order_id: data.txnid || targetBillId || payData?.bill?.id,
+                                                    order_id: data.orderId || data.txnid || targetBillId || payData?.bill?.id,
                                                     status: "SUCCESS",
                                                     amount: payAmount,
                                                     txn_id: response.easepayid || response.txnid || response.easebuzz_id
@@ -194,13 +223,15 @@ function PayContent({ slugParams }: PayPageProps) {
                                 }
                             });
                         } catch (sdkErr) {
-                            setPayIframeUrl(checkoutUrl);
-                            setShowPayIframeModal(true);
+                            console.warn("Easebuzz SDK error, redirecting directly to payment page:", sdkErr);
+                            window.location.href = checkoutUrl;
                         }
+                    } else if (checkoutUrl) {
+                        setProcessing(false);
+                        window.location.href = checkoutUrl;
                     } else {
                         setProcessing(false);
-                        setPayIframeUrl(checkoutUrl);
-                        setShowPayIframeModal(true);
+                        alert("Payment gateway could not be loaded. Please try again.");
                     }
                 };
 
@@ -211,15 +242,18 @@ function PayContent({ slugParams }: PayPageProps) {
                     script.onload = triggerSdk;
                     script.onerror = () => {
                         setProcessing(false);
-                        setPayIframeUrl(checkoutUrl);
-                        setShowPayIframeModal(true);
+                        if (checkoutUrl) {
+                            window.location.href = checkoutUrl;
+                        } else {
+                            alert("Failed to load payment gateway checkout.");
+                        }
                     };
                     document.body.appendChild(script);
                 } else {
                     triggerSdk();
                 }
             } else {
-                throw new Error("No payment authorization key returned");
+                throw new Error(data.message || "No payment authorization key returned");
             }
         } catch (err: any) {
             setProcessing(false);
