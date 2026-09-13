@@ -1,6 +1,11 @@
 import prisma from "../config/prisma";
 import logger from "../utils/logger";
-import { sendTemplateViaChatHub, sendFeedbackRequestViaWhatsapp, sendPaymentReminderViaWhatsapp } from "./mbgcard";
+import { 
+    sendTemplateViaChatHub, 
+    sendFeedbackRequestViaWhatsapp, 
+    sendPaymentReminderViaWhatsapp,
+    APPROVED_UTILITY_TEMPLATES 
+} from "./mbgcard";
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
 const THREE_HOURS_MS = 3 * ONE_HOUR_MS;
@@ -171,6 +176,11 @@ export const startPaymentReminderWorker = () => {
                     }
 
                     const templateName = inactiveConfig?.templateId || "fresh_order";
+                    if (!APPROVED_UTILITY_TEMPLATES.has(templateName)) {
+                        logger.info(`[Retention Worker] Inactivity reminder skipped for ${customer.phone}: template '${templateName}' is non-utility. Strict utility policy active.`);
+                        continue;
+                    }
+
                     logger.info(`[Retention Worker] Dispatching 4-day inactivity reminder (${templateName}) to customer ${customer.name} (${customer.phone}) - inactive for ${daysInactive} days`);
 
                     try {

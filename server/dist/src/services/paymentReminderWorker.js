@@ -162,6 +162,10 @@ const startPaymentReminderWorker = () => {
                         continue; // Already sent since their last visit
                     }
                     const templateName = (inactiveConfig === null || inactiveConfig === void 0 ? void 0 : inactiveConfig.templateId) || "fresh_order";
+                    if (!mbgcard_1.APPROVED_UTILITY_TEMPLATES.has(templateName)) {
+                        logger_1.default.info(`[Retention Worker] Inactivity reminder skipped for ${customer.phone}: template '${templateName}' is non-utility. Strict utility policy active.`);
+                        continue;
+                    }
                     logger_1.default.info(`[Retention Worker] Dispatching 4-day inactivity reminder (${templateName}) to customer ${customer.name} (${customer.phone}) - inactive for ${daysInactive} days`);
                     try {
                         yield (0, mbgcard_1.sendTemplateViaChatHub)(customer.phone, templateName, {

@@ -1,70 +1,11 @@
 ================================================================================
-BOOK MY VEG - WHATSAPP & SYSTEM TEMPLATES (NON-MARKETING)
+BOOK MY VEG - APPROVED UTILITY-ONLY WHATSAPP TEMPLATES
 ================================================================================
 
-PART 1: LIVE WHATSAPP META TEMPLATES (UTILITY & AUTHENTICATION ONLY)
-Total Non-Marketing Templates: 6 (Removed 12 Marketing templates)
+POLICY: STRICT UTILITY MESSAGES ONLY (NO MARKETING MESSAGES)
 ================================================================================
 
-[1] TEMPLATE: feedback_request_support_
-    Template ID:       2182324349387980
-    Meta Status:       APPROVED
-    Category:          UTILITY
-    Language:          en
-    Message Body:
-      Hello {{1}},  
-      Thank you for shopping with book my veg. We would love to hear your feedback on your recent purchase. Your insights help us improve and serve you better. If there’s anything specific you’d like to discuss, we’re all ears!
-    Example Variables: ['name']
-    Buttons:
-      - [QUICK_REPLY] "Chat with Us"
-
---------------------------------------------------------------------------------
-
-[2] TEMPLATE: order_management_4
-    Template ID:       1122769370423073
-    Meta Status:       APPROVED
-    Category:          UTILITY
-    Language:          en
-    Message Body:
-      Hi {{1}},
-      Your order has been successfully placed and is being processed. Your order number is {{2}}. You can view order details below.
-    Example Variables: ['name', 'number']
-    Buttons:
-      - [QUICK_REPLY] "View order"
-
---------------------------------------------------------------------------------
-
-[3] TEMPLATE: payment_due_reminder
-    Template ID:       1683921576014767
-    Meta Status:       APPROVED
-    Category:          UTILITY
-    Language:          en
-    Message Body:
-      Hi {{1}}, your {{2}} bill of {{3}} is due on {{4}}. Pay now to avoid service disruption.
-    Example Variables: ['name', 'product', 'date', 'price']
-    Buttons:
-      - [QUICK_REPLY] "Pay now"
-
---------------------------------------------------------------------------------
-
-[4] TEMPLATE: order_update_notification
-    Template ID:       2360388174767694
-    Meta Status:       APPROVED
-    Category:          UTILITY
-    Language:          en
-    Message Body:
-      Hi {{1}},  
-      
-      Your order of fresh fruits and vegetables is on its way! We are committed to providing top-quality produce directly to your doorstep. Keep an eye out for our delivery partner, who will be there soon.  
-      
-      Have questions?
-    Example Variables: ['name']
-    Buttons:
-      - [QUICK_REPLY] "Chat with Us"
-
---------------------------------------------------------------------------------
-
-[5] TEMPLATE: bill_created
+[1] TEMPLATE: bill_created
     Template ID:       1806180457040159
     Meta Status:       APPROVED
     Category:          UTILITY
@@ -90,87 +31,119 @@ Total Non-Marketing Templates: 6 (Removed 12 Marketing templates)
       We appreciate your business and look forward to serving you again.
       
       – Team Book My Veg
-    Example Variables: ['name', 'invoice id', 'amount', 'mode', 'link']
+    Variables:
+      {{1}}: Customer Name
+      {{2}}: Invoice / Order No.
+      {{3}}: Total Amount (₹)
+      {{4}}: Payment Mode / Status (e.g. "CASH", "DUE: ₹500", "CANCELLED", "UPI (Paid)")
+      {{5}}: Invoice PDF Download Link
+    Used For:
+      - Bill Created (Fully Paid)
+      - Bill Created (Partial / Balance Due)
+      - Payment Received Confirmation (with invoice receipt)
+      - Bill Cancelled (Status: CANCELLED)
 
 --------------------------------------------------------------------------------
 
-[6] TEMPLATE: login
+[2] TEMPLATE: payment_due_reminder
+    Template ID:       1683921576014767
+    Meta Status:       APPROVED
+    Category:          UTILITY
+    Language:          en
+    Message Body:
+      Hi {{1}}, your {{2}} bill of {{3}} is due on {{4}}. Pay now to avoid service disruption.
+    Variables:
+      {{1}}: Customer Name
+      {{2}}: Invoice / Bill Number
+      {{3}}: Due Amount (e.g. ₹500)
+      {{4}}: Due Date / Timing (e.g. "Immediate" or date)
+    Buttons:
+      - [QUICK_REPLY] "Pay now"
+    Used For:
+      - Automatic Due Reminder (Scheduled background worker)
+      - Manual Reminder (POS Cashier button & Admin due reminders)
+
+--------------------------------------------------------------------------------
+
+[3] TEMPLATE: feedback_request_support_
+    Template ID:       2182324349387980
+    Meta Status:       APPROVED
+    Category:          UTILITY
+    Language:          en
+    Message Body:
+      Hello {{1}},  
+      Thank you for shopping with book my veg. We would love to hear your feedback on your recent purchase. Your insights help us improve and serve you better. If there’s anything specific you’d like to discuss, we’re all ears!
+    Variables:
+      {{1}}: Customer Name
+    Buttons:
+      - [QUICK_REPLY] "Chat with Us"
+    Used For:
+      - Post-Order 3 Hours Feedback (Online delivery & POS in-store purchases)
+
+--------------------------------------------------------------------------------
+
+[4] TEMPLATE: order_management_4
+    Template ID:       1122769370423073
+    Meta Status:       APPROVED
+    Category:          UTILITY
+    Language:          en
+    Message Body:
+      Hi {{1}},
+      Your order has been successfully placed and is being processed. Your order number is {{2}}. You can view order details below.
+    Variables:
+      {{1}}: Customer Name
+      {{2}}: Order Number
+    Buttons:
+      - [QUICK_REPLY] "View order"
+    Used For:
+      - Order Confirmation & Order Processing updates
+
+--------------------------------------------------------------------------------
+
+[5] TEMPLATE: order_update_notification
+    Template ID:       2360388174767694
+    Meta Status:       APPROVED
+    Category:          UTILITY
+    Language:          en
+    Message Body:
+      Hi {{1}},  
+      
+      Your order of fresh fruits and vegetables is on its way! We are committed to providing top-quality produce directly to your doorstep. Keep an eye out for our delivery partner, who will be there soon.  
+      
+      Have questions?
+    Variables:
+      {{1}}: Customer Name
+    Buttons:
+      - [QUICK_REPLY] "Chat with Us"
+    Used For:
+      - Out for Delivery / In-Transit Dispatch Alert
+
+--------------------------------------------------------------------------------
+
+[6] TEMPLATE: login (AUTHENTICATION)
     Template ID:       1395022896009561
     Meta Status:       APPROVED
     Category:          AUTHENTICATION
     Language:          en
     Message Body:
       *{{1}}* is your verification code. For your security, do not share this code.
-    Example Variables: ['123456']
+    Variables:
+      {{1}}: 6-digit OTP code
     Buttons:
-      - [URL] "Copy code" -> https://www.whatsapp.com/otp/code/?otp_type=COPY_CODE&code=otp{{1}}
-
---------------------------------------------------------------------------------
-
-
-================================================================================
-PART 2: SYSTEM EVENT TRIGGERS (UTILITY / OPERATIONAL)
-================================================================================
-
-Event Key:    BILL_CREATED_PAID
-Category:     Billing (Utility)
-Label:        Bill Created (Fully Paid / Completed)
-Description:  Triggered immediately when a POS or Web bill is created and fully paid.
-Variables:    customer.name, order.id, order.totalAmount, order.paymentMethod, order.invoiceLink, location.name
-----------------------------------------
-Event Key:    BILL_CREATED_DUE
-Category:     Billing (Utility)
-Label:        Bill Created (Unpaid / Partial Due)
-Description:  Triggered immediately when a bill is created with remaining balance due.
-Variables:    customer.name, order.id, order.totalAmount, order.dueAmount, order.payLink, order.invoiceLink, location.name
-----------------------------------------
-Event Key:    PAYMENT_REMINDER
-Category:     Dues & Credit (Utility)
-Label:        Payment Due Reminder
-Description:  Triggered automatically after configured duration (e.g. 7 days) if bill has unpaid dues.
-Variables:    customer.name, order.dueAmount, order.id, order.payLink, location.name, days.overdue
-----------------------------------------
-Event Key:    PO_GENERATED
-Category:     Vendors & Procurement (Utility)
-Label:        Purchase Order Sent to Vendor
-Description:  Triggered when a PO is created and submitted for vendor fulfillment.
-Variables:    vendor.name, po.number, po.itemCount, po.totalEstimatedCost, store.name, store.address, po.pdfLink
-----------------------------------------
-Event Key:    PO_APPROVED
-Category:     Vendors & Procurement (Utility)
-Label:        Purchase Order Approved
-Description:  Triggered when purchase manager approves the PO for dispatch.
-Variables:    vendor.name, po.number, po.approvedCost, store.name, po.expectedDate
-----------------------------------------
-Event Key:    ORDER_CONFIRMATION
-Category:     Orders (Utility)
-Label:        Order Confirmation
-Description:  Triggered immediately when customer places an order.
-Variables:    customer.name, order.id, order.totalAmount
-----------------------------------------
-Event Key:    PAYMENT_RECEIVED
-Category:     Billing (Utility)
-Label:        Payment Received Confirmation
-Description:  Triggered when a payment transaction is successfully recorded.
-Variables:    customer.name, order.id, payment.amount, payment.mode
-----------------------------------------
+      - [URL] "Copy code"
+    Used For:
+      - System Login & OTP Verification
 
 ================================================================================
-PART 3: CSV BULK IMPORT TEMPLATES (ADMIN DASHBOARD)
+EVENT MAPPING SUMMARY (ALL UTILITY):
 ================================================================================
-
-File:    variants_import_template.csv
-Headers: name,hindiName,marathiName,category,unit,description,price,mrp,sku,costPrice,procurementRate,hsnCode,shelfLifeDays,storageType,inStock,dailyEssential
-----------------------------------------
-File:    inventory_restock_template.csv
-Headers: variantId,sku,productName,currentStock,restockQuantity,costPrice,procurementRate,supplier,expiryDate,unit
-----------------------------------------
-File:    categories_template.csv
-Headers: name,description,isActive
-----------------------------------------
-File:    inward_import_template.csv
-Headers: sku,procurementCost,quantity,procuredWeight,crateType,crateCount,qcNotes,rejectedWeight,unit
-----------------------------------------
-File:    users_template.csv
-Headers: name,phone,email,role,isActive
-----------------------------------------
+1. Bill Created (Paid)        -> bill_created (UTILITY)
+2. Bill Created (Due)         -> bill_created (UTILITY)
+3. Automatic Due Reminder     -> payment_due_reminder (UTILITY)
+4. Manual Due Reminder        -> payment_due_reminder (UTILITY)
+5. Post-Order 3 Hrs Feedback  -> feedback_request_support_ (UTILITY)
+6. Payment Received           -> bill_created (UTILITY)
+7. Bill Cancelled             -> bill_created (UTILITY)
+8. Order Confirmation         -> order_management_4 (UTILITY)
+9. Inactivity Marketing       -> BLOCKED / DISABLED under strict utility policy
+================================================================================

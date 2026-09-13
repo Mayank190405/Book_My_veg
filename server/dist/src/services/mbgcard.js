@@ -12,7 +12,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.sendRegistrationThankYouViaWhatsapp = exports.sendInactiveCustomerReminderViaWhatsapp = exports.sendBillCancelledViaWhatsapp = exports.sendOrderStatusUpdateViaWhatsapp = exports.sendPaymentReceivedViaWhatsapp = exports.sendPaymentReminderViaWhatsapp = exports.sendInvoiceDueViaWhatsapp = exports.sendInvoicePaidViaWhatsapp = exports.sendFeedbackRequestViaWhatsapp = exports.sendTemplateViaChatHub = exports.sendOrderConfirmationViaWhatsapp = exports.getConversation = exports.getMyMetaTemplates = exports.sendFlowViaChatHub = exports.sendOtpViaWhatsapp = void 0;
+exports.sendRegistrationThankYouViaWhatsapp = exports.sendInactiveCustomerReminderViaWhatsapp = exports.sendBillCancelledViaWhatsapp = exports.sendOrderStatusUpdateViaWhatsapp = exports.sendPaymentReceivedViaWhatsapp = exports.sendPaymentReminderViaWhatsapp = exports.sendInvoiceDueViaWhatsapp = exports.sendInvoicePaidViaWhatsapp = exports.sendFeedbackRequestViaWhatsapp = exports.sendTemplateViaChatHub = exports.sendOrderConfirmationViaWhatsapp = exports.APPROVED_UTILITY_TEMPLATES = exports.getConversation = exports.getMyMetaTemplates = exports.sendFlowViaChatHub = exports.sendOtpViaWhatsapp = void 0;
 const axios_1 = __importDefault(require("axios"));
 const dotenv_1 = __importDefault(require("dotenv"));
 dotenv_1.default.config();
@@ -163,17 +163,36 @@ const getConversation = (phone) => __awaiter(void 0, void 0, void 0, function* (
     return null;
 });
 exports.getConversation = getConversation;
-const sendOrderConfirmationViaWhatsapp = (phone, customerName, orderId, amount) => __awaiter(void 0, void 0, void 0, function* () {
-    return (0, exports.sendTemplateViaChatHub)(phone, "order_confirmation", {
-        body: [customerName, orderId, String(amount)]
+exports.APPROVED_UTILITY_TEMPLATES = new Set([
+    "bill_created", // UTILITY: Invoice Generated (Paid, Due, Cancelled)
+    "payment_due_reminder", // UTILITY: Bill Due Reminder
+    "feedback_request_support_", // UTILITY: Feedback on Recent Purchase
+    "order_management_4", // UTILITY: Order Placed & Processing
+    "order_update_notification", // UTILITY: Produce Out for Delivery
+    "login" // AUTHENTICATION: OTP verification
+]);
+const sendOrderConfirmationViaWhatsapp = (phone, customerName, orderId, _amount) => __awaiter(void 0, void 0, void 0, function* () {
+    // Uses approved UTILITY template: order_management_4
+    return (0, exports.sendTemplateViaChatHub)(phone, "order_management_4", {
+        body: [customerName, orderId]
     });
 });
 exports.sendOrderConfirmationViaWhatsapp = sendOrderConfirmationViaWhatsapp;
 /**
  * Generic helper to send a WhatsApp template via ChatHub.
+ * Strictly enforces UTILITY-only templates.
  */
 const sendTemplateViaChatHub = (phone, templateName, variables, dynamicMedia) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
+    // ── STRICT UTILITY MESSAGE POLICY ENFORCEMENT ──────────────────
+    if (!exports.APPROVED_UTILITY_TEMPLATES.has(templateName)) {
+        console.warn(`[MBG WhatsApp Template] BLOCKED non-utility template '${templateName}'. Strict utility policy is active.`);
+        return {
+            success: false,
+            blocked: true,
+            message: `Template '${templateName}' was blocked because only approved UTILITY templates are permitted.`
+        };
+    }
     const cleanPhone = phone.replace(/\D/g, "");
     const formattedPhone = cleanPhone.length === 10 ? `91${cleanPhone}` : (cleanPhone.startsWith("91") ? cleanPhone : `91${cleanPhone}`);
     const payload = {
@@ -191,7 +210,7 @@ const sendTemplateViaChatHub = (phone, templateName, variables, dynamicMedia) =>
     }
     const url = process.env.MBGCARD_API_URL || "https://chatbotbe.digitalmbg.com/api/whatsapp/send_meta_templet";
     try {
-        console.log(`[MBG WhatsApp Template] Sending template ${templateName} to ${formattedPhone} via ${url}`);
+        console.log(`[MBG WhatsApp Utility Template] Sending ${templateName} (UTILITY) to ${formattedPhone} via ${url}`);
         const response = yield axios_1.default.post(url, payload, {
             timeout: 10000,
             headers: {
@@ -205,7 +224,7 @@ const sendTemplateViaChatHub = (phone, templateName, variables, dynamicMedia) =>
         return response.data;
     }
     catch (error) {
-        console.error("Error sending template via ChatHub:", {
+        console.error("Error sending utility template via ChatHub:", {
             message: error.message,
             response: (_a = error.response) === null || _a === void 0 ? void 0 : _a.data
         });
@@ -213,14 +232,18 @@ const sendTemplateViaChatHub = (phone, templateName, variables, dynamicMedia) =>
     }
 });
 exports.sendTemplateViaChatHub = sendTemplateViaChatHub;
-const sendFeedbackRequestViaWhatsapp = (phone, customerName, orderId) => __awaiter(void 0, void 0, void 0, function* () {
-    const origin = process.env.CLIENT_URL || "https://bookmyveg.co.in";
-    const feedbackLink = `${origin}/feedback?orderId=${orderId}`;
-    return (0, exports.sendTemplateViaChatHub)(phone, "feedback_request", {
-        body: [customerName, feedbackLink]
+/**
+ * Post-order feedback request via UTILITY template 'feedback_request_support_'.
+ */
+const sendFeedbackRequestViaWhatsapp = (phone, customerName, _orderId) => __awaiter(void 0, void 0, void 0, function* () {
+    return (0, exports.sendTemplateViaChatHub)(phone, "feedback_request_support_", {
+        body: [customerName]
     });
 });
 exports.sendFeedbackRequestViaWhatsapp = sendFeedbackRequestViaWhatsapp;
+/**
+ * Invoice created (Paid) via UTILITY template 'bill_created'.
+ */
 const sendInvoicePaidViaWhatsapp = (phone, customerName, invoiceNo, totalAmount, paymentMode, orderId) => __awaiter(void 0, void 0, void 0, function* () {
     const origin = process.env.CLIENT_URL || "https://bookmyveg.co.in";
     const invoicePdfLink = `${origin}/invoice/${orderId}`;
@@ -229,52 +252,84 @@ const sendInvoicePaidViaWhatsapp = (phone, customerName, invoiceNo, totalAmount,
     });
 });
 exports.sendInvoicePaidViaWhatsapp = sendInvoicePaidViaWhatsapp;
-const sendInvoiceDueViaWhatsapp = (phone, customerName, invoiceNo, totalAmount, paymentMode, dueAmount, userId, orderId) => __awaiter(void 0, void 0, void 0, function* () {
+/**
+ * Invoice created (Due / Partial) via UTILITY template 'bill_created'.
+ */
+const sendInvoiceDueViaWhatsapp = (phone, customerName, invoiceNo, totalAmount, paymentMode, dueAmount, _userId, orderId) => __awaiter(void 0, void 0, void 0, function* () {
     const origin = process.env.CLIENT_URL || "https://bookmyveg.co.in";
     const invoicePdfLink = `${origin}/invoice/${orderId}`;
-    const publicPayLink = `${origin}/pay?userid=${userId}&number=${phone}&billid=${orderId}&amount=${dueAmount}&lockAmount=true`;
-    return (0, exports.sendTemplateViaChatHub)(phone, "bill_created_due", {
-        body: [customerName, invoiceNo, String(totalAmount), String(dueAmount), invoicePdfLink, publicPayLink]
+    return (0, exports.sendTemplateViaChatHub)(phone, "bill_created", {
+        body: [customerName, invoiceNo, String(totalAmount), `DUE: ₹${dueAmount} (${paymentMode})`, invoicePdfLink]
     });
 });
 exports.sendInvoiceDueViaWhatsapp = sendInvoiceDueViaWhatsapp;
-const sendPaymentReminderViaWhatsapp = (phone, customerName, dueAmount, invoiceNo, userId, orderId) => __awaiter(void 0, void 0, void 0, function* () {
-    const origin = process.env.CLIENT_URL || "https://bookmyveg.co.in";
-    const publicPayLink = `${origin}/pay?userid=${userId}&number=${phone}&billid=${orderId}&amount=${dueAmount}&lockAmount=true`;
-    return (0, exports.sendTemplateViaChatHub)(phone, "due_payment_reminder", {
-        body: [customerName, String(dueAmount), invoiceNo, publicPayLink]
+/**
+ * Payment due reminder via approved UTILITY template 'payment_due_reminder'.
+ */
+const sendPaymentReminderViaWhatsapp = (phone, customerName, dueAmount, invoiceNo, _userId, _orderId) => __awaiter(void 0, void 0, void 0, function* () {
+    return (0, exports.sendTemplateViaChatHub)(phone, "payment_due_reminder", {
+        body: [customerName, invoiceNo, `₹${dueAmount}`, "Immediate"]
     });
 });
 exports.sendPaymentReminderViaWhatsapp = sendPaymentReminderViaWhatsapp;
+/**
+ * Payment received confirmation via approved UTILITY template 'bill_created'.
+ */
 const sendPaymentReceivedViaWhatsapp = (phone, customerName, invoiceNo, paidAmount, paymentMode) => __awaiter(void 0, void 0, void 0, function* () {
-    return (0, exports.sendTemplateViaChatHub)(phone, "payment_received", {
-        body: [customerName, invoiceNo, String(paidAmount), paymentMode]
+    const origin = process.env.CLIENT_URL || "https://bookmyveg.co.in";
+    const invoicePdfLink = `${origin}/invoice/${invoiceNo}`;
+    return (0, exports.sendTemplateViaChatHub)(phone, "bill_created", {
+        body: [customerName, invoiceNo, String(paidAmount), `${paymentMode} (Paid)`, invoicePdfLink]
     });
 });
 exports.sendPaymentReceivedViaWhatsapp = sendPaymentReceivedViaWhatsapp;
+/**
+ * Order status update via UTILITY templates.
+ */
 const sendOrderStatusUpdateViaWhatsapp = (phone, customerName, orderId, statusName) => __awaiter(void 0, void 0, void 0, function* () {
-    return (0, exports.sendTemplateViaChatHub)(phone, "order_status_update", {
-        body: [statusName, orderId, customerName]
+    if (statusName === "OUT_FOR_DELIVERY" || statusName === "SHIPPED") {
+        return (0, exports.sendTemplateViaChatHub)(phone, "order_update_notification", {
+            body: [customerName]
+        });
+    }
+    return (0, exports.sendTemplateViaChatHub)(phone, "order_management_4", {
+        body: [customerName, orderId]
     });
 });
 exports.sendOrderStatusUpdateViaWhatsapp = sendOrderStatusUpdateViaWhatsapp;
+/**
+ * Bill / Order cancelled notification via approved UTILITY template 'bill_created'.
+ */
 const sendBillCancelledViaWhatsapp = (phone, customerName, orderId, reason) => __awaiter(void 0, void 0, void 0, function* () {
-    const cancelStatus = reason ? `CANCELLED (${reason})` : "CANCELLED";
-    return (0, exports.sendTemplateViaChatHub)(phone, "order_status_update", {
-        body: [cancelStatus, orderId, customerName]
+    const origin = process.env.CLIENT_URL || "https://bookmyveg.co.in";
+    const invoicePdfLink = `${origin}/invoice/${orderId}`;
+    const cancelDesc = reason ? `CANCELLED (${reason})` : "CANCELLED";
+    return (0, exports.sendTemplateViaChatHub)(phone, "bill_created", {
+        body: [customerName, orderId, "0", cancelDesc, invoicePdfLink]
     });
 });
 exports.sendBillCancelledViaWhatsapp = sendBillCancelledViaWhatsapp;
-const sendInactiveCustomerReminderViaWhatsapp = (phone, customerName) => __awaiter(void 0, void 0, void 0, function* () {
-    const origin = process.env.CLIENT_URL || "https://bookmyveg.co.in";
-    return (0, exports.sendTemplateViaChatHub)(phone, "fresh_order", {
-        body: [origin]
-    });
+/**
+ * Inactivity reminder - marketing templates blocked by strict utility policy.
+ */
+const sendInactiveCustomerReminderViaWhatsapp = (_phone, _customerName) => __awaiter(void 0, void 0, void 0, function* () {
+    console.warn("[MBG WhatsApp] Inactivity reminder skipped: strict utility message policy forbids marketing broadcasts.");
+    return {
+        success: false,
+        skipped: true,
+        message: "Marketing broadcasts are disabled under strict utility-only policy."
+    };
 });
 exports.sendInactiveCustomerReminderViaWhatsapp = sendInactiveCustomerReminderViaWhatsapp;
-const sendRegistrationThankYouViaWhatsapp = (phone, customerName) => __awaiter(void 0, void 0, void 0, function* () {
-    return (0, exports.sendTemplateViaChatHub)(phone, "registration_thank_you", {
-        body: [customerName]
-    });
+/**
+ * Registration welcome - marketing templates blocked by strict utility policy.
+ */
+const sendRegistrationThankYouViaWhatsapp = (_phone, _customerName) => __awaiter(void 0, void 0, void 0, function* () {
+    console.warn("[MBG WhatsApp] Registration welcome skipped: strict utility message policy forbids marketing broadcasts.");
+    return {
+        success: false,
+        skipped: true,
+        message: "Marketing welcome messages are disabled under strict utility-only policy."
+    };
 });
 exports.sendRegistrationThankYouViaWhatsapp = sendRegistrationThankYouViaWhatsapp;
