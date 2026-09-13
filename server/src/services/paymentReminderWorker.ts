@@ -1,10 +1,11 @@
 import prisma from "../config/prisma";
 import logger from "../utils/logger";
-import { sendTemplateViaChatHub, sendFeedbackRequestViaWhatsapp } from "./mbgcard";
+import { sendTemplateViaChatHub, sendFeedbackRequestViaWhatsapp, sendPaymentReminderViaWhatsapp } from "./mbgcard";
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
 const THREE_HOURS_MS = 3 * ONE_HOUR_MS;
 const ONE_DAY_MS = 24 * ONE_HOUR_MS;
+const FOUR_DAYS_MS = 4 * ONE_DAY_MS;
 
 export const startPaymentReminderWorker = () => {
     logger.info("[Payment & Retention Reminder Worker] Daemon initialized.");
@@ -25,25 +26,36 @@ export const startPaymentReminderWorker = () => {
                 })
             ]);
 
-            // ─── 1. DELAYED FEEDBACK REQUESTS (3 HOURS POST-DELIVERY) ───
-            const deliveredOrders = await prisma.order.findMany({
+            // ─── 1. DELAYED FEEDBACK REQUESTS (3 HOURS POST ORDER / DELIVERY) ───
+            // Checks online DELIVERED orders and POS CONFIRMED retail orders
+            const eligibleOrders: any[] = await (prisma.order.findMany as any)({
                 where: {
-                    status: "DELIVERED",
-                    feedbackSent: false
+                    feedbackSent: false,
+                    OR: [
+                        { status: "DELIVERED" },
+                        { channel: "POS", status: "CONFIRMED" }
+                    ]
                 },
-                include: { user: true, statusHistory: { where: { status: "DELIVERED" }, orderBy: { createdAt: "desc" }, take: 1 } }
+                include: { 
+                    user: true, 
+                    statusHistory: { 
+                        orderBy: { createdAt: "desc" }, 
+                        take: 1 
+                    } 
+                },
+                take: 100
             });
 
-            for (const order of deliveredOrders) {
+            for (const order of eligibleOrders) {
                 const user = order.user;
                 if (!user || !user.phone) continue;
 
-                const deliveredHistory = order.statusHistory?.[0];
-                const deliveredAt = deliveredHistory ? new Date(deliveredHistory.createdAt) : new Date(order.updatedAt);
-                const elapsedMs = now.getTime() - deliveredAt.getTime();
+                const statusHistoryItem = order.statusHistory?.[0];
+                const completedAt = statusHistoryItem ? new Date(statusHistoryItem.createdAt) : new Date(order.updatedAt || order.createdAt);
+                const elapsedMs = now.getTime() - completedAt.getTime();
 
                 if (elapsedMs >= THREE_HOURS_MS) {
-                    logger.info(`[Feedback Worker] Dispatching 3-hour feedback request to ${user.name} (${user.phone}) for order ${order.id}`);
+                    logger.info(`[Feedback Worker] Dispatching 3-hour post-order feedback request to ${user.name} (${user.phone}) for order ${order.id}`);
                     try {
                         await sendFeedbackRequestViaWhatsapp(user.phone, user.name || "Customer", order.id);
                         
@@ -57,14 +69,15 @@ export const startPaymentReminderWorker = () => {
                 }
             }
 
-            // ─── 2. DUES PAYMENT REMINDERS (With Locked Payment Link) ───
+            // ─── 2. AUTOMATIC DUES PAYMENT REMINDERS (With Locked Payment Link) ───
             const unpaidOrders = await prisma.order.findMany({
                 where: {
                     isPaid: false,
                     paymentStatus: { in: ["PENDING", "PARTIAL"] },
                     status: { notIn: ["CANCELLED", "FAILED"] }
                 },
-                include: { user: true, payments: true, location: true }
+                include: { user: true, payments: true, location: true },
+                take: 100
             });
 
             // Target duration from config or default (7 days)
@@ -84,46 +97,46 @@ export const startPaymentReminderWorker = () => {
                 const isCycleTrigger = dueIntervalCycles >= 1 && remainderMs < (2 * ONE_HOUR_MS);
 
                 if (isCycleTrigger) {
-                    const paid = order.payments.filter((p: any) => p.status === "SUCCESS" || !p.status).reduce((sum: number, p: any) => sum + Number(p.amount), 0);
+                    const paid = order.payments.filter((p: any) => p.status === "SUCCESS" || p.status === "COMPLETED" || p.status === "PAID" || !p.status).reduce((sum: number, p: any) => sum + Number(p.amount), 0);
                     const dueAmount = Math.max(0, Number(order.totalAmount) - paid);
 
                     if (dueAmount > 0) {
-                        const templateName = dueConfig?.templateId || "due_payment_reminder";
-                        const lockedPayLink = `${origin}/pay?userid=${user.id}&number=${user.phone}&billid=${order.id}&lockAmount=true`;
-
-                        logger.info(`[Payment Reminder Worker] Dispatching due reminder to customer ${user.name} (${user.phone}) for order ${order.id} (Due: ₹${dueAmount})`);
-                        await sendTemplateViaChatHub(user.phone, templateName, {
-                            body: [
-                                user.name || "Customer",
-                                String(dueAmount),
-                                order.id,
-                                lockedPayLink
-                            ]
-                        }).catch((err: any) => {
-                            logger.error(`[Payment Reminder Worker] Error sending to ${user.phone}: ${err.message}`);
+                        logger.info(`[Payment Reminder Worker] Dispatching automatic due reminder to customer ${user.name} (${user.phone}) for order ${order.id} (Due: ₹${dueAmount})`);
+                        await sendPaymentReminderViaWhatsapp(
+                            user.phone,
+                            user.name || "Customer",
+                            dueAmount,
+                            order.id,
+                            user.id,
+                            order.id
+                        ).catch((err: any) => {
+                            logger.error(`[Payment Reminder Worker] Error sending automatic reminder to ${user.phone}: ${err.message}`);
                         });
                     }
                 }
             }
 
-            // ─── 3. 7-DAY (OR CONFIGURABLE) INACTIVITY REMINDERS ───
-            const inactiveDurationValue = inactiveConfig?.triggerDurationValue || 7;
+            // ─── 3. 4-DAY INACTIVITY REMINDER (TEMPLATE: fresh_order) ───
+            // Triggers when customer has not visited/ordered in 4 days
+            const inactiveDurationValue = inactiveConfig?.triggerDurationValue || 4;
             const inactiveDurationUnit = inactiveConfig?.triggerDurationUnit || "DAYS";
-            const inactiveIntervalMs = inactiveDurationUnit === "HOURS" ? inactiveDurationValue * ONE_HOUR_MS : inactiveDurationValue * ONE_DAY_MS;
-            const inactivityThresholdDate = new Date(now.getTime() - inactiveIntervalMs);
+            const inactiveIntervalMs = inactiveDurationUnit === "HOURS" 
+                ? inactiveDurationValue * ONE_HOUR_MS 
+                : (inactiveDurationValue === 4 ? FOUR_DAYS_MS : inactiveDurationValue * ONE_DAY_MS);
 
-            // Find users who have orders, but whose latest order is older than threshold
+            // Find customers who have past orders, whose latest order is older than 4 days
             const customersWithHistory = await prisma.user.findMany({
                 where: {
                     role: "USER",
                     isActive: true,
-                    orders: { some: {} }
+                    orders: { some: { status: { notIn: ["CANCELLED", "FAILED"] } } }
                 },
                 select: {
                     id: true,
                     name: true,
                     phone: true,
                     orders: {
+                        where: { status: { notIn: ["CANCELLED", "FAILED"] } },
                         orderBy: { createdAt: "desc" },
                         take: 1,
                         select: { createdAt: true }
@@ -141,23 +154,42 @@ export const startPaymentReminderWorker = () => {
                 const inactiveMs = now.getTime() - lastOrderDate.getTime();
                 const daysInactive = Math.floor(inactiveMs / ONE_DAY_MS);
 
-                // Check if customer just crossed the inactivity threshold today (within 2 hours window)
-                if (inactiveMs >= inactiveIntervalMs && (inactiveMs - inactiveIntervalMs) < (2 * ONE_HOUR_MS)) {
-                    const templateName = inactiveConfig?.templateId || "customer_inactive_reminder";
-                    const storeLink = `${origin}`;
-                    const storeName = "Book My Veg";
-
-                    logger.info(`[Retention Worker] Dispatching ${daysInactive}-day inactivity reminder to customer ${customer.name} (${customer.phone})`);
-                    await sendTemplateViaChatHub(customer.phone, templateName, {
-                        body: [
-                            customer.name || "Valued Customer",
-                            storeName,
-                            String(daysInactive),
-                            storeLink
-                        ]
-                    }).catch((err: any) => {
-                        logger.error(`[Retention Worker] Inactivity send failure for ${customer.phone}: ${err.message}`);
+                // If customer has been inactive for >= 4 days
+                if (inactiveMs >= inactiveIntervalMs) {
+                    // Check if an inactivity reminder has already been sent for this cycle (since latest order)
+                    const existingReminderAudit = await (prisma.auditLog.findFirst as any)({
+                        where: {
+                            entityType: "USER",
+                            entityId: customer.id,
+                            action: "WHATSAPP_4DAY_INACTIVE_REMINDER",
+                            createdAt: { gte: lastOrderDate }
+                        }
                     });
+
+                    if (existingReminderAudit) {
+                        continue; // Already sent since their last visit
+                    }
+
+                    const templateName = inactiveConfig?.templateId || "fresh_order";
+                    logger.info(`[Retention Worker] Dispatching 4-day inactivity reminder (${templateName}) to customer ${customer.name} (${customer.phone}) - inactive for ${daysInactive} days`);
+
+                    try {
+                        await sendTemplateViaChatHub(customer.phone, templateName, {
+                            body: [origin]
+                        });
+
+                        // Record audit log to ensure message is only sent once per inactivity cycle
+                        await (prisma.auditLog.create as any)({
+                            data: {
+                                entityType: "USER",
+                                entityId: customer.id,
+                                action: "WHATSAPP_4DAY_INACTIVE_REMINDER",
+                                newValue: { daysInactive, template: templateName, sentAt: now }
+                            }
+                        });
+                    } catch (err: any) {
+                        logger.error(`[Retention Worker] Inactivity send failure for ${customer.phone}: ${err.message}`);
+                    }
                 }
             }
 

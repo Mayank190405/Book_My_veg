@@ -12,7 +12,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.sendRegistrationThankYouViaWhatsapp = exports.sendOrderStatusUpdateViaWhatsapp = exports.sendPaymentReceivedViaWhatsapp = exports.sendPaymentReminderViaWhatsapp = exports.sendInvoiceDueViaWhatsapp = exports.sendInvoicePaidViaWhatsapp = exports.sendFeedbackRequestViaWhatsapp = exports.sendTemplateViaChatHub = exports.sendOrderConfirmationViaWhatsapp = exports.getConversation = exports.getMyMetaTemplates = exports.sendFlowViaChatHub = exports.sendOtpViaWhatsapp = void 0;
+exports.sendRegistrationThankYouViaWhatsapp = exports.sendInactiveCustomerReminderViaWhatsapp = exports.sendBillCancelledViaWhatsapp = exports.sendOrderStatusUpdateViaWhatsapp = exports.sendPaymentReceivedViaWhatsapp = exports.sendPaymentReminderViaWhatsapp = exports.sendInvoiceDueViaWhatsapp = exports.sendInvoicePaidViaWhatsapp = exports.sendFeedbackRequestViaWhatsapp = exports.sendTemplateViaChatHub = exports.sendOrderConfirmationViaWhatsapp = exports.getConversation = exports.getMyMetaTemplates = exports.sendFlowViaChatHub = exports.sendOtpViaWhatsapp = void 0;
 const axios_1 = __importDefault(require("axios"));
 const dotenv_1 = __importDefault(require("dotenv"));
 dotenv_1.default.config();
@@ -175,7 +175,7 @@ exports.sendOrderConfirmationViaWhatsapp = sendOrderConfirmationViaWhatsapp;
 const sendTemplateViaChatHub = (phone, templateName, variables, dynamicMedia) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
     const cleanPhone = phone.replace(/\D/g, "");
-    const formattedPhone = cleanPhone.startsWith("91") ? cleanPhone : `91${cleanPhone}`;
+    const formattedPhone = cleanPhone.length === 10 ? `91${cleanPhone}` : (cleanPhone.startsWith("91") ? cleanPhone : `91${cleanPhone}`);
     const payload = {
         templateName,
         to: formattedPhone,
@@ -258,6 +258,20 @@ const sendOrderStatusUpdateViaWhatsapp = (phone, customerName, orderId, statusNa
     });
 });
 exports.sendOrderStatusUpdateViaWhatsapp = sendOrderStatusUpdateViaWhatsapp;
+const sendBillCancelledViaWhatsapp = (phone, customerName, orderId, reason) => __awaiter(void 0, void 0, void 0, function* () {
+    const cancelStatus = reason ? `CANCELLED (${reason})` : "CANCELLED";
+    return (0, exports.sendTemplateViaChatHub)(phone, "order_status_update", {
+        body: [cancelStatus, orderId, customerName]
+    });
+});
+exports.sendBillCancelledViaWhatsapp = sendBillCancelledViaWhatsapp;
+const sendInactiveCustomerReminderViaWhatsapp = (phone, customerName) => __awaiter(void 0, void 0, void 0, function* () {
+    const origin = process.env.CLIENT_URL || "https://bookmyveg.co.in";
+    return (0, exports.sendTemplateViaChatHub)(phone, "fresh_order", {
+        body: [origin]
+    });
+});
+exports.sendInactiveCustomerReminderViaWhatsapp = sendInactiveCustomerReminderViaWhatsapp;
 const sendRegistrationThankYouViaWhatsapp = (phone, customerName) => __awaiter(void 0, void 0, void 0, function* () {
     return (0, exports.sendTemplateViaChatHub)(phone, "registration_thank_you", {
         body: [customerName]

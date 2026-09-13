@@ -183,7 +183,7 @@ export const sendTemplateViaChatHub = async (
     dynamicMedia?: string
 ) => {
     const cleanPhone = phone.replace(/\D/g, "");
-    const formattedPhone = cleanPhone.startsWith("91") ? cleanPhone : `91${cleanPhone}`;
+    const formattedPhone = cleanPhone.length === 10 ? `91${cleanPhone}` : (cleanPhone.startsWith("91") ? cleanPhone : `91${cleanPhone}`);
 
     const payload: any = {
         templateName,
@@ -301,6 +301,28 @@ export const sendOrderStatusUpdateViaWhatsapp = async (
 ) => {
     return sendTemplateViaChatHub(phone, "order_status_update", {
         body: [statusName, orderId, customerName]
+    });
+};
+
+export const sendBillCancelledViaWhatsapp = async (
+    phone: string,
+    customerName: string,
+    orderId: string,
+    reason?: string
+) => {
+    const cancelStatus = reason ? `CANCELLED (${reason})` : "CANCELLED";
+    return sendTemplateViaChatHub(phone, "order_status_update", {
+        body: [cancelStatus, orderId, customerName]
+    });
+};
+
+export const sendInactiveCustomerReminderViaWhatsapp = async (
+    phone: string,
+    customerName?: string
+) => {
+    const origin = process.env.CLIENT_URL || "https://bookmyveg.co.in";
+    return sendTemplateViaChatHub(phone, "fresh_order", {
+        body: [origin]
     });
 };
 

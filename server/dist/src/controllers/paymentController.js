@@ -1609,7 +1609,9 @@ const sendPaymentReminderController = (req, res, next) => __awaiter(void 0, void
         if (!user || !user.phone) {
             return res.status(400).json({ message: "Customer phone number not found" });
         }
-        const paid = order.payments.filter((p) => p.status === "SUCCESS").reduce((sum, p) => sum + Number(p.amount), 0);
+        const paid = order.payments
+            .filter((p) => p.status === "SUCCESS" || p.status === "COMPLETED" || p.status === "PAID" || !p.status)
+            .reduce((sum, p) => sum + Number(p.amount), 0);
         const dueAmount = Math.max(0, Number(order.totalAmount) - paid);
         const { sendPaymentReminderViaWhatsapp } = require("../services/mbgcard");
         yield sendPaymentReminderViaWhatsapp(user.phone, user.name || "Customer", dueAmount, order.id, user.id, order.id);

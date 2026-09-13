@@ -1072,7 +1072,7 @@ const getTodayPOSSales = (req, res, next) => __awaiter(void 0, void 0, void 0, f
 });
 exports.getTodayPOSSales = getTodayPOSSales;
 const cancelPOSOrder = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a;
+    var _a, _b;
     const orderId = req.params.orderId;
     const { reason, refundMode } = req.body;
     const staffId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.userId;
@@ -1081,7 +1081,7 @@ const cancelPOSOrder = (req, res, next) => __awaiter(void 0, void 0, void 0, fun
     try {
         const order = yield prisma_1.default.order.findUnique({
             where: { id: orderId },
-            include: { items: true }
+            include: { items: true, user: { select: { id: true, name: true, phone: true } } }
         });
         if (!order)
             return next(new errors_1.AppError("Order not found", 404));
@@ -1111,6 +1111,18 @@ const cancelPOSOrder = (req, res, next) => __awaiter(void 0, void 0, void 0, fun
                 }
             });
         }));
+        // ── WhatsApp Notification Dispatch (Bill Cancelled) ────────────────
+        if ((_b = order.user) === null || _b === void 0 ? void 0 : _b.phone) {
+            try {
+                const { sendBillCancelledViaWhatsapp } = require("../services/mbgcard");
+                sendBillCancelledViaWhatsapp(order.user.phone, order.user.name || "Customer", orderId, reason).catch((err) => {
+                    console.error("[POSController] WhatsApp Bill Cancelled dispatch failure:", err.message);
+                });
+            }
+            catch (err) {
+                console.warn("[POSController] Failed to dispatch WhatsApp cancellation notification:", err.message);
+            }
+        }
         res.json({ message: "Order cancelled." });
     }
     catch (error) {
@@ -1279,7 +1291,11 @@ const collectDuePayment = (req, res, next) => __awaiter(void 0, void 0, void 0, 
                 const totalAmount = orderTotal;
                 const remainingDueAfter = Math.max(0, orderTotal - newTotalPaid);
                 const paymentModeDesc = paymentSlices.map(p => `${p.method}: ₹${p.amount}`).join(", ");
-                const { sendInvoicePaidViaWhatsapp, sendInvoiceDueViaWhatsapp } = require("../services/mbgcard");
+                const { sendInvoicePaidViaWhatsapp, sendInvoiceDueViaWhatsapp, sendPaymentReceivedViaWhatsapp } = require("../services/mbgcard");
+                // Send Payment Received template confirmation
+                sendPaymentReceivedViaWhatsapp(user.phone, user.name || "Customer", orderId, totalPayingNow, paymentModeDesc).catch((err) => {
+                    console.error("[POS Bill Settle] WhatsApp Payment Received dispatch failure:", err.message);
+                });
                 if (isFull) {
                     sendInvoicePaidViaWhatsapp(user.phone, user.name || "Customer", orderId, totalAmount, paymentModeDesc, orderId).catch((err) => {
                         console.error("[POS Bill Settle] WhatsApp Invoice Paid dispatch failure:", err.message);

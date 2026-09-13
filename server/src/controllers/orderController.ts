@@ -322,10 +322,16 @@ export const updateOrderStatus = async (req: AuthenticatedRequest, res: Response
         try {
             const user = await prisma.user.findUnique({ where: { id: order.userId }, select: { name: true, phone: true } });
             if (user?.phone) {
-                const { sendOrderStatusUpdateViaWhatsapp } = require("../services/mbgcard");
-                sendOrderStatusUpdateViaWhatsapp(user.phone, user.name || "Customer", id as string, status).catch((err: any) => {
-                    console.error("[OrderController] WhatsApp status update dispatch failure:", err);
-                });
+                const { sendOrderStatusUpdateViaWhatsapp, sendBillCancelledViaWhatsapp } = require("../services/mbgcard");
+                if (status === "CANCELLED") {
+                    sendBillCancelledViaWhatsapp(user.phone, user.name || "Customer", id as string, remark).catch((err: any) => {
+                        console.error("[OrderController] WhatsApp bill cancellation dispatch failure:", err);
+                    });
+                } else {
+                    sendOrderStatusUpdateViaWhatsapp(user.phone, user.name || "Customer", id as string, status).catch((err: any) => {
+                        console.error("[OrderController] WhatsApp status update dispatch failure:", err);
+                    });
+                }
             }
         } catch (err) {
             console.error("[OrderController] Failed to send WhatsApp status update:", err);

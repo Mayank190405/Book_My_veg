@@ -244,13 +244,15 @@ exports.orderService = {
      */
     cancelOrder(orderId, userId, _isAdmin, remark) {
         return __awaiter(this, void 0, void 0, function* () {
-            return yield (0, transaction_1.withTransactionRetry)((tx) => __awaiter(this, void 0, void 0, function* () {
+            let targetUser = null;
+            yield (0, transaction_1.withTransactionRetry)((tx) => __awaiter(this, void 0, void 0, function* () {
                 const order = yield tx.order.findUnique({
                     where: { id: orderId },
-                    include: { items: true }
+                    include: { items: true, user: { select: { name: true, phone: true } } }
                 });
                 if (!order)
                     throw new Error("Order not found");
+                targetUser = order.user;
                 yield inventoryService_1.InventoryService.restoreStock({
                     items: order.items.map((i) => ({
                         productId: i.productId,
@@ -276,6 +278,18 @@ exports.orderService = {
                     },
                 });
             }));
+            // ── WhatsApp Notification Dispatch (Bill Cancelled) ────────────────
+            try {
+                if (targetUser && targetUser.phone) {
+                    const { sendBillCancelledViaWhatsapp } = require("./mbgcard");
+                    sendBillCancelledViaWhatsapp(targetUser.phone, targetUser.name || "Customer", orderId, remark).catch((err) => {
+                        console.error("[OrderService] WhatsApp bill cancellation dispatch failure:", err);
+                    });
+                }
+            }
+            catch (err) {
+                console.error("[OrderService] Failed to dispatch WhatsApp cancellation:", err.message);
+            }
         });
     }
 };

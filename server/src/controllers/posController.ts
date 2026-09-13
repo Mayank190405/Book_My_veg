@@ -1162,7 +1162,7 @@ export const cancelPOSOrder = async (req: AuthenticatedRequest, res: Response, n
     try {
         const order = await (prisma.order.findUnique as any)({
             where: { id: orderId },
-            include: { items: true }
+            include: { items: true, user: { select: { id: true, name: true, phone: true } } }
         }) as any;
 
         if (!order) return next(new AppError("Order not found", 404));
@@ -1193,6 +1193,18 @@ export const cancelPOSOrder = async (req: AuthenticatedRequest, res: Response, n
                 }
             });
         });
+
+        // ── WhatsApp Notification Dispatch (Bill Cancelled) ────────────────
+        if (order.user?.phone) {
+            try {
+                const { sendBillCancelledViaWhatsapp } = require("../services/mbgcard");
+                sendBillCancelledViaWhatsapp(order.user.phone, order.user.name || "Customer", orderId, reason).catch((err: any) => {
+                    console.error("[POSController] WhatsApp Bill Cancelled dispatch failure:", err.message);
+                });
+            } catch (err: any) {
+                console.warn("[POSController] Failed to dispatch WhatsApp cancellation notification:", err.message);
+            }
+        }
 
         res.json({ message: "Order cancelled." });
     } catch (error) { next(error); }
@@ -1376,7 +1388,12 @@ export const collectDuePayment = async (req: AuthenticatedRequest, res: Response
                 const totalAmount = orderTotal;
                 const remainingDueAfter = Math.max(0, orderTotal - newTotalPaid);
                 const paymentModeDesc = paymentSlices.map(p => `${p.method}: ₹${p.amount}`).join(", ");
-                const { sendInvoicePaidViaWhatsapp, sendInvoiceDueViaWhatsapp } = require("../services/mbgcard");
+                const { sendInvoicePaidViaWhatsapp, sendInvoiceDueViaWhatsapp, sendPaymentReceivedViaWhatsapp } = require("../services/mbgcard");
+
+                // Send Payment Received template confirmation
+                sendPaymentReceivedViaWhatsapp(user.phone, user.name || "Customer", orderId, totalPayingNow, paymentModeDesc).catch((err: any) => {
+                    console.error("[POS Bill Settle] WhatsApp Payment Received dispatch failure:", err.message);
+                });
 
                 if (isFull) {
                     sendInvoicePaidViaWhatsapp(user.phone, user.name || "Customer", orderId, totalAmount, paymentModeDesc, orderId).catch((err: any) => {
