@@ -435,6 +435,32 @@ model SectionProduct {
   @@unique([sectionId, productId])
 }
 
+model CmsSection {
+  id          String   @id @default(uuid())
+  page        String   @default("home")
+  type        String   // "hero_banner", "promo_banner", "product_carousel", "product_grid", "category_grid", "offer_card", "countdown_banner", "festival_banner", "video_banner", "text_block", "divider"
+  template    String?  // "IMAGE_BANNER", "SPLIT_BANNER", "PRODUCT_SHOWCASE", "THREE_PRODUCT_BANNER", "PRODUCT_GRID_BANNER", "OFFER_BANNER", "FESTIVAL_BANNER", "COUNTDOWN_BANNER", "CATEGORY_BANNER", "VIDEO_BANNER"
+  title       String?
+  subtitle    String?
+  size        String   @default("large") // "small", "medium", "large", "full_width"
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+  status      String   @default("PUBLISHED") // "DRAFT", "SCHEDULED", "PUBLISHED", "PAUSED", "EXPIRED", "ARCHIVED"
+  theme       Json?    // { background, secondaryBackground, gradient, headingColor, textColor, ctaBackground, ctaText, badgeBackground, badgeText, borderColor }
+  layout      Json?    // { desktop: { columns, aspectRatio, minHeight }, tablet: {...}, mobile: {...}, borderRadius, padding }
+  content     Json?    // { headline, subtitle, image, video, ctaText, ctaLink, badgeText, countdownTarget, offerCode, discountText }
+  productIds  Json?    // array of string UUIDs or [{ productId, position, displayPrice, displayDiscount }]
+  categoryIds Json?    // array of category UUIDs
+  conditions  Json?    // { city, pincode, customerSegment, minCartValue }
+  scheduling  Json?    // { startDate, endDate, startTime, endTime }
+  abTest      Json?    // { enabled, variantA, variantB, trafficSplit }
+  metadata    Json?    // arbitrary extensible attributes
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([page, isActive, sortOrder])
+}
+
 model OtpTemplate {
   id        String   @id @default(uuid())
   name      String   @unique

@@ -18,7 +18,12 @@ const WINDOW_SIZE_IN_SECONDS = 3600; // 1 hour
 const MAX_WINDOW_REQUEST_COUNT = 8; // 8 OTPs per hour per IP/Phone
 const rateLimiter = (limit = MAX_WINDOW_REQUEST_COUNT, window = WINDOW_SIZE_IN_SECONDS) => {
     return (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
-        var _a;
+        var _a, _b;
+        // Skip rate limiting for test phone number 9999999999
+        const rawPhone = (_a = req.body) === null || _a === void 0 ? void 0 : _a.phone;
+        if (rawPhone && String(rawPhone).replace(/\D/g, "").endsWith("9999999999")) {
+            return next();
+        }
         // Skip rate limiting for authenticated staff/admin
         if (req.user && (req.user.role === 'ADMIN' ||
             req.user.role === 'STORE_ADMIN' ||
@@ -28,7 +33,7 @@ const rateLimiter = (limit = MAX_WINDOW_REQUEST_COUNT, window = WINDOW_SIZE_IN_S
             return next();
         }
         const ip = req.ip;
-        const phone = (_a = req.body) === null || _a === void 0 ? void 0 : _a.phone; // If available
+        const phone = (_b = req.body) === null || _b === void 0 ? void 0 : _b.phone; // If available
         const routePath = req.baseUrl || req.path || "global";
         const key = `rate_limit:${routePath}:${phone || ip}`;
         try {

@@ -12,8 +12,9 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getPopularSearches = exports.clearSearchHistory = exports.recordSearch = exports.getSearchHistory = void 0;
+exports.smartSearchList = exports.getPopularSearches = exports.clearSearchHistory = exports.recordSearch = exports.getSearchHistory = void 0;
 const prisma_1 = __importDefault(require("../config/prisma"));
+const geminiSearchService_1 = require("../services/geminiSearchService");
 // Get user search history
 const getSearchHistory = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const userId = req.user.userId;
@@ -102,3 +103,19 @@ const getPopularSearches = (req, res) => __awaiter(void 0, void 0, void 0, funct
     }
 });
 exports.getPopularSearches = getPopularSearches;
+// Smart Multi-Item Shopping List & Gemini Search
+const smartSearchList = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { query, locationId } = req.body;
+        if (!query || typeof query !== "string") {
+            return res.status(400).json({ message: "Search query is required" });
+        }
+        const result = yield geminiSearchService_1.GeminiSearchService.getInstance().processSmartSearch(query, locationId);
+        return res.json(result);
+    }
+    catch (error) {
+        console.error("[SearchController] smartSearchList error:", error);
+        return res.status(500).json({ message: "Failed to process smart search" });
+    }
+});
+exports.smartSearchList = smartSearchList;

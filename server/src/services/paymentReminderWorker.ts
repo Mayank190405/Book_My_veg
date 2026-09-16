@@ -32,7 +32,7 @@ export const startPaymentReminderWorker = () => {
             ]);
 
             // ─── 1. DELAYED FEEDBACK REQUESTS (3 HOURS POST ORDER / DELIVERY) ───
-            // Checks online DELIVERED orders and POS CONFIRMED retail orders
+            // Strictly sent ONLY ONCE per customer across their entire lifetime (never on every order)
             const eligibleOrders: any[] = await (prisma.order.findMany as any)({
                 where: {
                     feedbackSent: false,
@@ -48,24 +48,68 @@ export const startPaymentReminderWorker = () => {
                         take: 1 
                     } 
                 },
+                orderBy: { createdAt: "asc" },
                 take: 100
             });
 
+            const processedUserIdsInBatch = new Set<string>();
+
             for (const order of eligibleOrders) {
                 const user = order.user;
-                if (!user || !user.phone) continue;
+                if (!user || !user.phone) {
+                    await prisma.order.update({
+                        where: { id: order.id },
+                        data: { feedbackSent: true }
+                    });
+                    continue;
+                }
+
+                // If this user was already processed in this batch, mark order and skip
+                if (processedUserIdsInBatch.has(user.id)) {
+                    await prisma.order.update({
+                        where: { id: order.id },
+                        data: { feedbackSent: true }
+                    });
+                    continue;
+                }
+
+                // Strictly enforce: ONCE PER CUSTOMER LIFETIME
+                // Check if this customer has ever received a feedback message or already provided a rating/feedback
+                const existingFeedbackRecord = await prisma.order.findFirst({
+                    where: {
+                        userId: user.id,
+                        OR: [
+                            { feedbackSent: true },
+                            { rating: { not: null } },
+                            { feedback: { not: null } }
+                        ]
+                    }
+                });
+
+                if (existingFeedbackRecord) {
+                    processedUserIdsInBatch.add(user.id);
+                    // Mark all pending orders for this user as feedbackSent: true so they are never queried again
+                    await prisma.order.updateMany({
+                        where: { userId: user.id, feedbackSent: false },
+                        data: { feedbackSent: true }
+                    });
+                    logger.info(`[Feedback Worker] Customer ${user.phone} (${user.name || "Customer"}) already received a feedback prompt or reviewed order ${existingFeedbackRecord.id}. Skipping order ${order.id}.`);
+                    continue;
+                }
 
                 const statusHistoryItem = order.statusHistory?.[0];
                 const completedAt = statusHistoryItem ? new Date(statusHistoryItem.createdAt) : new Date(order.updatedAt || order.createdAt);
                 const elapsedMs = now.getTime() - completedAt.getTime();
 
                 if (elapsedMs >= THREE_HOURS_MS) {
-                    logger.info(`[Feedback Worker] Dispatching 3-hour post-order feedback request to ${user.name} (${user.phone}) for order ${order.id}`);
+                    logger.info(`[Feedback Worker] Dispatching ONE-TIME 3-hour post-order feedback request to ${user.name} (${user.phone}) for first-time order ${order.id}`);
                     try {
                         await sendFeedbackRequestViaWhatsapp(user.phone, user.name || "Customer", order.id);
+                        processedUserIdsInBatch.add(user.id);
                         
-                        await prisma.order.update({
-                            where: { id: order.id },
+                        // Mark ALL orders of this customer as feedbackSent: true to guarantee they are never messaged again
+                        await prisma.order.updateMany({
+                            where: { userId: user.id },
                             data: { feedbackSent: true }
                         });
                     } catch (err: any) {

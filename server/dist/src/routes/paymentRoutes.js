@@ -8,6 +8,10 @@ const router = (0, express_1.Router)();
 router.post("/webhook", paymentController_1.handleWebhook);
 router.post("/easebuzz/callback", paymentController_1.handleEasebuzzCallback);
 router.use(auth_1.authenticate);
+// Customer Advance Wallet Management & Deposit Flow
+router.get("/wallet", paymentController_1.getWalletDetails);
+router.post("/wallet/initiate", paymentController_1.initiateWalletDeposit);
+router.post("/wallet/verify", paymentController_1.verifyWalletDeposit);
 router.get("/eligibility", paymentController_1.checkPaymentEligibility);
 router.post("/initiate", paymentController_1.initiatePayment);
 router.post("/:orderId/generate-link", paymentController_1.generatePaymentLink);

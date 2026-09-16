@@ -291,19 +291,6 @@ export const updateOrderStatus = async (req: AuthenticatedRequest, res: Response
                     data: { isPaid: true, paymentStatus: "COMPLETED" }
                 });
             }
-
-            // Trigger feedback request WhatsApp notification!
-            try {
-                const user = await prisma.user.findUnique({ where: { id: order.userId }, select: { name: true, phone: true } });
-                if (user?.phone) {
-                    const { sendFeedbackRequestViaWhatsapp } = require("../services/mbgcard");
-                    sendFeedbackRequestViaWhatsapp(user.phone, user.name || "Customer", id as string).catch((err: any) => {
-                        console.error("[OrderController] WhatsApp feedback dispatch failure:", err);
-                    });
-                }
-            } catch (err) {
-                console.error("[OrderController] Failed to send WhatsApp feedback:", err);
-            }
         }
 
         // Create Audit Log

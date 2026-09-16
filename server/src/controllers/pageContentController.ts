@@ -124,6 +124,10 @@ Once an exchange request is initiated and approved:
 - **REGISTERED ADDRESS:** Plot No. 42, Sector 4, Dwarka, New Delhi - 110075, India
 - **CUSTOMER SUPPORT EMAIL:** support@bookmyveg.com
 - **BUSINESS CONTACT NUMBER:** +91 77968 33633`
+    },
+    "google-review-link": {
+        title: "Google Business Review Link",
+        content: process.env.GOOGLE_REVIEW_URL || "https://share.google/AcOZ060z33fcR4OGQ"
     }
 };
 

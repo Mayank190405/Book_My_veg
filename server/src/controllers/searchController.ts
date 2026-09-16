@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import prisma from "../config/prisma";
 import { AuthRequest } from "../middleware/auth";
+import { GeminiSearchService } from "../services/geminiSearchService";
 
 // Get user search history
 export const getSearchHistory = async (req: AuthRequest, res: Response) => {
@@ -86,5 +87,21 @@ export const getPopularSearches = async (req: Request, res: Response) => {
     } catch (error) {
         console.warn("[SearchController] Popular search fallback notice");
         res.json(DEFAULT_POPULAR);
+    }
+};
+
+// Smart Multi-Item Shopping List & Gemini Search
+export const smartSearchList = async (req: Request, res: Response) => {
+    try {
+        const { query, locationId } = req.body;
+        if (!query || typeof query !== "string") {
+            return res.status(400).json({ message: "Search query is required" });
+        }
+
+        const result = await GeminiSearchService.getInstance().processSmartSearch(query, locationId);
+        return res.json(result);
+    } catch (error: any) {
+        console.error("[SearchController] smartSearchList error:", error);
+        return res.status(500).json({ message: "Failed to process smart search" });
     }
 };

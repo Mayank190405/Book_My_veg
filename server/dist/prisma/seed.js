@@ -44,19 +44,34 @@ function main() {
             });
         }
         console.log("✅ Measurement units operational");
-        // 2. Create Initial Main Hub (Required for system context)
-        const mainHub = yield prisma.location.upsert({
-            where: { slug: "main-hub" },
-            update: {},
+        // 2. Create Initial Store Location (Book My Veg Anandwali, Nashik)
+        const store = yield prisma.location.upsert({
+            where: { slug: "book-my-veg" },
+            update: {
+                name: "Book My Veg",
+                address: "Book My Veg, Anandwali, Gangapur Road, Nashik, Maharashtra 422001",
+                contactNumber: "9999999999",
+                latitude: 20.0082305,
+                longitude: 73.7349024,
+                deliveryRadius: 15.0,
+                isOpen: true,
+                receiptHeader: "Book My Veg - Fresh Vegetables & Fruits",
+                receiptFooter: "Thank you for shopping farm-fresh with Book My Veg!"
+            },
             create: {
-                name: "Main Hub",
-                slug: "main-hub",
-                address: "Primary Distribution Center",
-                latitude: 28.6139,
-                longitude: 77.2090
+                name: "Book My Veg",
+                slug: "book-my-veg",
+                address: "Book My Veg, Anandwali, Gangapur Road, Nashik, Maharashtra 422001",
+                contactNumber: "9999999999",
+                latitude: 20.0082305,
+                longitude: 73.7349024,
+                deliveryRadius: 15.0,
+                isOpen: true,
+                receiptHeader: "Book My Veg - Fresh Vegetables & Fruits",
+                receiptFooter: "Thank you for shopping farm-fresh with Book My Veg!"
             },
         });
-        console.log("✅ Main Hub established");
+        console.log("✅ Book My Veg Store established (Nashik)");
         // 3. Create Root Super Admin
         const hashedPassword = yield bcryptjs_1.default.hash("admin123", 10);
         yield prisma.user.upsert({

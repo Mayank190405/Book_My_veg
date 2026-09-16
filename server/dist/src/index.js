@@ -55,6 +55,7 @@ const pageContentRoutes_1 = __importDefault(require("./routes/pageContentRoutes"
 const templateRoutes_1 = __importDefault(require("./routes/templateRoutes"));
 const vendorRoutes_1 = __importDefault(require("./routes/vendorRoutes"));
 const staffAdvanceRoutes_1 = __importDefault(require("./routes/staffAdvanceRoutes"));
+const cmsRoutes_1 = __importDefault(require("./routes/cmsRoutes"));
 const auth_1 = require("./middleware/auth");
 const socketHandler_1 = require("./sockets/socketHandler");
 const logger_1 = __importDefault(require("./utils/logger"));
@@ -146,6 +147,7 @@ app.use("/api/v1/page-content", pageContentRoutes_1.default);
 app.use("/api/v1/templates", templateRoutes_1.default);
 app.use("/api/v1/vendors", vendorRoutes_1.default);
 app.use("/api/v1/staff-advances", staffAdvanceRoutes_1.default);
+app.use("/api/v1/cms", cmsRoutes_1.default);
 app.use("/api/integration/v1", index_1.default);
 app.get("/health", (_req, res) => {
     res.status(200).json({ status: "ok" });
@@ -220,5 +222,27 @@ server.listen(PORT, () => __awaiter(void 0, void 0, void 0, function* () {
     }
     catch (e) {
         logger_1.default.error("Product pricing sync failed", e);
+    }
+    // Ensure Book My Veg stores retain active coordinates (protection against null overwrites in prod)
+    try {
+        const stores = yield prisma_1.default.location.findMany();
+        for (const store of stores) {
+            if (!store.latitude || !store.longitude) {
+                logger_1.default.warn(`[STORE COORDS REPAIR] Store "${store.name}" (${store.slug}) had null coordinates. Auto-healing to Nashik flagship coordinates...`);
+                yield prisma_1.default.location.update({
+                    where: { id: store.id },
+                    data: {
+                        latitude: 20.0082305,
+                        longitude: 73.7349024,
+                        deliveryRadius: store.deliveryRadius || 15.0,
+                        isOpen: true
+                    }
+                });
+                logger_1.default.info(`[STORE COORDS REPAIR] Successfully restored coordinates for "${store.name}"`);
+            }
+        }
+    }
+    catch (e) {
+        logger_1.default.error("[STORE COORDS REPAIR ERROR]", e);
     }
 }));

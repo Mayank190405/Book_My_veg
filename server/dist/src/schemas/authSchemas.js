@@ -16,7 +16,7 @@ exports.verifyOtpSchema = zod_1.z.object({
 exports.updateProfileSchema = zod_1.z.object({
     body: zod_1.z.object({
         name: zod_1.z.string().min(2, "Name must be at least 2 characters").optional(),
-        email: zod_1.z.string().email("Invalid email address").optional(),
+        email: zod_1.z.string().email("Invalid email address").optional().or(zod_1.z.literal("")),
     }),
 });
 exports.whatsappCheckSchema = zod_1.z.object({

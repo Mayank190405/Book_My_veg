@@ -8,4 +8,5 @@ router.get("/history", auth_1.authenticate, searchController_1.getSearchHistory)
 router.post("/history", auth_1.authenticate, searchController_1.recordSearch);
 router.delete("/history", auth_1.authenticate, searchController_1.clearSearchHistory);
 router.get("/popular", searchController_1.getPopularSearches);
+router.post("/smart-list", searchController_1.smartSearchList);
 exports.default = router;

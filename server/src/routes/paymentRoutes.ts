@@ -1,6 +1,20 @@
 import { Router } from "express";
 import { authenticate, authorize } from "../middleware/auth";
-import { initiatePayment, verifyPayment, refundPayment, handleWebhook, getOrderStatus, generatePaymentLink, handleEasebuzzCallback, checkPaymentEligibility, triggerEasebuzzSync, cleanupDuplicatePaymentsController } from "../controllers/paymentController";
+import { 
+    initiatePayment, 
+    verifyPayment, 
+    refundPayment, 
+    handleWebhook, 
+    getOrderStatus, 
+    generatePaymentLink, 
+    handleEasebuzzCallback, 
+    checkPaymentEligibility, 
+    triggerEasebuzzSync, 
+    cleanupDuplicatePaymentsController,
+    initiateWalletDeposit,
+    verifyWalletDeposit,
+    getWalletDetails
+} from "../controllers/paymentController";
 
 const router = Router();
 
@@ -9,6 +23,11 @@ router.post("/webhook", handleWebhook);
 router.post("/easebuzz/callback", handleEasebuzzCallback);
 
 router.use(authenticate);
+
+// Customer Advance Wallet Management & Deposit Flow
+router.get("/wallet", getWalletDetails);
+router.post("/wallet/initiate", initiateWalletDeposit);
+router.post("/wallet/verify", verifyWalletDeposit);
 
 router.get("/eligibility", checkPaymentEligibility);
 router.post("/initiate", initiatePayment);

@@ -1124,6 +1124,23 @@ export const handleWebhook = async (req: Request, res: Response) => {
 
         const isSuccess = (status || "").toLowerCase() === "success";
 
+        // Handle Customer Advance Wallet Deposit webhook
+        if (txnid.startsWith("WLT_")) {
+            if (isSuccess) {
+                try {
+                    await processWalletDepositCredit({
+                        phone,
+                        amount: Number(amount),
+                        referenceId: easebuzz_id || txnid,
+                        paymentMethod: mode || "EASEBUZZ"
+                    });
+                } catch (wErr: any) {
+                    logger.error(`[Wallet Webhook Error]: ${wErr.message}`);
+                }
+            }
+            return res.json({ status: "OK" });
+        }
+
         // Resolve original orderId from txnid (strip timestamp suffix)
         let resolvedOrderId = txnid;
         if (!txnid.startsWith("DUE_") && !txnid.startsWith("SET_") && !txnid.startsWith("SETTLE_")) {
@@ -1202,6 +1219,24 @@ export const handleEasebuzzCallback = async (req: Request, res: Response) => {
     }
 
     const isSuccess = (status || "").toLowerCase() === "success";
+
+    // Handle Customer Advance Wallet Deposit callback redirect
+    if (txnid && txnid.startsWith("WLT_")) {
+        if (isSuccess) {
+            try {
+                await processWalletDepositCredit({
+                    phone,
+                    amount: Number(amount),
+                    referenceId: easebuzz_id || txnid,
+                    paymentMethod: mode || "EASEBUZZ"
+                });
+                return res.redirect(`${clientUrl}/account?wallet_deposit=success`);
+            } catch (wErr: any) {
+                logger.error(`[Wallet Callback Error]: ${wErr.message}`);
+            }
+        }
+        return res.redirect(`${clientUrl}/account?wallet_deposit=failed`);
+    }
 
     // Recover the original orderId from the txnid.
     let resolvedOrderId = txnid;
@@ -1716,11 +1751,37 @@ export const saveOrderFeedback = async (req: Request, res: Response, next: NextF
             where: { id: orderId },
             data: {
                 rating: parseInt(rating),
-                feedback: feedback || null
+                feedback: feedback || null,
+                feedbackSent: true
             }
         });
 
-        return res.json({ message: "Feedback submitted successfully", order: updatedOrder });
+        // Mark all customer orders as feedbackSent: true so customer is never prompted again
+        if (updatedOrder.userId) {
+            await prisma.order.updateMany({
+                where: { userId: updatedOrder.userId, feedbackSent: false },
+                data: { feedbackSent: true }
+            });
+        }
+
+        // Configurable Google Review link (via PageContent CMS, env, or default)
+        let googleReviewUrl = process.env.GOOGLE_REVIEW_URL || "https://share.google/AcOZ060z33fcR4OGQ";
+        try {
+            const reviewConfig = await prisma.pageContent.findUnique({
+                where: { slug: "google-review-link" }
+            });
+            if (reviewConfig?.content && reviewConfig.content.trim()) {
+                googleReviewUrl = reviewConfig.content.trim();
+            }
+        } catch (confErr) {
+            // fallback to env / default
+        }
+
+        return res.json({ 
+            message: "Feedback submitted successfully", 
+            order: updatedOrder,
+            googleReviewUrl 
+        });
     } catch (error) {
         next(error);
     }
@@ -1892,4 +1953,233 @@ export const cleanupDuplicatePaymentsController = async (req: AuthenticatedReque
         return res.status(500).json({ message: e.message || "Failed to cleanup duplicate payments" });
     }
 };
+
+// ─── Customer Advance Wallet Deposit Flow ─────────────────────────────────────
+
+export const processWalletDepositCredit = async ({
+    userId,
+    phone,
+    amount,
+    referenceId,
+    paymentMethod = "EASEBUZZ"
+}: {
+    userId?: string;
+    phone?: string;
+    amount: number;
+    referenceId: string;
+    paymentMethod?: string;
+}) => {
+    const depositAmt = Number(amount);
+    if (!depositAmt || depositAmt <= 0) throw new Error("Invalid deposit amount");
+
+    return await prisma.$transaction(async (tx) => {
+        // Idempotency: Check if already processed
+        const existingTx = await tx.walletTransaction.findFirst({
+            where: { referenceId, type: "DEPOSIT" }
+        });
+        if (existingTx) {
+            const user = await tx.user.findUnique({
+                where: { id: existingTx.userId },
+                select: { accountBalance: true }
+            });
+            return { alreadyProcessed: true, balance: Number(user?.accountBalance || 0) };
+        }
+
+        let customer: any = null;
+        if (userId) {
+            customer = await tx.user.findUnique({ where: { id: userId } });
+        }
+        if (!customer && phone) {
+            const cleanPhone = phone.replace(/\D/g, "");
+            customer = await tx.user.findFirst({
+                where: { OR: [{ phone }, { phone: cleanPhone }, { phone: `+91${cleanPhone}` }] }
+            });
+        }
+        if (!customer) throw new Error("Customer not found for wallet credit");
+
+        const currentBalance = Number(customer.accountBalance || 0);
+        const newBalance = currentBalance + depositAmt;
+
+        await tx.user.update({
+            where: { id: customer.id },
+            data: { accountBalance: new Prisma.Decimal(newBalance) }
+        });
+
+        const transaction = await tx.walletTransaction.create({
+            data: {
+                userId: customer.id,
+                amount: new Prisma.Decimal(depositAmt),
+                type: "DEPOSIT",
+                paymentMethod: paymentMethod.toUpperCase(),
+                referenceId,
+                balanceAfter: new Prisma.Decimal(newBalance),
+                notes: "Online Advance Wallet Deposit via Easebuzz",
+                createdBy: "CUSTOMER_ONLINE"
+            }
+        });
+
+        // Dispatch WhatsApp receipt confirmation
+        if (customer.phone) {
+            try {
+                const { sendTemplateViaChatHub } = require("../services/mbgcard");
+                await sendTemplateViaChatHub(customer.phone, "payment_received", {
+                    body: [
+                        customer.name || "Customer",
+                        `ADV-${referenceId.slice(-6)}`,
+                        String(depositAmt),
+                        `Easebuzz Online (Advance Wallet Credit - Current Balance: ₹${newBalance})`
+                    ]
+                }).catch(() => null);
+            } catch (err) {
+                console.warn("[Wallet Deposit WhatsApp warning]:", err);
+            }
+        }
+
+        return { alreadyProcessed: false, customer, balance: newBalance, transaction };
+    });
+};
+
+export const initiateWalletDeposit = async (req: AuthenticatedRequest, res: Response) => {
+    try {
+        const userId = req.user?.userId;
+        if (!userId) return res.status(401).json({ message: "Authentication required" });
+
+        const { amount } = req.body;
+        const depositAmt = Number(amount);
+        if (!depositAmt || depositAmt < 10 || depositAmt > 50000) {
+            return res.status(400).json({ message: "Deposit amount must be between ₹10 and ₹50,000" });
+        }
+
+        const user = await prisma.user.findUnique({
+            where: { id: userId },
+            select: { id: true, name: true, phone: true, email: true }
+        });
+        if (!user) return res.status(404).json({ message: "User account not found" });
+
+        const customerName = (user.name || "Customer").replace(/[^a-zA-Z0-9 ]/g, "").trim() || "Customer";
+        const customerPhone = user.phone || "9999999999";
+        const rawEmail = (user.email || "").trim();
+        const isValidEmail = rawEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail);
+        const customerEmail = isValidEmail ? rawEmail : `pay.${customerPhone.replace(/\D/g, "").slice(-10)}@bookmyveg.co.in`;
+
+        const timestamp = Date.now();
+        const shortNonce = String(timestamp).slice(-6);
+        const compactUser = userId.replace(/[^a-zA-Z0-9]/g, "").slice(0, 20);
+        const txnid = `WLT_${compactUser}_${shortNonce}`; // strictly <= 40 chars
+        const productInfoLabel = `Wallet Top-up ${depositAmt}`;
+
+        const protocol = req.headers["x-forwarded-proto"] || (req.secure ? "https" : "http");
+        const callbackUrl = `${protocol}://${req.headers.host}/api/v1/payments/easebuzz/callback`;
+
+        let baseUrl = process.env.CLIENT_URL || "http://localhost:3000";
+        const origin = req.headers.origin || (req.headers.referer ? new URL(req.headers.referer).origin : null);
+        if (origin && (baseUrl.includes("localhost") || !process.env.CLIENT_URL)) {
+            baseUrl = origin;
+        }
+
+        if (process.env.EASEBUZZ_KEY || process.env.EASEBUZZ_MERCHANT_KEY) {
+            try {
+                const easeResult = await callEasebuzzInitiateApi({
+                    txnid,
+                    amount: depositAmt,
+                    firstname: customerName,
+                    email: customerEmail,
+                    phone: customerPhone,
+                    productinfo: productInfoLabel,
+                    callbackUrl
+                });
+
+                return res.json({
+                    txnid,
+                    amount: depositAmt,
+                    ...easeResult
+                });
+            } catch (easebuzzError: any) {
+                logger.error(`[Wallet Deposit] Easebuzz initiation failed, falling back to mock gateway. Error: ${easebuzzError.message}`);
+                return res.json({
+                    txnid,
+                    amount: depositAmt,
+                    paymentLink: `${baseUrl.replace(/\/$/, "")}/payment/mock-gateway?orderId=${txnid}&amount=${depositAmt}`,
+                });
+            }
+        }
+
+        return res.json({
+            txnid,
+            amount: depositAmt,
+            paymentLink: `${baseUrl.replace(/\/$/, "")}/payment/mock-gateway?orderId=${txnid}&amount=${depositAmt}`,
+        });
+    } catch (error: any) {
+        logger.error(`[Wallet Deposit Error]: ${error.message}`);
+        return res.status(500).json({ message: "Failed to initiate wallet deposit" });
+    }
+};
+
+export const verifyWalletDeposit = async (req: AuthenticatedRequest, res: Response) => {
+    try {
+        const userId = req.user?.userId;
+        if (!userId) return res.status(401).json({ message: "Authentication required" });
+
+        const { txnid, amount, txn_id, status } = req.body;
+        const depositAmt = Number(amount);
+        if (!depositAmt || depositAmt <= 0) {
+            return res.status(400).json({ message: "Invalid deposit amount" });
+        }
+
+        const effectiveRefId = txn_id || txnid || `WLT_${Date.now()}`;
+        const result = await processWalletDepositCredit({
+            userId,
+            amount: depositAmt,
+            referenceId: effectiveRefId,
+            paymentMethod: "EASEBUZZ"
+        });
+
+        return res.json({
+            success: true,
+            accountBalance: result.balance,
+            message: `₹${depositAmt.toFixed(2)} deposited successfully into your advance wallet.`
+        });
+    } catch (error: any) {
+        logger.error(`[Wallet Verify Error]: ${error.message}`);
+        return res.status(500).json({ message: error.message || "Failed to verify wallet deposit" });
+    }
+};
+
+export const getWalletDetails = async (req: AuthenticatedRequest, res: Response) => {
+    try {
+        const userId = req.user?.userId;
+        if (!userId) return res.status(401).json({ message: "Authentication required" });
+
+        const user = await prisma.user.findUnique({
+            where: { id: userId },
+            select: { id: true, name: true, phone: true, accountBalance: true }
+        });
+        if (!user) return res.status(404).json({ message: "User not found" });
+
+        const transactions = await prisma.walletTransaction.findMany({
+            where: { userId },
+            orderBy: { createdAt: "desc" },
+            take: 50
+        });
+
+        return res.json({
+            accountBalance: Number(user.accountBalance || 0),
+            transactions: transactions.map(t => ({
+                id: t.id,
+                amount: Number(t.amount),
+                type: t.type,
+                paymentMethod: t.paymentMethod,
+                referenceId: t.referenceId,
+                balanceAfter: Number(t.balanceAfter),
+                notes: t.notes,
+                createdAt: t.createdAt
+            }))
+        });
+    } catch (error: any) {
+        logger.error(`[Get Wallet Details Error]: ${error.message}`);
+        return res.status(500).json({ message: "Failed to load wallet details" });
+    }
+};
+
+
 

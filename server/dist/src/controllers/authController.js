@@ -480,12 +480,32 @@ const getMe = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const user = yield (0, prisma_1.withRetry)(() => prisma_1.default.user.findUnique({
             where: { id: req.user.userId },
-            select: { id: true, phone: true, name: true, email: true, role: true, locationId: true },
+            select: { id: true, phone: true, name: true, email: true, role: true, locationId: true, accountBalance: true },
         }));
         if (!user)
             return res.status(404).json({ message: "User not found" });
         const trustScore = yield (0, paymentEligibilityService_1.calculateUserTrustScore)(prisma_1.default, req.user.userId);
-        res.json(Object.assign(Object.assign({}, user), { trustScore }));
+        // Calculate order counts: Online (WEB, WHATSAPP) vs Offline (POS)
+        const orderCounts = yield prisma_1.default.order.groupBy({
+            by: ['channel'],
+            where: { userId: req.user.userId },
+            _count: { id: true }
+        });
+        let onlineOrders = 0;
+        let offlineOrders = 0;
+        for (const item of orderCounts) {
+            if (item.channel === "POS") {
+                offlineOrders += item._count.id;
+            }
+            else {
+                onlineOrders += item._count.id;
+            }
+        }
+        res.json(Object.assign(Object.assign({}, user), { accountBalance: Number(user.accountBalance || 0), trustScore, ordersSummary: {
+                totalOrders: onlineOrders + offlineOrders,
+                onlineOrders,
+                offlineOrders
+            } }));
     }
     catch (error) {
         res.status(500).json({ message: "Error fetching profile" });

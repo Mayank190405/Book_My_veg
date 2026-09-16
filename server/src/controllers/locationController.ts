@@ -152,9 +152,15 @@ export const createLocation = async (req: Request, res: Response) => {
             gstNumber: rest.gstNumber || null,
             receiptHeader: rest.receiptHeader || null,
             receiptFooter: rest.receiptFooter || null,
-            latitude: rest.latitude ? parseFloat(rest.latitude) : null,
-            longitude: rest.longitude ? parseFloat(rest.longitude) : null,
-            deliveryRadius: rest.deliveryRadius ? parseFloat(rest.deliveryRadius) : 10.0,
+            latitude: (rest.latitude !== undefined && rest.latitude !== null && rest.latitude !== "") 
+                ? parseFloat(rest.latitude) 
+                : null,
+            longitude: (rest.longitude !== undefined && rest.longitude !== null && rest.longitude !== "") 
+                ? parseFloat(rest.longitude) 
+                : null,
+            deliveryRadius: (rest.deliveryRadius !== undefined && rest.deliveryRadius !== null && rest.deliveryRadius !== "") 
+                ? parseFloat(rest.deliveryRadius) 
+                : 15.0,
         };
 
         const location = await (prisma.location as any).create({
@@ -179,13 +185,48 @@ export const updateLocation = async (req: Request, res: Response) => {
         const id = req.params.id as string;
         const { password, ...rest } = req.body;
 
-        // Data Sanitation & Typal Alignment
-        const sanitizedData: any = {
-            ...rest,
-            latitude: rest.latitude ? parseFloat(rest.latitude) : null,
-            longitude: rest.longitude ? parseFloat(rest.longitude) : null,
-            deliveryRadius: rest.deliveryRadius ? parseFloat(rest.deliveryRadius) : undefined,
-        };
+        const sanitizedData: any = { ...rest };
+
+        // Safeguard: Never wipe out latitude if it was omitted or empty in partial updates (e.g. POS isOpen toggle)
+        if ("latitude" in rest) {
+            if (rest.latitude === "" || rest.latitude === null || rest.latitude === undefined) {
+                delete sanitizedData.latitude; // Preserve existing coordinate in DB
+            } else {
+                const parsedLat = parseFloat(rest.latitude);
+                if (!isNaN(parsedLat)) {
+                    sanitizedData.latitude = parsedLat;
+                } else {
+                    delete sanitizedData.latitude;
+                }
+            }
+        }
+
+        // Safeguard: Never wipe out longitude if it was omitted or empty in partial updates
+        if ("longitude" in rest) {
+            if (rest.longitude === "" || rest.longitude === null || rest.longitude === undefined) {
+                delete sanitizedData.longitude; // Preserve existing coordinate in DB
+            } else {
+                const parsedLng = parseFloat(rest.longitude);
+                if (!isNaN(parsedLng)) {
+                    sanitizedData.longitude = parsedLng;
+                } else {
+                    delete sanitizedData.longitude;
+                }
+            }
+        }
+
+        if ("deliveryRadius" in rest) {
+            if (rest.deliveryRadius !== "" && rest.deliveryRadius !== null && rest.deliveryRadius !== undefined) {
+                const parsedRadius = parseFloat(rest.deliveryRadius);
+                if (!isNaN(parsedRadius)) {
+                    sanitizedData.deliveryRadius = parsedRadius;
+                } else {
+                    delete sanitizedData.deliveryRadius;
+                }
+            } else {
+                delete sanitizedData.deliveryRadius;
+            }
+        }
 
         if (password) {
             sanitizedData.password = await bcrypt.hash(password, 10);

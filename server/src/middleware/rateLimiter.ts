@@ -6,6 +6,12 @@ const MAX_WINDOW_REQUEST_COUNT = 8; // 8 OTPs per hour per IP/Phone
 
 export const rateLimiter = (limit = MAX_WINDOW_REQUEST_COUNT, window = WINDOW_SIZE_IN_SECONDS) => {
     return async (req: any, res: Response, next: NextFunction) => {
+        // Skip rate limiting for test phone number 9999999999
+        const rawPhone = req.body?.phone;
+        if (rawPhone && String(rawPhone).replace(/\D/g, "").endsWith("9999999999")) {
+            return next();
+        }
+
         // Skip rate limiting for authenticated staff/admin
         if (req.user && (
             req.user.role === 'ADMIN' || 

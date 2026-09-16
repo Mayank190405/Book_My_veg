@@ -44,6 +44,7 @@ import pageContentRoutes from "./routes/pageContentRoutes";
 import templateRoutes from "./routes/templateRoutes";
 import vendorRoutes from "./routes/vendorRoutes";
 import staffAdvanceRoutes from "./routes/staffAdvanceRoutes";
+import cmsRoutes from "./routes/cmsRoutes";
 import { authenticate, authorize } from "./middleware/auth";
 import { socketHandler } from "./sockets/socketHandler";
 import logger from "./utils/logger";
@@ -146,6 +147,7 @@ app.use("/api/v1/page-content", pageContentRoutes);
 app.use("/api/v1/templates", templateRoutes);
 app.use("/api/v1/vendors", vendorRoutes);
 app.use("/api/v1/staff-advances", staffAdvanceRoutes);
+app.use("/api/v1/cms", cmsRoutes);
 app.use("/api/integration/v1", integrationRouter);
 
 app.get("/health", (_req, res) => {
@@ -228,6 +230,28 @@ server.listen(PORT, async () => {
         await syncAllProductPricing();
     } catch (e) {
         logger.error("Product pricing sync failed", e);
+    }
+
+    // Ensure Book My Veg stores retain active coordinates (protection against null overwrites in prod)
+    try {
+        const stores = await prisma.location.findMany();
+        for (const store of stores) {
+            if (!store.latitude || !store.longitude) {
+                logger.warn(`[STORE COORDS REPAIR] Store "${store.name}" (${store.slug}) had null coordinates. Auto-healing to Nashik flagship coordinates...`);
+                await prisma.location.update({
+                    where: { id: store.id },
+                    data: {
+                        latitude: 20.0082305,
+                        longitude: 73.7349024,
+                        deliveryRadius: store.deliveryRadius || 15.0,
+                        isOpen: true
+                    }
+                });
+                logger.info(`[STORE COORDS REPAIR] Successfully restored coordinates for "${store.name}"`);
+            }
+        }
+    } catch (e: any) {
+        logger.error("[STORE COORDS REPAIR ERROR]", e);
     }
 });
 
