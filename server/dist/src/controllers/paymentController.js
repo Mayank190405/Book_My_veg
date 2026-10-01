@@ -425,7 +425,7 @@ const generatePaymentLink = (req, res) => __awaiter(void 0, void 0, void 0, func
 exports.generatePaymentLink = generatePaymentLink;
 // ─── verifyPayment (with idempotency + trending tracking) ────────────────────
 // ─── Shared Helper: Complete Order Payment ───────────────────────────────────
-const settleDuesForCustomer = (userId, amount, transactionId, metadata) => __awaiter(void 0, void 0, void 0, function* () {
+const settleDuesForCustomer = (userId, amount, transactionId, metadata, preferredOrderId) => __awaiter(void 0, void 0, void 0, function* () {
     let remaining = Number(amount);
     if (!remaining || remaining <= 0)
         return;
@@ -440,7 +440,7 @@ const settleDuesForCustomer = (userId, amount, transactionId, metadata) => __awa
             if (foundUser)
                 targetUserId = foundUser.id;
         }
-        const unpaid = yield tx.order.findMany({
+        let unpaid = yield tx.order.findMany({
             where: {
                 userId: targetUserId,
                 isPaid: false,
@@ -449,6 +449,14 @@ const settleDuesForCustomer = (userId, amount, transactionId, metadata) => __awa
             orderBy: { createdAt: "asc" },
             include: { payments: true }
         });
+        // If preferredOrderId is specified, move it to the front of the unpaid queue
+        if (preferredOrderId) {
+            const prefIndex = unpaid.findIndex((o) => o.id === preferredOrderId);
+            if (prefIndex > 0) {
+                const [prefOrder] = unpaid.splice(prefIndex, 1);
+                unpaid.unshift(prefOrder);
+            }
+        }
         const effectiveTxnId = transactionId || `SETTLE_${Date.now()}`;
         for (const order of unpaid) {
             if (remaining <= 0)
@@ -469,12 +477,33 @@ const settleDuesForCustomer = (userId, amount, transactionId, metadata) => __awa
                 });
                 const totalPaidNow = paid + toApply;
                 const isFull = totalPaidNow >= Number(order.totalAmount);
+                const nonRevertableStatuses = ["DELIVERED", "SHIPPED", "OUT_FOR_DELIVERY", "COMPLETED"];
+                const shouldUpdateStatus = !nonRevertableStatuses.includes(order.status);
                 yield tx.order.update({
                     where: { id: order.id },
+                    data: Object.assign({ isPaid: isFull, paymentStatus: isFull ? "COMPLETED" : "PARTIAL", easebuzzCollected: { increment: new client_1.Prisma.Decimal(toApply) } }, (shouldUpdateStatus && { status: "CONFIRMED" }))
+                });
+                // Create notification for customer
+                const notifTitle = isFull ? "Payment Complete" : "Payment Received";
+                const notifBody = isFull
+                    ? `Your bill #${order.id} of ₹${order.totalAmount} has been fully paid. Thank you!`
+                    : `Payment of ₹${toApply.toFixed(2)} received for bill #${order.id}. Remaining: ₹${(Number(order.totalAmount) - totalPaidNow).toFixed(2)}`;
+                yield tx.notification.create({
                     data: {
-                        isPaid: isFull,
-                        paymentStatus: isFull ? "COMPLETED" : "PARTIAL"
+                        userId: targetUserId,
+                        title: notifTitle,
+                        body: notifBody,
+                        type: "ORDER",
+                        isRead: false
                     }
+                });
+                yield tx.orderStatusHistory.create({
+                    data: {
+                        orderId: order.id,
+                        status: (shouldUpdateStatus ? "CONFIRMED" : order.status),
+                        remark: `Payment of ₹${toApply.toFixed(2)} received via ${(metadata === null || metadata === void 0 ? void 0 : metadata.payment_method_type) || "ONLINE"}${isFull ? " (Fully Paid)" : " (Partial)"}`,
+                        changedBy: "SYSTEM",
+                    },
                 });
                 remaining -= toApply;
             }
@@ -490,6 +519,47 @@ const completeOrderPayment = (orderId, paymentDetails) => __awaiter(void 0, void
     let resolvedOrderId = orderId;
     if (orderId && !orderId.startsWith("DUE_") && !orderId.startsWith("SET_") && !orderId.startsWith("SETTLE_")) {
         resolvedOrderId = orderId.replace(/_\d{3,}$/, "");
+    }
+    // Handle explicit SETTLE_, SET_, or DUE_ settlement transactions first
+    if (orderId.startsWith("SETTLE_") || orderId.startsWith("SET_")) {
+        const parts = orderId.split("_");
+        const targetId = parts[1];
+        if (paymentDetails.status === "CHARGED" || paymentDetails.status === "SUCCESS") {
+            yield (0, exports.settleDuesForCustomer)(targetId, Number(paymentDetails.amount), paymentDetails.txn_id || orderId, paymentDetails);
+            return { status: "SUCCESS" };
+        }
+    }
+    else if (orderId.startsWith("DUE_")) {
+        const parts = orderId.split("_");
+        if (paymentDetails.status === "CHARGED" || paymentDetails.status === "SUCCESS") {
+            let targetUserOrBill = parts[1];
+            let preferredBill = parts[2];
+            let targetUserId = null;
+            if (targetUserOrBill) {
+                const userObj = yield prisma_1.default.user.findUnique({ where: { id: targetUserOrBill } });
+                if (userObj) {
+                    targetUserId = userObj.id;
+                }
+                else {
+                    const orderObj = yield prisma_1.default.order.findUnique({ where: { id: targetUserOrBill } });
+                    if (orderObj) {
+                        targetUserId = orderObj.userId;
+                        preferredBill = orderObj.id;
+                    }
+                }
+            }
+            if (!targetUserId && paymentDetails.phone) {
+                const cleanPhone = String(paymentDetails.phone).replace(/\D/g, "");
+                const foundUser = yield prisma_1.default.user.findFirst({
+                    where: { OR: [{ phone: paymentDetails.phone }, { phone: cleanPhone }, { phone: `+91${cleanPhone}` }] }
+                });
+                if (foundUser)
+                    targetUserId = foundUser.id;
+            }
+            const finalUserId = targetUserId || targetUserOrBill;
+            yield (0, exports.settleDuesForCustomer)(finalUserId, Number(paymentDetails.amount), paymentDetails.txn_id || orderId, paymentDetails, preferredBill);
+            return { status: "SUCCESS" };
+        }
     }
     // 1. Resolve exact orderId from Payment record if it was initiated with a unique txnid
     const paymentRecord = yield prisma_1.default.payment.findFirst({
@@ -555,32 +625,8 @@ const completeOrderPayment = (orderId, paymentDetails) => __awaiter(void 0, void
         }
     }
     if (!existing) {
-        if (orderId.startsWith("SETTLE_") || orderId.startsWith("SET_")) {
-            const parts = orderId.split("_");
-            const targetId = parts[1];
-            if (paymentDetails.status === "CHARGED" || paymentDetails.status === "SUCCESS") {
-                yield (0, exports.settleDuesForCustomer)(targetId, Number(paymentDetails.amount), paymentDetails.txn_id || orderId, paymentDetails);
-                return { status: "SUCCESS" };
-            }
-        }
-        else if (orderId.startsWith("DUE_")) {
-            const parts = orderId.split("_");
-            const targetId = parts[1];
-            if (paymentDetails.status === "CHARGED" || paymentDetails.status === "SUCCESS") {
-                // Check if targetId is an order ID directly
-                const targetOrder = yield prisma_1.default.order.findUnique({ where: { id: targetId }, include: { items: true, user: true } });
-                if (targetOrder) {
-                    resolvedOrderId = targetId;
-                    existing = targetOrder;
-                }
-                else {
-                    yield (0, exports.settleDuesForCustomer)(targetId, Number(paymentDetails.amount), paymentDetails.txn_id || orderId, paymentDetails);
-                    return { status: "SUCCESS" };
-                }
-            }
-        }
-        // Fallback 2: Customer Phone / Email matching for automatic account settlement
-        if (!existing && (paymentDetails.status === "CHARGED" || paymentDetails.status === "SUCCESS")) {
+        // Fallback: Customer Phone / Email matching for automatic account settlement
+        if (paymentDetails.status === "CHARGED" || paymentDetails.status === "SUCCESS") {
             const custPhone = paymentDetails.phone || paymentDetails.customerPhone || paymentDetails.customer_phone || paymentDetails.phone_number || paymentDetails.mobile || paymentDetails.user_phone;
             const custEmail = paymentDetails.email || paymentDetails.customerEmail || paymentDetails.customer_email || paymentDetails.user_email;
             let cleanPhone = custPhone ? String(custPhone).replace(/\D/g, "") : "";
@@ -606,12 +652,26 @@ const completeOrderPayment = (orderId, paymentDetails) => __awaiter(void 0, void
                 }
             }
         }
-        if (!existing) {
-            throw new Error(`Order ${resolvedOrderId} not found`);
-        }
+        throw new Error(`Order ${resolvedOrderId} not found`);
     }
     if (paymentDetails.status === "CHARGED" || paymentDetails.status === "SUCCESS") {
         const targetTxnId = paymentDetails.txn_id || paymentDetails.order_id || orderId;
+        // If the customer has multiple unpaid orders, apply settlement across all unpaid orders
+        if (existing.userId) {
+            const otherUnpaidCount = yield prisma_1.default.order.count({
+                where: {
+                    userId: existing.userId,
+                    id: { not: existing.id },
+                    isPaid: false,
+                    status: { notIn: ["CANCELLED", "FAILED"] }
+                }
+            });
+            if (otherUnpaidCount > 0) {
+                logger_1.default.info(`[Payment] Customer ${existing.userId} has ${otherUnpaidCount} other unpaid orders. Settling all dues with preferred order ${existing.id}`);
+                yield (0, exports.settleDuesForCustomer)(existing.userId, Number(paymentDetails.amount), targetTxnId, paymentDetails, existing.id);
+                return { status: "SUCCESS" };
+            }
+        }
         // Check 1: Has this exact transaction ID already been processed successfully?
         const existingTxnPayment = yield prisma_1.default.payment.findFirst({
             where: {
@@ -1419,14 +1479,12 @@ const initiatePayDue = (req, res) => __awaiter(void 0, void 0, void 0, function*
         let txnid;
         let productInfoLabel;
         if (order) {
-            // Keep txnid strictly <= 40 characters
-            if (order.id.length <= 33) {
-                txnid = `${order.id}_${shortNonce}`;
-            }
-            else {
-                // For long IDs (e.g. 36-char UUIDs), strip non-alphanumeric chars and limit prefix to 31 chars
-                const compactId = order.id.replace(/[^a-zA-Z0-9]/g, "").slice(0, 31);
-                txnid = `${compactId}_${shortNonce}`;
+            // Keep txnid strictly <= 40 characters with DUE_ prefix
+            const compactOrder = order.id.replace(/[^a-zA-Z0-9]/g, "").slice(0, 18);
+            const compactUser = String(effectiveUserId).replace(/[^a-zA-Z0-9]/g, "").slice(0, 10);
+            txnid = `DUE_${compactUser}_${compactOrder}_${shortNonce}`;
+            if (txnid.length > 40) {
+                txnid = `DUE_${compactOrder}_${shortNonce}`;
             }
             productInfoLabel = `Bill Payment ${order.id.slice(0, 20)}`;
         }

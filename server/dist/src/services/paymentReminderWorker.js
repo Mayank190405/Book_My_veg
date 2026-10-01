@@ -124,31 +124,58 @@ const startPaymentReminderWorker = () => {
                     status: { notIn: ["CANCELLED", "FAILED"] }
                 },
                 include: { user: true, payments: true, location: true },
-                take: 100
+                take: 200
             });
             // Target duration from config or default (7 days)
             const dueDurationValue = (dueConfig === null || dueConfig === void 0 ? void 0 : dueConfig.triggerDurationValue) || 7;
             const dueDurationUnit = (dueConfig === null || dueConfig === void 0 ? void 0 : dueConfig.triggerDurationUnit) || "DAYS";
             const dueIntervalMs = dueDurationUnit === "HOURS" ? dueDurationValue * ONE_HOUR_MS : dueDurationValue * ONE_DAY_MS;
+            // Group unpaid orders by customer (userId)
+            const customerUnpaidSummary = {};
             for (const order of unpaidOrders) {
                 const user = order.user;
                 if (!user || !user.phone)
                     continue;
+                const paid = order.payments
+                    .filter((p) => p.status === "SUCCESS" || p.status === "COMPLETED" || p.status === "PAID" || !p.status)
+                    .reduce((sum, p) => sum + Number(p.amount), 0);
+                const dueAmount = Math.max(0, Number(order.totalAmount) - paid);
+                if (dueAmount <= 0)
+                    continue;
                 const ageInMs = now.getTime() - new Date(order.createdAt).getTime();
                 const dueIntervalCycles = Math.floor(ageInMs / dueIntervalMs);
-                // Send when order crosses 1x, 2x, 3x duration cycle within a 2-hour window
                 const remainderMs = ageInMs % dueIntervalMs;
                 const isCycleTrigger = dueIntervalCycles >= 1 && remainderMs < (2 * ONE_HOUR_MS);
-                if (isCycleTrigger) {
-                    const paid = order.payments.filter((p) => p.status === "SUCCESS" || p.status === "COMPLETED" || p.status === "PAID" || !p.status).reduce((sum, p) => sum + Number(p.amount), 0);
-                    const dueAmount = Math.max(0, Number(order.totalAmount) - paid);
-                    if (dueAmount > 0) {
-                        logger_1.default.info(`[Payment Reminder Worker] Dispatching automatic due reminder to customer ${user.name} (${user.phone}) for order ${order.id} (Due: ₹${dueAmount})`);
-                        yield (0, mbgcard_1.sendPaymentReminderViaWhatsapp)(user.phone, user.name || "Customer", dueAmount, order.id, user.id, order.id).catch((err) => {
-                            logger_1.default.error(`[Payment Reminder Worker] Error sending automatic reminder to ${user.phone}: ${err.message}`);
-                        });
-                    }
+                const uId = user.id;
+                if (!customerUnpaidSummary[uId]) {
+                    customerUnpaidSummary[uId] = {
+                        user,
+                        orders: [],
+                        totalDue: 0,
+                        latestOrder: order,
+                        hasTriggeredCycle: false
+                    };
                 }
+                customerUnpaidSummary[uId].orders.push(order);
+                customerUnpaidSummary[uId].totalDue += dueAmount;
+                if (isCycleTrigger) {
+                    customerUnpaidSummary[uId].hasTriggeredCycle = true;
+                }
+                if (new Date(order.createdAt).getTime() > new Date(customerUnpaidSummary[uId].latestOrder.createdAt).getTime()) {
+                    customerUnpaidSummary[uId].latestOrder = order;
+                }
+            }
+            for (const summary of Object.values(customerUnpaidSummary)) {
+                if (!summary.hasTriggeredCycle || summary.totalDue <= 0)
+                    continue;
+                const orderCount = summary.orders.length;
+                const invoiceLabel = orderCount > 1
+                    ? `All Dues (${orderCount} Bills)`
+                    : summary.latestOrder.id;
+                logger_1.default.info(`[Payment Reminder Worker] Dispatching automatic due reminder to customer ${summary.user.name} (${summary.user.phone}) - Total Due: ₹${summary.totalDue} [${invoiceLabel}]`);
+                yield (0, mbgcard_1.sendPaymentReminderViaWhatsapp)(summary.user.phone, summary.user.name || "Customer", summary.totalDue, invoiceLabel, summary.user.id, summary.latestOrder.id).catch((err) => {
+                    logger_1.default.error(`[Payment Reminder Worker] Error sending automatic reminder to ${summary.user.phone}: ${err.message}`);
+                });
             }
             // ─── 3. 4-DAY INACTIVITY REMINDER (TEMPLATE: fresh_order) ───
             // Triggers when customer has not visited/ordered in 4 days

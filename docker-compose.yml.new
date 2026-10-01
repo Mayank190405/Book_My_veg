@@ -52,7 +52,7 @@ services:
       CLIENT_URL: https://bookmyveg.co.in
       # WhatsApp
       MBGCARD_API_URL: "https://chatbot.digitalmbg.com/v1/whatsapp/send_templet"
-      MBGCARD_API_TOKEN: "8a69233a0b157de55739255688858785"
+      MBGCARD_API_TOKEN: "d423777128fdc8a29bef4fb719f3d3c9"
       MBGCARD_PHONE_NUMBER_ID: "1584781019502734"
       MBGCARD_TEMPLATE_ID: "login"
       # Juspay

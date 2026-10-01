@@ -1600,6 +1600,7 @@ export const sendPOSWhatsappDueReminders = async (req: AuthenticatedRequest, res
         const customerDueSummary: Record<string, {
             user: any;
             totalDue: number;
+            orderCount: number;
             latestOrderId: string;
         }> = {};
 
@@ -1614,10 +1615,13 @@ export const sendPOSWhatsappDueReminders = async (req: AuthenticatedRequest, res
                 customerDueSummary[uId] = {
                     user: order.user,
                     totalDue: 0,
+                    orderCount: 0,
                     latestOrderId: order.id
                 };
             }
             customerDueSummary[uId].totalDue += dueAmount;
+            customerDueSummary[uId].orderCount += 1;
+            customerDueSummary[uId].latestOrderId = order.id;
         }
 
         let sentCount = 0;
@@ -1625,11 +1629,15 @@ export const sendPOSWhatsappDueReminders = async (req: AuthenticatedRequest, res
 
         for (const summary of Object.values(customerDueSummary)) {
             try {
+                const invoiceLabel = summary.orderCount > 1 
+                    ? `All Dues (${summary.orderCount} Bills)` 
+                    : summary.latestOrderId;
+
                 await sendPaymentReminderViaWhatsapp(
                     summary.user.phone,
                     summary.user.name || "Customer",
                     summary.totalDue,
-                    summary.latestOrderId,
+                    invoiceLabel,
                     summary.user.id,
                     summary.latestOrderId
                 );

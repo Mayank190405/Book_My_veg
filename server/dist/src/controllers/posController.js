@@ -1489,16 +1489,22 @@ const sendPOSWhatsappDueReminders = (req, res, next) => __awaiter(void 0, void 0
                 customerDueSummary[uId] = {
                     user: order.user,
                     totalDue: 0,
+                    orderCount: 0,
                     latestOrderId: order.id
                 };
             }
             customerDueSummary[uId].totalDue += dueAmount;
+            customerDueSummary[uId].orderCount += 1;
+            customerDueSummary[uId].latestOrderId = order.id;
         }
         let sentCount = 0;
         let failedCount = 0;
         for (const summary of Object.values(customerDueSummary)) {
             try {
-                yield sendPaymentReminderViaWhatsapp(summary.user.phone, summary.user.name || "Customer", summary.totalDue, summary.latestOrderId, summary.user.id, summary.latestOrderId);
+                const invoiceLabel = summary.orderCount > 1
+                    ? `All Dues (${summary.orderCount} Bills)`
+                    : summary.latestOrderId;
+                yield sendPaymentReminderViaWhatsapp(summary.user.phone, summary.user.name || "Customer", summary.totalDue, invoiceLabel, summary.user.id, summary.latestOrderId);
                 sentCount++;
             }
             catch (err) {
