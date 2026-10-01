@@ -301,11 +301,24 @@ export const sendPaymentReminderViaWhatsapp = async (
     customerName: string,
     dueAmount: number,
     invoiceNo: string,
-    _userId?: string,
-    _orderId?: string
+    userId?: string,
+    orderId?: string
 ) => {
+    const origin = process.env.CLIENT_URL || "https://bookmyveg.co.in";
+    const cleanPhone = phone.replace(/\D/g, "");
+    
+    let payLink = `${origin}/pay?number=${cleanPhone}`;
+    if (userId) {
+        payLink += `&userid=${userId}`;
+    }
+    if (orderId && !invoiceNo.startsWith("All Dues")) {
+        payLink += `&billid=${orderId}`;
+    }
+
+    const dueTiming = `Immediate. Pay online: ${payLink}`;
+
     return sendTemplateViaChatHub(phone, "payment_due_reminder", {
-        body: [customerName, invoiceNo, `₹${dueAmount}`, "Immediate"]
+        body: [customerName, invoiceNo, `₹${dueAmount}`, dueTiming]
     });
 };
 

@@ -266,9 +266,19 @@ exports.sendInvoiceDueViaWhatsapp = sendInvoiceDueViaWhatsapp;
 /**
  * Payment due reminder via approved UTILITY template 'payment_due_reminder'.
  */
-const sendPaymentReminderViaWhatsapp = (phone, customerName, dueAmount, invoiceNo, _userId, _orderId) => __awaiter(void 0, void 0, void 0, function* () {
+const sendPaymentReminderViaWhatsapp = (phone, customerName, dueAmount, invoiceNo, userId, orderId) => __awaiter(void 0, void 0, void 0, function* () {
+    const origin = process.env.CLIENT_URL || "https://bookmyveg.co.in";
+    const cleanPhone = phone.replace(/\D/g, "");
+    let payLink = `${origin}/pay?number=${cleanPhone}`;
+    if (userId) {
+        payLink += `&userid=${userId}`;
+    }
+    if (orderId && !invoiceNo.startsWith("All Dues")) {
+        payLink += `&billid=${orderId}`;
+    }
+    const dueTiming = `Immediate. Pay online: ${payLink}`;
     return (0, exports.sendTemplateViaChatHub)(phone, "payment_due_reminder", {
-        body: [customerName, invoiceNo, `₹${dueAmount}`, "Immediate"]
+        body: [customerName, invoiceNo, `₹${dueAmount}`, dueTiming]
     });
 });
 exports.sendPaymentReminderViaWhatsapp = sendPaymentReminderViaWhatsapp;
