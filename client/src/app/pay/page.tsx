@@ -5,21 +5,27 @@ import { useSearchParams, useRouter, useParams } from "next/navigation";
 import { 
     CreditCard, ShieldCheck, CheckCircle2, AlertCircle, ShoppingBag, 
     User, Phone, FileText, ArrowRight, Loader2, RefreshCw, Check, Sparkles, Building,
-    ChevronDown, ChevronUp, Receipt, ListFilter, CheckCircle, Tag
+    ChevronDown, ChevronUp, Receipt, ListFilter, CheckCircle, Tag, Smartphone, LogOut
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getBaseURL } from "@/services/api";
+import { sendOtp, verifyOtp } from "@/services/authService";
 
-interface PayPageProps {
+export interface PayPageProps {
     slugParams?: string[];
+    forceShowOtpForm?: boolean;
 }
 
-function PayContent({ slugParams }: PayPageProps) {
+export function PayContent({ slugParams, forceShowOtpForm }: PayPageProps) {
     const searchParams = useSearchParams();
     const router = useRouter();
     const routeParams = useParams();
 
     const isAmountLocked = true;
+
+    const [overridePhone, setOverridePhone] = useState<string>("");
+    const [overrideUserId, setOverrideUserId] = useState<string>("");
+    const [showOtpForm, setShowOtpForm] = useState<boolean>(forceShowOtpForm || false);
 
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -98,15 +104,25 @@ function PayContent({ slugParams }: PayPageProps) {
     }, [searchParams, routeParams, slugParams]);
 
     const fetchPayData = async () => {
+        const effUserid = overrideUserId || extractedParams.userid;
+        const effNumber = overridePhone || extractedParams.number;
+        const effBillid = extractedParams.billid;
+
+        if (!effUserid && !effNumber && !effBillid) {
+            setLoading(false);
+            setShowOtpForm(true);
+            return;
+        }
+
         setLoading(true);
         setError(null);
         try {
             const query = new URLSearchParams();
-            if (extractedParams.userid) query.set("userid", extractedParams.userid);
-            if (extractedParams.number) query.set("number", extractedParams.number);
-            if (extractedParams.billid) {
-                query.set("billid", extractedParams.billid);
-                query.set("orderId", extractedParams.billid);
+            if (effUserid) query.set("userid", effUserid);
+            if (effNumber) query.set("number", effNumber);
+            if (effBillid) {
+                query.set("billid", effBillid);
+                query.set("orderId", effBillid);
             }
 
             const res = await fetch(`${getBaseURL()}/pay/pay-info?${query.toString()}`);
@@ -116,6 +132,7 @@ function PayContent({ slugParams }: PayPageProps) {
             }
             const data = await res.json();
             setPayData(data);
+            setShowOtpForm(false);
 
             if (data.bill && !data.bill.isPaid) {
                 setSelectedBillId(data.bill.id);
@@ -132,7 +149,7 @@ function PayContent({ slugParams }: PayPageProps) {
 
     useEffect(() => {
         fetchPayData();
-    }, [extractedParams]);
+    }, [extractedParams, overridePhone, overrideUserId]);
 
     const [payIframeUrl, setPayIframeUrl] = useState<string | null>(null);
     const [showPayIframeModal, setShowPayIframeModal] = useState(false);
@@ -271,20 +288,44 @@ function PayContent({ slugParams }: PayPageProps) {
         );
     }
 
-    if (error || (!payData?.bill && !payData?.totalDue && !payData?.customer)) {
+    if (showOtpForm || (error && (!payData?.bill && !payData?.totalDue && !payData?.customer)) || (!payData?.bill && !payData?.totalDue && !payData?.customer && !loading)) {
         return (
-            <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-center p-6 text-center">
-                <div className="w-16 h-16 rounded-full bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400 mb-4">
-                    <AlertCircle className="w-8 h-8" />
+            <div className="min-h-screen bg-[#fbfdfc] dark:bg-[#061512] text-slate-900 dark:text-slate-100 flex flex-col justify-between p-4 sm:p-6 lg:p-10 relative overflow-y-auto font-sans">
+                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[350px] bg-emerald-500/10 dark:bg-emerald-500/15 blur-[140px] rounded-full pointer-events-none" />
+                <div className="absolute bottom-0 right-0 w-[400px] h-[300px] bg-teal-500/10 dark:bg-teal-500/15 blur-[120px] rounded-full pointer-events-none" />
+                
+                <div className="max-w-xl mx-auto w-full space-y-6 relative z-10 py-6 my-auto">
+                    {/* Brand Header */}
+                    <div className="flex items-center justify-between pb-4 border-b border-slate-200/80 dark:border-slate-800/80">
+                        <div className="flex items-center gap-3.5">
+                            <div className="w-11 h-11 rounded-2xl bg-emerald-600 dark:bg-emerald-500 flex items-center justify-center text-white dark:text-slate-950 shadow-lg shadow-emerald-600/20 ring-4 ring-emerald-500/10">
+                                <Building className="w-6 h-6 stroke-[2.5]" />
+                            </div>
+                            <div>
+                                <h2 className="text-xl font-black tracking-tight text-slate-900 dark:text-white uppercase flex items-center gap-2">
+                                    Book My Veg
+                                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                                </h2>
+                                <p className="text-[11px] text-slate-500 dark:text-slate-400 font-bold tracking-wide uppercase">Official Digital Payment Portal</p>
+                            </div>
+                        </div>
+                        <div className="px-3.5 py-1.5 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 rounded-full text-emerald-700 dark:text-emerald-400 text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 shadow-xs">
+                            <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" /> 256-Bit Encrypted
+                        </div>
+                    </div>
+
+                    <PayOtpLoginForm 
+                        onAuthenticated={(phone, userId) => {
+                            setOverridePhone(phone);
+                            if (userId) setOverrideUserId(userId);
+                            setShowOtpForm(false);
+                            const params = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
+                            params.set("number", phone);
+                            if (userId) params.set("userid", userId);
+                            router.push(`/pay?${params.toString()}`);
+                        }}
+                    />
                 </div>
-                <h1 className="text-2xl font-black mb-2">Payment Details Not Found</h1>
-                <p className="text-slate-400 text-sm max-w-md mb-6">{error || "The bill or customer account parameters could not be verified."}</p>
-                <button 
-                    onClick={fetchPayData}
-                    className="px-6 py-3 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl text-sm transition-all flex items-center gap-2"
-                >
-                    <RefreshCw className="w-4 h-4" /> Retry
-                </button>
             </div>
         );
     }
@@ -335,12 +376,25 @@ function PayContent({ slugParams }: PayPageProps) {
                                 <p className="text-base font-black text-slate-900 dark:text-white tracking-wide">{customer.name || "Valued Customer"}</p>
                             </div>
                         </div>
-                        {customer.phone && (
-                            <div className="flex items-center gap-2 text-xs font-bold text-emerald-800 dark:text-teal-300 bg-emerald-50 dark:bg-teal-500/10 px-3.5 py-2 rounded-xl border border-emerald-200 dark:border-teal-500/20">
-                                <Phone className="w-3.5 h-3.5 text-emerald-600 dark:text-teal-400" />
-                                <span>{customer.phone}</span>
-                            </div>
-                        )}
+                        <div className="flex items-center gap-2">
+                            {customer.phone && (
+                                <div className="flex items-center gap-2 text-xs font-bold text-emerald-800 dark:text-teal-300 bg-emerald-50 dark:bg-teal-500/10 px-3.5 py-2 rounded-xl border border-emerald-200 dark:border-teal-500/20">
+                                    <Phone className="w-3.5 h-3.5 text-emerald-600 dark:text-teal-400" />
+                                    <span>{customer.phone}</span>
+                                </div>
+                            )}
+                            <button
+                                onClick={() => {
+                                    setShowOtpForm(true);
+                                    setPayData(null);
+                                }}
+                                className="px-3 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5"
+                                title="Switch mobile number or login"
+                            >
+                                <LogOut className="w-3.5 h-3.5 text-slate-500" />
+                                <span className="hidden sm:inline">Switch</span>
+                            </button>
+                        </div>
                     </div>
                 )}
 
@@ -650,6 +704,191 @@ function PayContent({ slugParams }: PayPageProps) {
                 )}
 
             </div>
+        </div>
+    );
+}
+
+function PayOtpLoginForm({ onAuthenticated }: { onAuthenticated: (phone: string, userId?: string) => void }) {
+    const [phone, setPhone] = useState("");
+    const [otp, setOtp] = useState("");
+    const [step, setStep] = useState<"PHONE" | "OTP">("PHONE");
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [resendTimer, setResendTimer] = useState(0);
+
+    useEffect(() => {
+        let interval: any = null;
+        if (resendTimer > 0) {
+            interval = setInterval(() => {
+                setResendTimer((prev) => prev - 1);
+            }, 1000);
+        }
+        return () => clearInterval(interval);
+    }, [resendTimer]);
+
+    const handleSendOtp = async (e?: React.FormEvent) => {
+        if (e) e.preventDefault();
+        const cleanPhone = phone.replace(/\D/g, "");
+        if (cleanPhone.length < 10) {
+            setError("Please enter a valid 10-digit mobile number.");
+            return;
+        }
+
+        setLoading(true);
+        setError(null);
+        try {
+            await sendOtp(cleanPhone);
+            setStep("OTP");
+            setResendTimer(30);
+        } catch (err: any) {
+            setError(err.response?.data?.message || err.message || "Failed to send OTP. Please check mobile number.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleVerifyOtp = async (e?: React.FormEvent) => {
+        if (e) e.preventDefault();
+        const cleanPhone = phone.replace(/\D/g, "");
+        if (!otp || otp.length < 4) {
+            setError("Please enter the verification code sent to your phone.");
+            return;
+        }
+
+        setLoading(true);
+        setError(null);
+        try {
+            const res = await verifyOtp(cleanPhone, otp);
+            onAuthenticated(cleanPhone, res.user?.id);
+        } catch (err: any) {
+            setError(err.response?.data?.message || err.message || "Invalid or expired OTP code.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <div className="p-6 sm:p-8 bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-emerald-500/20 rounded-[32px] space-y-6 shadow-xl relative overflow-hidden">
+            <div className="flex items-center gap-3.5">
+                <div className="w-12 h-12 rounded-2xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0 shadow-xs">
+                    <Smartphone className="w-6 h-6" />
+                </div>
+                <div>
+                    <h3 className="text-xl font-black text-slate-900 dark:text-white tracking-tight">
+                        {step === "PHONE" ? "Enter Mobile Number" : "Verify OTP Code"}
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                        {step === "PHONE" 
+                            ? "Enter your registered mobile number to view and pay your pending bills." 
+                            : `Enter the 6-digit OTP code sent to +91 ${phone}`}
+                    </p>
+                </div>
+            </div>
+
+            {error && (
+                <div className="p-3.5 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-500/30 rounded-xl text-rose-600 dark:text-rose-400 text-xs font-bold flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{error}</span>
+                </div>
+            )}
+
+            {step === "PHONE" ? (
+                <form onSubmit={handleSendOtp} className="space-y-4">
+                    <div className="space-y-2">
+                        <label className="text-[11px] font-black uppercase text-slate-500 dark:text-slate-400 tracking-wider">
+                            Mobile Phone Number
+                        </label>
+                        <div className="relative flex items-center">
+                            <span className="absolute left-4 text-slate-500 dark:text-slate-400 font-bold text-sm select-none">
+                                +91
+                            </span>
+                            <input
+                                type="tel"
+                                maxLength={10}
+                                value={phone}
+                                onChange={(e) => setPhone(e.target.value.replace(/\D/g, ""))}
+                                placeholder="9876543210"
+                                className="w-full pl-14 pr-4 py-3.5 bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800 rounded-2xl text-slate-900 dark:text-white font-bold text-base focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all placeholder:text-slate-400"
+                                autoFocus
+                            />
+                        </div>
+                    </div>
+
+                    <button
+                        type="submit"
+                        disabled={loading || phone.length < 10}
+                        className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-sm uppercase tracking-wider rounded-2xl shadow-lg shadow-emerald-600/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
+                    >
+                        {loading ? (
+                            <Loader2 className="w-5 h-5 animate-spin" />
+                        ) : (
+                            <>
+                                Send OTP Code
+                                <ArrowRight className="w-4 h-4" />
+                            </>
+                        )}
+                    </button>
+                </form>
+            ) : (
+                <form onSubmit={handleVerifyOtp} className="space-y-4">
+                    <div className="space-y-2">
+                        <div className="flex justify-between items-center">
+                            <label className="text-[11px] font-black uppercase text-slate-500 dark:text-slate-400 tracking-wider">
+                                Enter 6-Digit OTP
+                            </label>
+                            <button
+                                type="button"
+                                onClick={() => { setStep("PHONE"); setOtp(""); setError(null); }}
+                                className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 hover:underline uppercase tracking-wider"
+                            >
+                                Change Number
+                            </button>
+                        </div>
+                        <input
+                            type="text"
+                            inputMode="numeric"
+                            maxLength={6}
+                            value={otp}
+                            onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
+                            placeholder="123456"
+                            className="w-full text-center tracking-[0.5em] px-4 py-3.5 bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800 rounded-2xl text-slate-900 dark:text-white font-black text-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all placeholder:tracking-normal placeholder:text-slate-400 placeholder:text-sm"
+                            autoFocus
+                        />
+                    </div>
+
+                    <button
+                        type="submit"
+                        disabled={loading || otp.length < 4}
+                        className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-sm uppercase tracking-wider rounded-2xl shadow-lg shadow-emerald-600/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
+                    >
+                        {loading ? (
+                            <Loader2 className="w-5 h-5 animate-spin" />
+                        ) : (
+                            <>
+                                Verify & Access Payment Portal
+                                <ShieldCheck className="w-5 h-5" />
+                            </>
+                        )}
+                    </button>
+
+                    <div className="text-center pt-2">
+                        {resendTimer > 0 ? (
+                            <p className="text-xs text-slate-400 font-medium">
+                                Resend OTP code in <span className="font-bold text-slate-300">{resendTimer}s</span>
+                            </p>
+                        ) : (
+                            <button
+                                type="button"
+                                onClick={() => handleSendOtp()}
+                                disabled={loading}
+                                className="text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:underline uppercase tracking-wider"
+                            >
+                                Resend OTP Code
+                            </button>
+                        )}
+                    </div>
+                </form>
+            )}
         </div>
     );
 }
