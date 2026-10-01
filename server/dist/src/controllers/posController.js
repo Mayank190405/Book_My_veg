@@ -1188,7 +1188,7 @@ const collectDuePayment = (req, res, next) => __awaiter(void 0, void 0, void 0, 
         }
         else {
             const payingAmt = amount !== undefined && amount !== null && Number(amount) > 0
-                ? Math.min(Number(amount), remainingDue)
+                ? Number(amount)
                 : remainingDue;
             paymentSlices = [{
                     method: String(method || "CASH").toUpperCase(),
@@ -1201,10 +1201,13 @@ const collectDuePayment = (req, res, next) => __awaiter(void 0, void 0, void 0, 
         if (totalPayingNow <= 0) {
             return res.status(400).json({ message: "Invalid payment amount specified." });
         }
-        const newTotalPaid = paidAlready + totalPayingNow;
+        const toApplyTarget = Math.min(totalPayingNow, remainingDue);
+        const overflow = totalPayingNow - toApplyTarget;
+        const newTotalPaid = paidAlready + toApplyTarget;
         const isFull = newTotalPaid >= orderTotal;
         const customerId = order.userId;
         yield prisma_1.default.$transaction((tx) => __awaiter(void 0, void 0, void 0, function* () {
+            var _a;
             // Handle wallet deduction if applicable
             for (const slice of paymentSlices) {
                 if (slice.method === "WALLET" || (useWalletBalance && slice.method === "ADVANCE")) {
@@ -1226,7 +1229,7 @@ const collectDuePayment = (req, res, next) => __awaiter(void 0, void 0, void 0, 
                 yield tx.payment.create({
                     data: {
                         orderId,
-                        amount: new client_1.Prisma.Decimal(slice.amount),
+                        amount: new client_1.Prisma.Decimal(toApplyTarget),
                         method: slice.method,
                         status: "SUCCESS",
                         transactionId: slice.transactionId || `DUE_SETTLE_${Date.now()}_${Math.random().toString(36).slice(-4)}`,
@@ -1234,7 +1237,7 @@ const collectDuePayment = (req, res, next) => __awaiter(void 0, void 0, void 0, 
                     }
                 });
             }
-            // Update order status
+            // Update target order status
             yield tx.order.update({
                 where: { id: orderId },
                 data: {
@@ -1243,12 +1246,55 @@ const collectDuePayment = (req, res, next) => __awaiter(void 0, void 0, void 0, 
                     statusHistory: {
                         create: {
                             status: order.status,
-                            remark: `Bill settlement: ₹${totalPayingNow} collected (${paymentSlices.map(s => `${s.method}: ₹${s.amount}`).join(", ")}). Total Paid: ₹${newTotalPaid}/${orderTotal}`,
+                            remark: `Bill settlement: ₹${toApplyTarget} collected (${paymentSlices.map(s => `${s.method}: ₹${s.amount}`).join(", ")}). Total Paid: ₹${newTotalPaid}/${orderTotal}`,
                             changedBy: staffId
                         }
                     }
                 }
             });
+            // If there's overflow money and customerId is present, roll over to settle customer's other unpaid orders
+            if (overflow > 0 && customerId) {
+                let remainingOverflow = overflow;
+                const otherUnpaid = yield tx.order.findMany({
+                    where: {
+                        userId: customerId,
+                        id: { not: orderId },
+                        isPaid: false,
+                        status: { notIn: ["CANCELLED", "FAILED"] }
+                    },
+                    orderBy: { createdAt: "asc" },
+                    include: { payments: true }
+                });
+                for (const otherOrder of otherUnpaid) {
+                    if (remainingOverflow <= 0)
+                        break;
+                    const otherPaid = (otherOrder.payments || [])
+                        .filter((p) => p.status === "SUCCESS" || p.status === "COMPLETED" || p.status === "PAID")
+                        .reduce((acc, p) => acc + Number(p.amount), 0);
+                    const otherDue = Number(otherOrder.totalAmount) - otherPaid;
+                    const applyToOther = Math.min(remainingOverflow, otherDue);
+                    if (applyToOther > 0) {
+                        yield tx.payment.create({
+                            data: {
+                                orderId: otherOrder.id,
+                                amount: new client_1.Prisma.Decimal(applyToOther),
+                                method: ((_a = paymentSlices[0]) === null || _a === void 0 ? void 0 : _a.method) || method || "CASH",
+                                status: "SUCCESS",
+                                transactionId: `POS_OVERFLOW_${Date.now()}_${otherOrder.id.slice(0, 6)}`
+                            }
+                        });
+                        const otherFull = (otherPaid + applyToOther) >= Number(otherOrder.totalAmount);
+                        yield tx.order.update({
+                            where: { id: otherOrder.id },
+                            data: {
+                                isPaid: otherFull,
+                                paymentStatus: otherFull ? "COMPLETED" : "PARTIAL"
+                            }
+                        });
+                        remainingOverflow -= applyToOther;
+                    }
+                }
+            }
             // Update cashier shift cash denominations if CASH was collected
             const cashSlice = paymentSlices.find(s => s.method === "CASH");
             if (cashSlice && (cashSlice.denominations || denominations) && locationId) {
@@ -1283,6 +1329,9 @@ const collectDuePayment = (req, res, next) => __awaiter(void 0, void 0, void 0, 
                     console.warn("[POS Bill Settle] Cashier shift denomination update notice:", shiftErr.message);
                 }
             }
+            if (customerId) {
+                yield (0, orderController_1.syncCustomerTotalDue)(customerId, tx);
+            }
         }));
         // ── WhatsApp Notification Dispatch ────────────────────────────────
         if ((_c = order.user) === null || _c === void 0 ? void 0 : _c.phone) {
@@ -1290,9 +1339,8 @@ const collectDuePayment = (req, res, next) => __awaiter(void 0, void 0, void 0, 
                 const user = order.user;
                 const totalAmount = orderTotal;
                 const remainingDueAfter = Math.max(0, orderTotal - newTotalPaid);
-                const paymentModeDesc = paymentSlices.map(p => `${p.method}: ₹${p.amount}`).join(", ");
+                const paymentModeDesc = `${method || "CASH"}: ₹${totalPayingNow}`;
                 const { sendInvoicePaidViaWhatsapp, sendInvoiceDueViaWhatsapp, sendPaymentReceivedViaWhatsapp } = require("../services/mbgcard");
-                // Send Payment Received template confirmation
                 sendPaymentReceivedViaWhatsapp(user.phone, user.name || "Customer", orderId, totalPayingNow, paymentModeDesc).catch((err) => {
                     console.error("[POS Bill Settle] WhatsApp Payment Received dispatch failure:", err.message);
                 });
@@ -1333,7 +1381,7 @@ const collectDuePayment = (req, res, next) => __awaiter(void 0, void 0, void 0, 
 exports.collectDuePayment = collectDuePayment;
 const settleAccountBalance = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     var _a, _b;
-    const { customerId } = req.params;
+    const customerId = String(req.params.customerId);
     const { amount, method, transactionId, denominations } = req.body;
     const staffId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.userId;
     const locationId = (_b = req.user) === null || _b === void 0 ? void 0 : _b.locationId;
@@ -1345,8 +1393,8 @@ const settleAccountBalance = (req, res, next) => __awaiter(void 0, void 0, void 
             const unpaid = yield tx.order.findMany({
                 where: {
                     userId: customerId,
-                    paymentStatus: { in: ["PENDING", "PARTIAL"] },
-                    status: { notIn: ["CANCELLED", "FAILED", "PAYMENT_PENDING"] }
+                    isPaid: false,
+                    status: { notIn: ["CANCELLED", "FAILED"] }
                 },
                 orderBy: { createdAt: "asc" },
                 include: { payments: true }
@@ -1355,7 +1403,10 @@ const settleAccountBalance = (req, res, next) => __awaiter(void 0, void 0, void 
             for (const order of unpaid) {
                 if (remaining <= 0)
                     break;
-                const paid = order.payments.reduce((acc, p) => acc + Number(p.amount), 0);
+                const paid = order.payments.reduce((acc, p) => {
+                    const isSuccess = p.status === "SUCCESS" || p.status === "COMPLETED" || p.status === "PAID";
+                    return isSuccess ? acc + Number(p.amount) : acc;
+                }, 0);
                 const due = Number(order.totalAmount) - paid;
                 const toApply = Math.min(remaining, due);
                 if (toApply > 0) {
@@ -1371,7 +1422,13 @@ const settleAccountBalance = (req, res, next) => __awaiter(void 0, void 0, void 
                     });
                     firstPaymentSaved = true;
                     const isFull = (paid + toApply) >= Number(order.totalAmount);
-                    yield tx.order.update({ where: { id: order.id }, data: { isPaid: isFull, paymentStatus: isFull ? "COMPLETED" : "PARTIAL" } });
+                    yield tx.order.update({
+                        where: { id: order.id },
+                        data: {
+                            isPaid: isFull,
+                            paymentStatus: isFull ? "COMPLETED" : "PARTIAL"
+                        }
+                    });
                     remaining -= toApply;
                 }
             }
@@ -1403,6 +1460,7 @@ const settleAccountBalance = (req, res, next) => __awaiter(void 0, void 0, void 
                     });
                 }
             }
+            yield (0, orderController_1.syncCustomerTotalDue)(customerId, tx);
             return { settled: Number(amount) - remaining };
         }));
         res.json(result);

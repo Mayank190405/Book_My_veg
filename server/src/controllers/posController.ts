@@ -1275,7 +1275,7 @@ export const collectDuePayment = async (req: AuthenticatedRequest, res: Response
                 .filter(p => p.amount > 0);
         } else {
             const payingAmt = amount !== undefined && amount !== null && Number(amount) > 0 
-                ? Math.min(Number(amount), remainingDue)
+                ? Number(amount)
                 : remainingDue;
             
             paymentSlices = [{
@@ -1291,7 +1291,10 @@ export const collectDuePayment = async (req: AuthenticatedRequest, res: Response
             return res.status(400).json({ message: "Invalid payment amount specified." });
         }
 
-        const newTotalPaid = paidAlready + totalPayingNow;
+        const toApplyTarget = Math.min(totalPayingNow, remainingDue);
+        const overflow = totalPayingNow - toApplyTarget;
+
+        const newTotalPaid = paidAlready + toApplyTarget;
         const isFull = newTotalPaid >= orderTotal;
 
         const customerId = order.userId;
@@ -1318,7 +1321,7 @@ export const collectDuePayment = async (req: AuthenticatedRequest, res: Response
                 await tx.payment.create({
                     data: {
                         orderId,
-                        amount: new Prisma.Decimal(slice.amount),
+                        amount: new Prisma.Decimal(toApplyTarget),
                         method: slice.method,
                         status: "SUCCESS",
                         transactionId: slice.transactionId || `DUE_SETTLE_${Date.now()}_${Math.random().toString(36).slice(-4)}`,
@@ -1327,7 +1330,7 @@ export const collectDuePayment = async (req: AuthenticatedRequest, res: Response
                 });
             }
 
-            // Update order status
+            // Update target order status
             await tx.order.update({
                 where: { id: orderId },
                 data: {
@@ -1336,12 +1339,58 @@ export const collectDuePayment = async (req: AuthenticatedRequest, res: Response
                     statusHistory: {
                         create: {
                             status: order.status,
-                            remark: `Bill settlement: ₹${totalPayingNow} collected (${paymentSlices.map(s => `${s.method}: ₹${s.amount}`).join(", ")}). Total Paid: ₹${newTotalPaid}/${orderTotal}`,
+                            remark: `Bill settlement: ₹${toApplyTarget} collected (${paymentSlices.map(s => `${s.method}: ₹${s.amount}`).join(", ")}). Total Paid: ₹${newTotalPaid}/${orderTotal}`,
                             changedBy: staffId
                         }
                     }
                 }
             });
+
+            // If there's overflow money and customerId is present, roll over to settle customer's other unpaid orders
+            if (overflow > 0 && customerId) {
+                let remainingOverflow = overflow;
+                const otherUnpaid = await tx.order.findMany({
+                    where: {
+                        userId: customerId,
+                        id: { not: orderId },
+                        isPaid: false,
+                        status: { notIn: ["CANCELLED", "FAILED"] }
+                    },
+                    orderBy: { createdAt: "asc" },
+                    include: { payments: true }
+                });
+
+                for (const otherOrder of otherUnpaid) {
+                    if (remainingOverflow <= 0) break;
+                    const otherPaid = (otherOrder.payments || [])
+                        .filter((p: any) => p.status === "SUCCESS" || p.status === "COMPLETED" || p.status === "PAID")
+                        .reduce((acc: number, p: any) => acc + Number(p.amount), 0);
+                    const otherDue = Number(otherOrder.totalAmount) - otherPaid;
+                    const applyToOther = Math.min(remainingOverflow, otherDue);
+
+                    if (applyToOther > 0) {
+                        await tx.payment.create({
+                            data: {
+                                orderId: otherOrder.id,
+                                amount: new Prisma.Decimal(applyToOther),
+                                method: paymentSlices[0]?.method || method || "CASH",
+                                status: "SUCCESS",
+                                transactionId: `POS_OVERFLOW_${Date.now()}_${otherOrder.id.slice(0, 6)}`
+                            }
+                        });
+
+                        const otherFull = (otherPaid + applyToOther) >= Number(otherOrder.totalAmount);
+                        await tx.order.update({
+                            where: { id: otherOrder.id },
+                            data: {
+                                isPaid: otherFull,
+                                paymentStatus: otherFull ? "COMPLETED" : "PARTIAL"
+                            }
+                        });
+                        remainingOverflow -= applyToOther;
+                    }
+                }
+            }
 
             // Update cashier shift cash denominations if CASH was collected
             const cashSlice = paymentSlices.find(s => s.method === "CASH");
@@ -1379,6 +1428,10 @@ export const collectDuePayment = async (req: AuthenticatedRequest, res: Response
                     console.warn("[POS Bill Settle] Cashier shift denomination update notice:", shiftErr.message);
                 }
             }
+
+            if (customerId) {
+                await syncCustomerTotalDue(customerId, tx);
+            }
         });
 
         // ── WhatsApp Notification Dispatch ────────────────────────────────
@@ -1387,10 +1440,9 @@ export const collectDuePayment = async (req: AuthenticatedRequest, res: Response
                 const user = order.user;
                 const totalAmount = orderTotal;
                 const remainingDueAfter = Math.max(0, orderTotal - newTotalPaid);
-                const paymentModeDesc = paymentSlices.map(p => `${p.method}: ₹${p.amount}`).join(", ");
+                const paymentModeDesc = `${method || "CASH"}: ₹${totalPayingNow}`;
                 const { sendInvoicePaidViaWhatsapp, sendInvoiceDueViaWhatsapp, sendPaymentReceivedViaWhatsapp } = require("../services/mbgcard");
 
-                // Send Payment Received template confirmation
                 sendPaymentReceivedViaWhatsapp(user.phone, user.name || "Customer", orderId, totalPayingNow, paymentModeDesc).catch((err: any) => {
                     console.error("[POS Bill Settle] WhatsApp Payment Received dispatch failure:", err.message);
                 });
@@ -1427,7 +1479,7 @@ export const collectDuePayment = async (req: AuthenticatedRequest, res: Response
 };
 
 export const settleAccountBalance = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
-    const { customerId } = req.params;
+    const customerId = String(req.params.customerId);
     const { amount, method, transactionId, denominations } = req.body;
     const staffId = req.user?.userId;
     const locationId = req.user?.locationId;
@@ -1440,8 +1492,8 @@ export const settleAccountBalance = async (req: AuthenticatedRequest, res: Respo
             const unpaid = await (tx as any).order.findMany({
                 where: { 
                     userId: customerId, 
-                    paymentStatus: { in: ["PENDING", "PARTIAL"] }, 
-                    status: { notIn: ["CANCELLED", "FAILED", "PAYMENT_PENDING"] } 
+                    isPaid: false, 
+                    status: { notIn: ["CANCELLED", "FAILED"] } 
                 },
                 orderBy: { createdAt: "asc" },
                 include: { payments: true }
@@ -1451,7 +1503,10 @@ export const settleAccountBalance = async (req: AuthenticatedRequest, res: Respo
 
             for (const order of unpaid) {
                 if (remaining <= 0) break;
-                const paid = (order.payments as any[]).reduce((acc: number, p: any) => acc + Number(p.amount), 0);
+                const paid = (order.payments as any[]).reduce((acc: number, p: any) => {
+                    const isSuccess = p.status === "SUCCESS" || p.status === "COMPLETED" || p.status === "PAID";
+                    return isSuccess ? acc + Number(p.amount) : acc;
+                }, 0);
                 const due = Number(order.totalAmount) - paid;
                 const toApply = Math.min(remaining, due);
 
@@ -1468,7 +1523,13 @@ export const settleAccountBalance = async (req: AuthenticatedRequest, res: Respo
                     });
                     firstPaymentSaved = true;
                     const isFull = (paid + toApply) >= Number(order.totalAmount);
-                    await tx.order.update({ where: { id: order.id }, data: { isPaid: isFull, paymentStatus: isFull ? "COMPLETED" : "PARTIAL" } });
+                    await tx.order.update({ 
+                        where: { id: order.id }, 
+                        data: { 
+                            isPaid: isFull, 
+                            paymentStatus: isFull ? "COMPLETED" : "PARTIAL" 
+                        } 
+                    });
                     remaining -= toApply;
                 }
             }
@@ -1504,6 +1565,8 @@ export const settleAccountBalance = async (req: AuthenticatedRequest, res: Respo
                     });
                 }
             }
+
+            await syncCustomerTotalDue(customerId, tx);
 
             return { settled: Number(amount) - remaining };
         });
