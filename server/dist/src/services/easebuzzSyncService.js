@@ -288,11 +288,11 @@ const syncEasebuzzTransactions = (customStartDate_1, customEndDate_1, ...args_1)
                     if (!tx.txnid.startsWith("DUE_") && !tx.txnid.startsWith("SETTLE_")) {
                         resolvedOrderId = tx.txnid.replace(/_\d{3,}$/, "");
                     }
-                    // Extract order ID candidate from productinfo if present (e.g. "Bill Payment BMV9IO3QM3C3F8T")
+                    // Extract order ID candidate from productinfo if present (e.g. "Bill Payment BMV1EKWBYHX93J1")
                     if (tx.productinfo) {
                         const productMatch = String(tx.productinfo).match(/BMV[A-Z0-9]+/i);
-                        if (productMatch && productMatch[0].length >= 8) {
-                            resolvedOrderId = productMatch[0].slice(0, 8);
+                        if (productMatch && productMatch[0].length >= 6) {
+                            resolvedOrderId = productMatch[0];
                         }
                     }
                     try {

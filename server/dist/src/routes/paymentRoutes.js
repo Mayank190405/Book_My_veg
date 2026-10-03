@@ -7,6 +7,7 @@ const router = (0, express_1.Router)();
 // Webhook (No auth, validated by signature) - Must be before auth middleware if using router.use
 router.post("/webhook", paymentController_1.handleWebhook);
 router.post("/easebuzz/callback", paymentController_1.handleEasebuzzCallback);
+router.get("/easebuzz/callback", paymentController_1.handleEasebuzzCallback);
 router.use(auth_1.authenticate);
 // Customer Advance Wallet Management & Deposit Flow
 router.get("/wallet", paymentController_1.getWalletDetails);

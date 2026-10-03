@@ -283,13 +283,24 @@ export const sendInvoiceDueViaWhatsapp = async (
     totalAmount: number,
     paymentMode: string,
     dueAmount: number,
-    _userId: string,
+    userId: string,
     orderId: string
 ) => {
     const origin = process.env.CLIENT_URL || "https://bookmyveg.co.in";
-    const invoicePdfLink = `${origin}/invoice/${orderId}`;
+    const cleanPhone = phone ? phone.replace(/\D/g, "") : "";
+
+    let payLink = `${origin}/pay?number=${cleanPhone}`;
+    if (userId) {
+        payLink += `&userid=${userId}`;
+    }
+    if (orderId) {
+        payLink += `&billid=${orderId}`;
+    }
+
+    const invoiceAndPayLink = `${origin}/invoice/${orderId}\n\n💳 *Pay Online:* ${payLink}`;
+
     return sendTemplateViaChatHub(phone, "bill_created", {
-        body: [customerName, invoiceNo, String(totalAmount), `DUE: ₹${dueAmount} (${paymentMode})`, invoicePdfLink]
+        body: [customerName, invoiceNo, String(totalAmount), `DUE: ₹${dueAmount} (${paymentMode})`, invoiceAndPayLink]
     });
 };
 

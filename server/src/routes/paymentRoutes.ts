@@ -21,6 +21,7 @@ const router = Router();
 // Webhook (No auth, validated by signature) - Must be before auth middleware if using router.use
 router.post("/webhook", handleWebhook);
 router.post("/easebuzz/callback", handleEasebuzzCallback);
+router.get("/easebuzz/callback", handleEasebuzzCallback);
 
 router.use(authenticate);
 

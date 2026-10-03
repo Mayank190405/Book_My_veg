@@ -248,6 +248,7 @@ export default function POSOperator() {
     const [cancelBillSearch, setCancelBillSearch] = useState("");
     const [cancelSearchResults, setCancelSearchResults] = useState<any[]>([]);
     const [cancelReason, setCancelReason] = useState("");
+    const [isSyncingGateway, setIsSyncingGateway] = useState(false);
 
     // Scanner
     const [showScanner, setShowScanner] = useState(false);
@@ -3040,6 +3041,27 @@ export default function POSOperator() {
                                 <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mt-1">{selectedCustomer?.name} — {selectedCustomer?.phone}</p>
                             </div>
                             <div className="flex items-center gap-2">
+                                <button
+                                    disabled={isSyncingGateway}
+                                    onClick={async () => {
+                                        setIsSyncingGateway(true);
+                                        try {
+                                            await api.post("/payments/easebuzz/sync");
+                                            if (selectedCustomer?.id) {
+                                                await fetchCustomerHistory(selectedCustomer.id, false);
+                                            }
+                                            toast.success("Gateway payments synced successfully!");
+                                        } catch (err: any) {
+                                            toast.error(err?.response?.data?.message || err.message || "Failed to sync gateway payments");
+                                        } finally {
+                                            setIsSyncingGateway(false);
+                                        }
+                                    }}
+                                    className="px-3 py-1.5 bg-emerald-600 text-white hover:bg-emerald-700 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs transition-all disabled:opacity-50"
+                                >
+                                    <RefreshCw className={cn("w-3.5 h-3.5", isSyncingGateway && "animate-spin")} />
+                                    {isSyncingGateway ? "Syncing..." : "Sync Gateway Dues"}
+                                </button>
                                 <button
                                     onClick={() => {
                                         setCustomWhatsAppPhone(selectedCustomer?.phone || "");

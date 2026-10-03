@@ -1159,20 +1159,29 @@ const handleWebhook = (req, res) => __awaiter(void 0, void 0, void 0, function* 
 exports.handleWebhook = handleWebhook;
 // ─── handleEasebuzzCallback (Easebuzz Redirect Endpoint) ──────────────────────
 const handleEasebuzzCallback = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    logger_1.default.info(`[Easebuzz Callback] Received callback payload: ${JSON.stringify(req.body)}`);
+    const payload = Object.assign(Object.assign({}, (req.query || {})), (req.body || {}));
+    logger_1.default.info(`[Easebuzz Callback] Received callback payload: ${JSON.stringify(payload)}`);
     const clientUrl = process.env.CLIENT_URL || "http://localhost:3000";
-    if (req.body.hash && process.env.EASEBUZZ_SALT) {
-        const calculatedHash = getEasebuzzReverseHash(req.body, process.env.EASEBUZZ_SALT);
-        if (calculatedHash !== req.body.hash) {
-            logger_1.default.warn(`[Easebuzz Callback] Signature mismatch: calculated=${calculatedHash}, received=${req.body.hash}. Continuing processing based on transaction status.`);
+    if (payload.hash && process.env.EASEBUZZ_SALT) {
+        const calculatedHash = getEasebuzzReverseHash(payload, process.env.EASEBUZZ_SALT);
+        if (calculatedHash !== payload.hash) {
+            logger_1.default.warn(`[Easebuzz Callback] Signature mismatch: calculated=${calculatedHash}, received=${payload.hash}. Continuing processing based on transaction status.`);
         }
     }
-    const { txnid, status, easebuzz_id, amount, mode, phone, email, firstname } = req.body;
+    const txnid = (payload.txnid || payload.tx_id || payload.order_id || payload.easepayid || payload.easebuzz_id || "").toString().trim();
+    const status = (payload.status || payload.transaction_status || "").toString();
+    const easebuzz_id = (payload.easebuzz_id || payload.easepayid || payload.txn_id || txnid).toString();
+    const amount = Number(payload.amount || payload.net_amount_debit || payload.net_debit_amount || 0);
+    const mode = (payload.mode || payload.payment_source || payload.card_type || "ONLINE").toString();
+    const phone = (payload.phone || payload.phone_number || payload.mobile || payload.customer_phone || payload.user_phone || payload.customerPhone || "").toString();
+    const email = (payload.email || payload.customer_email || payload.user_email || payload.customerEmail || "").toString();
+    const firstname = (payload.firstname || payload.name || payload.customer_name || payload.customerName || "").toString();
+    const productinfo = (payload.productinfo || payload.product_info || "").toString();
     if (!txnid) {
         logger_1.default.error("[Easebuzz Callback] Missing txnid in payload");
         return res.redirect(`${clientUrl}/payment/success?status=failed&message=Missing transaction ID`);
     }
-    const isSuccess = (status || "").toLowerCase() === "success";
+    const isSuccess = status.toLowerCase() === "success" || status.toLowerCase() === "charged";
     // Handle Customer Advance Wallet Deposit callback redirect
     if (txnid && txnid.startsWith("WLT_")) {
         if (isSuccess) {
@@ -1212,7 +1221,9 @@ const handleEasebuzzCallback = (req, res) => __awaiter(void 0, void 0, void 0, f
             payment_method_type: mode || "ONLINE",
             phone,
             email,
-            firstname
+            firstname,
+            productinfo,
+            metadata: payload
         });
         return res.redirect(`${clientUrl}/payment/success?order_id=${resolvedOrderId}&status=${isSuccess ? "success" : "failed"}`);
     }

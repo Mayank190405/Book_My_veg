@@ -255,11 +255,19 @@ exports.sendInvoicePaidViaWhatsapp = sendInvoicePaidViaWhatsapp;
 /**
  * Invoice created (Due / Partial) via UTILITY template 'bill_created'.
  */
-const sendInvoiceDueViaWhatsapp = (phone, customerName, invoiceNo, totalAmount, paymentMode, dueAmount, _userId, orderId) => __awaiter(void 0, void 0, void 0, function* () {
+const sendInvoiceDueViaWhatsapp = (phone, customerName, invoiceNo, totalAmount, paymentMode, dueAmount, userId, orderId) => __awaiter(void 0, void 0, void 0, function* () {
     const origin = process.env.CLIENT_URL || "https://bookmyveg.co.in";
-    const invoicePdfLink = `${origin}/invoice/${orderId}`;
+    const cleanPhone = phone ? phone.replace(/\D/g, "") : "";
+    let payLink = `${origin}/pay?number=${cleanPhone}`;
+    if (userId) {
+        payLink += `&userid=${userId}`;
+    }
+    if (orderId) {
+        payLink += `&billid=${orderId}`;
+    }
+    const invoiceAndPayLink = `${origin}/invoice/${orderId}\n\n💳 *Pay Online:* ${payLink}`;
     return (0, exports.sendTemplateViaChatHub)(phone, "bill_created", {
-        body: [customerName, invoiceNo, String(totalAmount), `DUE: ₹${dueAmount} (${paymentMode})`, invoicePdfLink]
+        body: [customerName, invoiceNo, String(totalAmount), `DUE: ₹${dueAmount} (${paymentMode})`, invoiceAndPayLink]
     });
 });
 exports.sendInvoiceDueViaWhatsapp = sendInvoiceDueViaWhatsapp;
