@@ -1688,9 +1688,33 @@ export const sendPOSWhatsappDueReminders = async (req: AuthenticatedRequest, res
         }
 
         let sentCount = 0;
+        let skippedCount = 0;
         let failedCount = 0;
 
+        const isBulk = !Array.isArray(customerIds) || customerIds.length === 0;
+        const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
         for (const summary of Object.values(customerDueSummary)) {
+            const formattedTotal = Math.round(summary.totalDue * 100) / 100;
+            if (formattedTotal <= 0) continue;
+
+            // In bulk mode, avoid spamming customers who already received a reminder in the last 24 hours
+            if (isBulk) {
+                const recentReminder = await (prisma.auditLog.findFirst as any)({
+                    where: {
+                        entityType: "USER",
+                        entityId: summary.user.id,
+                        action: "WHATSAPP_DUE_REMINDER",
+                        createdAt: { gte: oneDayAgo }
+                    }
+                });
+
+                if (recentReminder) {
+                    skippedCount++;
+                    continue;
+                }
+            }
+
             try {
                 const invoiceLabel = summary.orderCount > 1 
                     ? `All Dues (${summary.orderCount} Bills)` 
@@ -1699,12 +1723,29 @@ export const sendPOSWhatsappDueReminders = async (req: AuthenticatedRequest, res
                 await sendPaymentReminderViaWhatsapp(
                     summary.user.phone,
                     summary.user.name || "Customer",
-                    summary.totalDue,
+                    formattedTotal,
                     invoiceLabel,
                     summary.user.id,
                     summary.latestOrderId
                 );
                 sentCount++;
+
+                // Record AuditLog
+                await (prisma.auditLog.create as any)({
+                    data: {
+                        entityType: "USER",
+                        entityId: summary.user.id,
+                        action: "WHATSAPP_DUE_REMINDER",
+                        staffId: req.user?.userId,
+                        newValue: {
+                            totalDue: formattedTotal,
+                            orderCount: summary.orderCount,
+                            invoiceLabel,
+                            trigger: "POS_MANUAL",
+                            sentAt: new Date()
+                        }
+                    }
+                });
             } catch (err: any) {
                 console.error(`Failed to send WhatsApp reminder to ${summary.user.phone}:`, err.message);
                 failedCount++;
@@ -1712,8 +1753,9 @@ export const sendPOSWhatsappDueReminders = async (req: AuthenticatedRequest, res
         }
 
         res.json({
-            message: `WhatsApp payment reminders sent to ${sentCount} customer(s).${failedCount > 0 ? ` (${failedCount} failed)` : ""}`,
+            message: `WhatsApp payment reminders sent to ${sentCount} customer(s).${skippedCount > 0 ? ` (${skippedCount} skipped due to 24h cooldown)` : ""}${failedCount > 0 ? ` (${failedCount} failed)` : ""}`,
             sentCount,
+            skippedCount,
             failedCount
         });
     } catch (error) { next(error); }

@@ -1527,6 +1527,7 @@ const getPOSDueCustomers = (req, res, next) => __awaiter(void 0, void 0, void 0,
 });
 exports.getPOSDueCustomers = getPOSDueCustomers;
 const sendPOSWhatsappDueReminders = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
     const { customerIds } = req.body; // Array of selected customer IDs, or empty/all to send to all due customers
     try {
         const { sendPaymentReminderViaWhatsapp } = require("../services/mbgcard");
@@ -1556,14 +1557,51 @@ const sendPOSWhatsappDueReminders = (req, res, next) => __awaiter(void 0, void 0
             customerDueSummary[uId].latestOrderId = order.id;
         }
         let sentCount = 0;
+        let skippedCount = 0;
         let failedCount = 0;
+        const isBulk = !Array.isArray(customerIds) || customerIds.length === 0;
+        const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
         for (const summary of Object.values(customerDueSummary)) {
+            const formattedTotal = Math.round(summary.totalDue * 100) / 100;
+            if (formattedTotal <= 0)
+                continue;
+            // In bulk mode, avoid spamming customers who already received a reminder in the last 24 hours
+            if (isBulk) {
+                const recentReminder = yield prisma_1.default.auditLog.findFirst({
+                    where: {
+                        entityType: "USER",
+                        entityId: summary.user.id,
+                        action: "WHATSAPP_DUE_REMINDER",
+                        createdAt: { gte: oneDayAgo }
+                    }
+                });
+                if (recentReminder) {
+                    skippedCount++;
+                    continue;
+                }
+            }
             try {
                 const invoiceLabel = summary.orderCount > 1
                     ? `All Dues (${summary.orderCount} Bills)`
                     : summary.latestOrderId;
-                yield sendPaymentReminderViaWhatsapp(summary.user.phone, summary.user.name || "Customer", summary.totalDue, invoiceLabel, summary.user.id, summary.latestOrderId);
+                yield sendPaymentReminderViaWhatsapp(summary.user.phone, summary.user.name || "Customer", formattedTotal, invoiceLabel, summary.user.id, summary.latestOrderId);
                 sentCount++;
+                // Record AuditLog
+                yield prisma_1.default.auditLog.create({
+                    data: {
+                        entityType: "USER",
+                        entityId: summary.user.id,
+                        action: "WHATSAPP_DUE_REMINDER",
+                        staffId: (_a = req.user) === null || _a === void 0 ? void 0 : _a.userId,
+                        newValue: {
+                            totalDue: formattedTotal,
+                            orderCount: summary.orderCount,
+                            invoiceLabel,
+                            trigger: "POS_MANUAL",
+                            sentAt: new Date()
+                        }
+                    }
+                });
             }
             catch (err) {
                 console.error(`Failed to send WhatsApp reminder to ${summary.user.phone}:`, err.message);
@@ -1571,8 +1609,9 @@ const sendPOSWhatsappDueReminders = (req, res, next) => __awaiter(void 0, void 0
             }
         }
         res.json({
-            message: `WhatsApp payment reminders sent to ${sentCount} customer(s).${failedCount > 0 ? ` (${failedCount} failed)` : ""}`,
+            message: `WhatsApp payment reminders sent to ${sentCount} customer(s).${skippedCount > 0 ? ` (${skippedCount} skipped due to 24h cooldown)` : ""}${failedCount > 0 ? ` (${failedCount} failed)` : ""}`,
             sentCount,
+            skippedCount,
             failedCount
         });
     }

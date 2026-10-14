@@ -1926,10 +1926,28 @@ export const sendPaymentReminderController = async (req: Request, res: Response,
         const paid = order.payments
             .filter((p: any) => p.status === "SUCCESS" || p.status === "COMPLETED" || p.status === "PAID" || !p.status)
             .reduce((sum: number, p: any) => sum + Number(p.amount), 0);
-        const dueAmount = Math.max(0, Number(order.totalAmount) - paid);
+        const dueAmount = Math.round(Math.max(0, Number(order.totalAmount) - paid) * 100) / 100;
 
         const { sendPaymentReminderViaWhatsapp } = require("../services/mbgcard");
         await sendPaymentReminderViaWhatsapp(user.phone, user.name || "Customer", dueAmount, order.id, user.id, order.id);
+
+        // Record in AuditLog to coordinate with worker and POS cooldowns
+        await (prisma.auditLog.create as any)({
+            data: {
+                entityType: "USER",
+                entityId: user.id,
+                action: "WHATSAPP_DUE_REMINDER",
+                staffId: (req as any).user?.userId,
+                newValue: {
+                    dueAmount,
+                    orderId: order.id,
+                    trigger: "ADMIN_SINGLE_ORDER",
+                    sentAt: new Date()
+                }
+            }
+        }).catch((auditErr: any) => {
+            logger.warn(`Failed to write AuditLog for single order reminder: ${auditErr.message}`);
+        });
 
         return res.json({ message: "Payment reminder sent successfully via WhatsApp" });
     } catch (error: any) {

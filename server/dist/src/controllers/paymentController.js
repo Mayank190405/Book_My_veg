@@ -1719,6 +1719,7 @@ const triggerEasebuzzSync = (req, res) => __awaiter(void 0, void 0, void 0, func
 });
 exports.triggerEasebuzzSync = triggerEasebuzzSync;
 const sendPaymentReminderController = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
     const { orderId } = req.body;
     if (!orderId) {
         return res.status(400).json({ message: "Order ID is required" });
@@ -1741,9 +1742,26 @@ const sendPaymentReminderController = (req, res, next) => __awaiter(void 0, void
         const paid = order.payments
             .filter((p) => p.status === "SUCCESS" || p.status === "COMPLETED" || p.status === "PAID" || !p.status)
             .reduce((sum, p) => sum + Number(p.amount), 0);
-        const dueAmount = Math.max(0, Number(order.totalAmount) - paid);
+        const dueAmount = Math.round(Math.max(0, Number(order.totalAmount) - paid) * 100) / 100;
         const { sendPaymentReminderViaWhatsapp } = require("../services/mbgcard");
         yield sendPaymentReminderViaWhatsapp(user.phone, user.name || "Customer", dueAmount, order.id, user.id, order.id);
+        // Record in AuditLog to coordinate with worker and POS cooldowns
+        yield prisma_1.default.auditLog.create({
+            data: {
+                entityType: "USER",
+                entityId: user.id,
+                action: "WHATSAPP_DUE_REMINDER",
+                staffId: (_a = req.user) === null || _a === void 0 ? void 0 : _a.userId,
+                newValue: {
+                    dueAmount,
+                    orderId: order.id,
+                    trigger: "ADMIN_SINGLE_ORDER",
+                    sentAt: new Date()
+                }
+            }
+        }).catch((auditErr) => {
+            logger_1.default.warn(`Failed to write AuditLog for single order reminder: ${auditErr.message}`);
+        });
         return res.json({ message: "Payment reminder sent successfully via WhatsApp" });
     }
     catch (error) {

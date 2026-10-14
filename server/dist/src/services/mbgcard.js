@@ -285,8 +285,10 @@ const sendPaymentReminderViaWhatsapp = (phone, customerName, dueAmount, invoiceN
         payLink += `&billid=${orderId}`;
     }
     const dueTiming = `Immediate. Pay online: ${payLink}`;
+    const num = Number(dueAmount);
+    const formattedDue = isNaN(num) ? String(dueAmount) : (Number.isInteger(num) ? String(num) : num.toFixed(2));
     return (0, exports.sendTemplateViaChatHub)(phone, "payment_due_reminder", {
-        body: [customerName, invoiceNo, `₹${dueAmount}`, dueTiming]
+        body: [customerName, invoiceNo, `₹${formattedDue}`, dueTiming]
     });
 });
 exports.sendPaymentReminderViaWhatsapp = sendPaymentReminderViaWhatsapp;

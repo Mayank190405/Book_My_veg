@@ -119,86 +119,134 @@ export const startPaymentReminderWorker = () => {
             }
 
             // ─── 2. AUTOMATIC DUES PAYMENT REMINDERS (With Locked Payment Link) ───
-            const unpaidOrders = await prisma.order.findMany({
-                where: {
-                    isPaid: false,
-                    paymentStatus: { in: ["PENDING", "PARTIAL"] },
-                    status: { notIn: ["CANCELLED", "FAILED"] }
-                },
-                include: { user: true, payments: true, location: true },
-                take: 200
-            });
-
             // Target duration from config or default (7 days)
             const dueDurationValue = dueConfig?.triggerDurationValue || 7;
             const dueDurationUnit = dueConfig?.triggerDurationUnit || "DAYS";
             const dueIntervalMs = dueDurationUnit === "HOURS" ? dueDurationValue * ONE_HOUR_MS : dueDurationValue * ONE_DAY_MS;
 
-            // Group unpaid orders by customer (userId)
-            const customerUnpaidSummary: Record<string, {
-                user: any;
-                orders: any[];
-                totalDue: number;
-                latestOrder: any;
-                hasTriggeredCycle: boolean;
-            }> = {};
+            // Restrict automatic reminders to daytime (10:00 AM to 8:00 PM IST) to avoid disturbed night-time messages
+            const istTime = new Date(now.getTime() + (5.5 * 60 * 60 * 1000));
+            const istHour = istTime.getUTCHours();
+            const isBusinessHours = istHour >= 10 && istHour < 20;
 
-            for (const order of unpaidOrders) {
-                const user = order.user;
-                if (!user || !user.phone) continue;
-
-                const paid = order.payments
-                    .filter((p: any) => p.status === "SUCCESS" || p.status === "COMPLETED" || p.status === "PAID" || !p.status)
-                    .reduce((sum: number, p: any) => sum + Number(p.amount), 0);
-                const dueAmount = Math.max(0, Number(order.totalAmount) - paid);
-                if (dueAmount <= 0) continue;
-
-                const ageInMs = now.getTime() - new Date(order.createdAt).getTime();
-                const dueIntervalCycles = Math.floor(ageInMs / dueIntervalMs);
-                const remainderMs = ageInMs % dueIntervalMs;
-                const isCycleTrigger = dueIntervalCycles >= 1 && remainderMs < (2 * ONE_HOUR_MS);
-
-                const uId = user.id;
-                if (!customerUnpaidSummary[uId]) {
-                    customerUnpaidSummary[uId] = {
-                        user,
-                        orders: [],
-                        totalDue: 0,
-                        latestOrder: order,
-                        hasTriggeredCycle: false
-                    };
-                }
-
-                customerUnpaidSummary[uId].orders.push(order);
-                customerUnpaidSummary[uId].totalDue += dueAmount;
-                if (isCycleTrigger) {
-                    customerUnpaidSummary[uId].hasTriggeredCycle = true;
-                }
-                if (new Date(order.createdAt).getTime() > new Date(customerUnpaidSummary[uId].latestOrder.createdAt).getTime()) {
-                    customerUnpaidSummary[uId].latestOrder = order;
-                }
-            }
-
-            for (const summary of Object.values(customerUnpaidSummary)) {
-                if (!summary.hasTriggeredCycle || summary.totalDue <= 0) continue;
-
-                const orderCount = summary.orders.length;
-                const invoiceLabel = orderCount > 1 
-                    ? `All Dues (${orderCount} Bills)` 
-                    : summary.latestOrder.id;
-
-                logger.info(`[Payment Reminder Worker] Dispatching automatic due reminder to customer ${summary.user.name} (${summary.user.phone}) - Total Due: ₹${summary.totalDue} [${invoiceLabel}]`);
-
-                await sendPaymentReminderViaWhatsapp(
-                    summary.user.phone,
-                    summary.user.name || "Customer",
-                    summary.totalDue,
-                    invoiceLabel,
-                    summary.user.id,
-                    summary.latestOrder.id
-                ).catch((err: any) => {
-                    logger.error(`[Payment Reminder Worker] Error sending automatic reminder to ${summary.user.phone}: ${err.message}`);
+            if (isBusinessHours) {
+                // Find all active customers who have pending or partial unpaid orders
+                // Queries without artificial database limits so all orders per customer are included
+                const customersWithDues = await prisma.user.findMany({
+                    where: {
+                        isActive: true,
+                        phone: { not: "" },
+                        orders: {
+                            some: {
+                                isPaid: false,
+                                paymentStatus: { notIn: ["COMPLETED", "PAID", "SETTLED"] },
+                                status: { notIn: ["CANCELLED", "FAILED"] }
+                            }
+                        }
+                    },
+                    select: {
+                        id: true,
+                        name: true,
+                        phone: true,
+                        orders: {
+                            where: {
+                                isPaid: false,
+                                paymentStatus: { notIn: ["COMPLETED", "PAID", "SETTLED"] },
+                                status: { notIn: ["CANCELLED", "FAILED"] }
+                            },
+                            include: { payments: true },
+                            orderBy: { createdAt: "desc" }
+                        }
+                    }
                 });
+
+                for (const customer of customersWithDues) {
+                    if (!customer.phone) continue;
+
+                    // Calculate accurate dues across ALL unpaid orders for this customer
+                    let totalDue = 0;
+                    const unpaidOrdersList: any[] = [];
+
+                    for (const order of customer.orders) {
+                        const paid = (order.payments || [])
+                            .filter((p: any) => p.status === "SUCCESS" || p.status === "COMPLETED" || p.status === "PAID" || !p.status)
+                            .reduce((sum: number, p: any) => sum + Number(p.amount), 0);
+                        const dueAmount = Math.max(0, Number(order.totalAmount) - paid);
+                        if (dueAmount > 0) {
+                            unpaidOrdersList.push({ ...order, dueAmount });
+                            totalDue += dueAmount;
+                        }
+                    }
+
+                    if (unpaidOrdersList.length === 0 || totalDue <= 0) continue;
+                    totalDue = Math.round(totalDue * 100) / 100;
+
+                    // Check oldest unpaid order age: only trigger if the customer has dues older than dueIntervalMs
+                    const oldestOrder = unpaidOrdersList[unpaidOrdersList.length - 1];
+                    const oldestAgeMs = now.getTime() - new Date(oldestOrder.createdAt).getTime();
+
+                    if (oldestAgeMs < dueIntervalMs) {
+                        continue;
+                    }
+
+                    // Check if a reminder was already sent to this customer recently (AuditLog cooldown)
+                    const lastReminderAudit = await (prisma.auditLog.findFirst as any)({
+                        where: {
+                            entityType: "USER",
+                            entityId: customer.id,
+                            action: "WHATSAPP_DUE_REMINDER"
+                        },
+                        orderBy: { createdAt: "desc" }
+                    });
+
+                    if (lastReminderAudit) {
+                        const timeSinceLastReminder = now.getTime() - new Date(lastReminderAudit.createdAt).getTime();
+                        // Cooldown: at least dueIntervalMs, with minimum 24 hours to prevent multiple messages on the same day
+                        const cooldownMs = Math.max(dueIntervalMs, ONE_DAY_MS);
+                        if (timeSinceLastReminder < cooldownMs) {
+                            continue; // Cooldown active, skip customer
+                        }
+                    }
+
+                    const orderCount = unpaidOrdersList.length;
+                    const latestOrder = unpaidOrdersList[0];
+                    const invoiceLabel = orderCount > 1 
+                        ? `All Dues (${orderCount} Bills)` 
+                        : latestOrder.id;
+
+                    logger.info(`[Payment Reminder Worker] Dispatching automatic due reminder to customer ${customer.name} (${customer.phone}) - Total Due: ₹${totalDue} [${invoiceLabel}]`);
+
+                    try {
+                        await sendPaymentReminderViaWhatsapp(
+                            customer.phone,
+                            customer.name || "Customer",
+                            totalDue,
+                            invoiceLabel,
+                            customer.id,
+                            latestOrder.id
+                        );
+
+                        // Record AuditLog to prevent duplicate reminders within cooldown
+                        await (prisma.auditLog.create as any)({
+                            data: {
+                                entityType: "USER",
+                                entityId: customer.id,
+                                action: "WHATSAPP_DUE_REMINDER",
+                                newValue: {
+                                    totalDue,
+                                    orderCount,
+                                    invoiceLabel,
+                                    trigger: "AUTOMATIC_WORKER",
+                                    sentAt: now
+                                }
+                            }
+                        });
+                    } catch (err: any) {
+                        logger.error(`[Payment Reminder Worker] Error sending automatic reminder to ${customer.phone}: ${err.message}`);
+                    }
+                }
+            } else {
+                logger.info(`[Payment Reminder Worker] Outside business hours (${istHour}:00 IST). Skipping automated dues reminder check.`);
             }
 
             // ─── 3. 4-DAY INACTIVITY REMINDER (TEMPLATE: fresh_order) ───
