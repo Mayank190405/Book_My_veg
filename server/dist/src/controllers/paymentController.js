@@ -433,12 +433,33 @@ const settleDuesForCustomer = (userId, amount, transactionId, metadata, preferre
         let targetUserId = userId;
         const userExists = yield tx.user.findUnique({ where: { id: userId } });
         if (!userExists) {
-            const cleanPhone = userId.replace(/\D/g, "");
-            const foundUser = yield tx.user.findFirst({
-                where: { OR: [{ phone: userId }, { phone: cleanPhone }, { phone: `+91${cleanPhone}` }] }
-            });
-            if (foundUser)
-                targetUserId = foundUser.id;
+            // 1. Try finding by phone from metadata, paymentDetails or userId
+            const rawPhone = ((metadata === null || metadata === void 0 ? void 0 : metadata.phone) || (metadata === null || metadata === void 0 ? void 0 : metadata.customer_phone) || (metadata === null || metadata === void 0 ? void 0 : metadata.mobile) || userId || "").toString();
+            const cleanPhone = rawPhone.replace(/\D/g, "").slice(-10);
+            if (cleanPhone.length === 10) {
+                const foundUser = yield tx.user.findFirst({
+                    where: { OR: [{ phone: cleanPhone }, { phone: `+91${cleanPhone}` }, { phone: `91${cleanPhone}` }] }
+                });
+                if (foundUser)
+                    targetUserId = foundUser.id;
+            }
+            // 2. Try finding by sliced UUID prefix if userId is hexadecimal prefix
+            if ((!targetUserId || targetUserId === userId) && userId && userId.length >= 8) {
+                const prefix8 = userId.slice(0, 8);
+                const matchedUser = yield tx.user.findFirst({
+                    where: { id: { startsWith: prefix8, mode: "insensitive" } }
+                });
+                if (matchedUser)
+                    targetUserId = matchedUser.id;
+            }
+            // 3. Try finding by email if available in metadata
+            if ((!targetUserId || targetUserId === userId) && (metadata === null || metadata === void 0 ? void 0 : metadata.email)) {
+                const foundByEmail = yield tx.user.findFirst({
+                    where: { email: { equals: String(metadata.email).trim(), mode: "insensitive" } }
+                });
+                if (foundByEmail)
+                    targetUserId = foundByEmail.id;
+            }
         }
         let unpaid = yield tx.order.findMany({
             where: {
@@ -525,7 +546,7 @@ const completeOrderPayment = (orderId, paymentDetails) => __awaiter(void 0, void
         const parts = orderId.split("_");
         const targetId = parts[1];
         if (paymentDetails.status === "CHARGED" || paymentDetails.status === "SUCCESS") {
-            yield (0, exports.settleDuesForCustomer)(targetId, Number(paymentDetails.amount), paymentDetails.txn_id || orderId, paymentDetails);
+            yield (0, exports.settleDuesForCustomer)(targetId, Number(paymentDetails.amount), paymentDetails.txn_id || orderId, Object.assign(Object.assign({}, paymentDetails), { phone: paymentDetails.phone || (targetId && targetId.length === 10 && !isNaN(Number(targetId)) ? targetId : undefined) }));
             return { status: "SUCCESS" };
         }
     }
@@ -886,7 +907,10 @@ const verifyPayment = (req, res) => __awaiter(void 0, void 0, void 0, function* 
                 status: "CHARGED",
                 txn_id: txn_id || `TXN_${Date.now()}`,
                 amount: Number(bodyAmount || 0),
-                payment_method_type: "ONLINE"
+                payment_method_type: "ONLINE",
+                phone: req.body.phone,
+                userId: req.body.userId,
+                metadata: req.body
             });
             return res.json({
                 status: "SUCCESS",
@@ -1505,9 +1529,15 @@ const initiatePayDue = (req, res) => __awaiter(void 0, void 0, void 0, function*
             productInfoLabel = `Bill Payment ${cleanBillId.slice(0, 20)}`;
         }
         else {
-            const compactUser = String(effectiveUserId).replace(/[^a-zA-Z0-9]/g, "").slice(0, 20);
-            txnid = `SET_${compactUser}_${shortNonce}`;
-            productInfoLabel = `Account Settlement ${String(effectiveUserId).slice(0, 15)}`;
+            const cleanCustPhone = (customerPhone || "").replace(/\D/g, "").slice(-10);
+            if (cleanCustPhone.length === 10) {
+                txnid = `SET_${cleanCustPhone}_${shortNonce}`;
+            }
+            else {
+                const compactUser = String(effectiveUserId).replace(/[^a-zA-Z0-9]/g, "").slice(0, 20);
+                txnid = `SET_${compactUser}_${shortNonce}`;
+            }
+            productInfoLabel = `Account Settlement ${customerPhone || String(effectiveUserId).slice(0, 15)}`;
         }
         const amountToPay = Number(amount);
         if (!amountToPay || amountToPay <= 0) {

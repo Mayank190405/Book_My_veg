@@ -308,7 +308,7 @@ export const syncEasebuzzTransactions = async (customStartDate?: string, customE
                     const amount = Number(tx.net_debit_amount || tx.total_debit_amount || tx.amount || 0);
 
                     let resolvedOrderId = tx.txnid;
-                    if (!tx.txnid.startsWith("DUE_") && !tx.txnid.startsWith("SETTLE_")) {
+                    if (!tx.txnid.startsWith("DUE_") && !tx.txnid.startsWith("SETTLE_") && !tx.txnid.startsWith("SET_")) {
                         resolvedOrderId = tx.txnid.replace(/_\d{3,}$/, "");
                     }
 

@@ -228,7 +228,9 @@ export function PayContent({ slugParams, forceShowOtpForm }: PayPageProps) {
                                                     order_id: data.orderId || data.txnid || targetBillId || payData?.bill?.id,
                                                     status: "SUCCESS",
                                                     amount: payAmount,
-                                                    txn_id: response.easepayid || response.txnid || response.easebuzz_id
+                                                    txn_id: response.easepayid || response.txnid || response.easebuzz_id,
+                                                    phone: extractedParams.number || payData?.customer?.phone,
+                                                    userId: extractedParams.userid || payData?.customer?.id
                                                 })
                                             });
                                         } catch (e) {
