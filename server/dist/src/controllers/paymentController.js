@@ -646,34 +646,35 @@ const completeOrderPayment = (orderId, paymentDetails) => __awaiter(void 0, void
         }
     }
     if (!existing) {
-        // Fallback: Customer Phone / Email matching for automatic account settlement
-        if (paymentDetails.status === "CHARGED" || paymentDetails.status === "SUCCESS") {
-            const custPhone = paymentDetails.phone || paymentDetails.customerPhone || paymentDetails.customer_phone || paymentDetails.phone_number || paymentDetails.mobile || paymentDetails.user_phone;
-            const custEmail = paymentDetails.email || paymentDetails.customerEmail || paymentDetails.customer_email || paymentDetails.user_email;
-            let cleanPhone = custPhone ? String(custPhone).replace(/\D/g, "") : "";
-            if (cleanPhone.length > 10)
-                cleanPhone = cleanPhone.slice(-10);
-            if (cleanPhone || custEmail) {
-                const customer = yield prisma_1.default.user.findFirst({
-                    where: {
-                        OR: [
-                            ...(cleanPhone ? [
-                                { phone: cleanPhone },
-                                { phone: `+91${cleanPhone}` },
-                                { phone: { contains: cleanPhone } }
-                            ] : []),
-                            ...(custEmail ? [{ email: custEmail }] : [])
-                        ]
+        // Strict Integrity Rule: Phone number and payment amount alone MUST NOT be used to automatically associate a gateway transaction with an order.
+        // Instead, log unresolved/ambiguous gateway transactions to AuditLog for authorized manual reconciliation.
+        logger_1.default.warn(`[Payment Reconciliation] Ambiguous/unmapped Easebuzz transaction: Order ${resolvedOrderId} not found. Gateway txn: ${paymentDetails.txn_id || orderId}, amount: ${paymentDetails.amount}`);
+        try {
+            yield prisma_1.default.auditLog.create({
+                data: {
+                    entityType: "PAYMENT_RECONCILIATION",
+                    entityId: paymentDetails.txn_id || orderId || "UNKNOWN_TXN",
+                    action: "EASEBUZZ_UNMAPPED_TRANSACTION",
+                    newValue: {
+                        orderId,
+                        resolvedOrderId,
+                        amount: paymentDetails.amount,
+                        status: paymentDetails.status,
+                        gatewayTxnId: paymentDetails.txn_id || paymentDetails.easepayid,
+                        phone: paymentDetails.phone || paymentDetails.customerPhone || null,
+                        email: paymentDetails.email || null,
+                        reason: "Order not found and strict ledger rules prevent auto-association by phone/email alone."
                     }
-                });
-                if (customer) {
-                    logger_1.default.info(`[Payment] Auto-settling customer ${customer.id} (${customer.name}) via phone/email fallback for amount ${paymentDetails.amount}`);
-                    yield (0, exports.settleDuesForCustomer)(customer.id, Number(paymentDetails.amount), paymentDetails.txn_id || orderId, paymentDetails);
-                    return { status: "SUCCESS" };
                 }
-            }
+            });
         }
-        throw new Error(`Order ${resolvedOrderId} not found`);
+        catch (auditErr) {
+            logger_1.default.error(`[Payment Reconciliation] Failed to log unmapped transaction audit: ${auditErr.message}`);
+        }
+        return {
+            status: "UNMAPPED_TRANSACTION_LOGGED",
+            message: `Order ${resolvedOrderId} not found. Gateway transaction logged to audit statement for manual review.`
+        };
     }
     if (paymentDetails.status === "CHARGED" || paymentDetails.status === "SUCCESS") {
         const targetTxnId = paymentDetails.txn_id || paymentDetails.order_id || orderId;
@@ -1802,7 +1803,7 @@ const sendPaymentReminderController = (req, res, next) => __awaiter(void 0, void
 exports.sendPaymentReminderController = sendPaymentReminderController;
 const cleanUpDuplicatePayments = () => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        // 1. Delete duplicate transactionId records across system
+        // 1. Delete duplicate transactionId records across system with full audit trail
         const duplicateTxns = yield prisma_1.default.payment.groupBy({
             by: ["transactionId"],
             where: { status: "SUCCESS", transactionId: { not: null } },
@@ -1816,13 +1817,42 @@ const cleanUpDuplicatePayments = () => __awaiter(void 0, void 0, void 0, functio
                 where: { transactionId: item.transactionId, status: "SUCCESS" },
                 orderBy: { createdAt: "asc" }
             });
-            const toDelete = txns.slice(1).map(t => t.id);
+            const toDelete = txns.slice(1);
             if (toDelete.length > 0) {
-                yield prisma_1.default.payment.deleteMany({ where: { id: { in: toDelete } } });
+                for (const d of toDelete) {
+                    yield prisma_1.default.auditLog.create({
+                        data: {
+                            entityType: "PAYMENT",
+                            entityId: d.id,
+                            action: "PAYMENT_DUPLICATE_PURGED",
+                            oldValue: {
+                                paymentId: d.id,
+                                orderId: d.orderId,
+                                amount: Number(d.amount),
+                                method: d.method,
+                                transactionId: d.transactionId,
+                                createdAt: d.createdAt
+                            },
+                            newValue: {
+                                reason: "Duplicate transactionId purged to maintain ledger integrity",
+                                retainedPaymentId: txns[0].id
+                            }
+                        }
+                    });
+                }
+                const toDeleteIds = toDelete.map(t => t.id);
+                yield prisma_1.default.payment.deleteMany({ where: { id: { in: toDeleteIds } } });
                 logger_1.default.info(`[Payment Cleanup] Deleted ${toDelete.length} duplicate payments for transactionId ${item.transactionId}`);
+                // Synchronize customer dues for all affected orders
+                for (const d of toDelete) {
+                    const ord = yield prisma_1.default.order.findUnique({ where: { id: d.orderId }, select: { userId: true } });
+                    if (ord === null || ord === void 0 ? void 0 : ord.userId) {
+                        yield (0, orderController_1.syncCustomerTotalDue)(ord.userId);
+                    }
+                }
             }
         }
-        // 2. Delete excess payment records where total paid exceeds order total amount
+        // 2. Delete excess payment records where total paid exceeds order total amount with audit logging
         const duplicateOrders = yield prisma_1.default.payment.groupBy({
             by: ["orderId"],
             where: { status: "SUCCESS" },
@@ -1851,6 +1881,28 @@ const cleanUpDuplicatePayments = () => __awaiter(void 0, void 0, void 0, functio
                 }
             }
             if (duplicateIds.length > 0) {
+                const deletedRecords = payments.filter(p => duplicateIds.includes(p.id));
+                for (const d of deletedRecords) {
+                    yield prisma_1.default.auditLog.create({
+                        data: {
+                            entityType: "PAYMENT",
+                            entityId: d.id,
+                            action: "PAYMENT_EXCESS_OVERPAYMENT_PURGED",
+                            oldValue: {
+                                paymentId: d.id,
+                                orderId: d.orderId,
+                                amount: Number(d.amount),
+                                method: d.method,
+                                transactionId: d.transactionId,
+                                createdAt: d.createdAt
+                            },
+                            newValue: {
+                                reason: "Excess payment record exceeding order totalAmount purged to maintain ledger integrity",
+                                orderTotal
+                            }
+                        }
+                    });
+                }
                 yield prisma_1.default.payment.deleteMany({
                     where: { id: { in: duplicateIds } }
                 });
@@ -1873,6 +1925,9 @@ const cleanUpDuplicatePayments = () => __awaiter(void 0, void 0, void 0, functio
                 yield prisma_1.default.payment.deleteMany({
                     where: { orderId, status: "PENDING" }
                 });
+            }
+            if (order.userId) {
+                yield (0, orderController_1.syncCustomerTotalDue)(order.userId);
             }
         }
         // 3. Purge all orphan/stale PENDING payment records for fully paid orders across the system

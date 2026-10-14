@@ -480,17 +480,16 @@ export const processPOSOrder = async (req: AuthenticatedRequest, res: Response, 
                 .reduce((sum: number, p: any) => sum + Number(p.amount), 0);
         }
 
-        // Fetch current due BEFORE processing
+        // Fetch current due BEFORE processing across all customer's active orders
         const prevOrders = await prisma.order.findMany({
             where: { 
                 userId: customerId, 
-                channel: Channel.POS,
                 paymentStatus: { in: ["PENDING", "PARTIAL"] }, 
                 status: { notIn: ["CANCELLED", "FAILED", "PAYMENT_PENDING"] } 
             },
             include: { payments: true }
         });
-        const previousDue = prevOrders.reduce((acc, o) => acc + (Number(o.totalAmount) - o.payments.reduce((pAcc, p) => pAcc + Number(p.amount), 0)), 0);
+        const previousDue = prevOrders.reduce((acc, o) => acc + (Number(o.totalAmount) - o.payments.filter((p: any) => p.status === "SUCCESS" && p.method !== "CREDIT").reduce((pAcc, p) => pAcc + Number(p.amount), 0)), 0);
         
         let validatedStaffId = staffId;
         const staffExists = await prisma.user.findUnique({ 
@@ -727,7 +726,6 @@ export const processPOSOrder = async (req: AuthenticatedRequest, res: Response, 
             const unpaidOrders = await prisma.order.findMany({
                 where: { 
                     userId: customerId, 
-                    channel: Channel.POS,
                     id: { not: (result as any).id },
                     paymentStatus: { in: ["PENDING", "PARTIAL"] },
                     status: { notIn: ["CANCELLED", "FAILED", "PAYMENT_PENDING"] }
@@ -933,6 +931,8 @@ export const getCustomerHistory = async (req: AuthenticatedRequest, res: Respons
             walletTransactions = [];
         }
 
+        const targetChannel = req.query.channel ? (req.query.channel as Channel) : undefined;
+
         const [customerUser, orders] = await Promise.all([
             prisma.user.findUnique({
                 where: { id: customerId },
@@ -945,15 +945,18 @@ export const getCustomerHistory = async (req: AuthenticatedRequest, res: Respons
                 }
             }),
             prisma.order.findMany({
-                where: { userId: customerId, channel: "POS" as Channel },
+                where: { 
+                    userId: customerId, 
+                    ...(targetChannel ? { channel: targetChannel } : {}),
+                    status: { notIn: ["CANCELLED", "FAILED"] }
+                },
                 include: {
                     items: { include: { product: { select: { name: true, sku: true } } } },
                     payments: true,
                     staff: { select: { name: true } },
                     location: { select: { name: true } }
                 },
-                orderBy: { createdAt: "desc" },
-                take: 100
+                orderBy: { createdAt: "desc" }
             })
         ]);
 
@@ -961,9 +964,7 @@ export const getCustomerHistory = async (req: AuthenticatedRequest, res: Respons
             !o.isPaid && 
             o.paymentStatus !== "COMPLETED" && 
             o.paymentStatus !== "PAID" && 
-            o.paymentStatus !== "SETTLED" && 
-            o.status !== "CANCELLED" && 
-            o.status !== "FAILED"
+            o.paymentStatus !== "SETTLED"
         );
 
         const startOfToday = new Date();
@@ -977,8 +978,8 @@ export const getCustomerHistory = async (req: AuthenticatedRequest, res: Respons
         }, 0));
 
         const enrichedOrders = orders.map(o => {
-            const paid = o.payments ? o.payments.filter((p: any) => p.status === "SUCCESS" || !p.status).reduce((pAcc: number, p: any) => pAcc + Number(p.amount), 0) : 0;
-            const due = Math.max(0, Number(o.totalAmount) - paid);
+            const paid = o.payments ? o.payments.filter((p: any) => p.status === "SUCCESS" && p.method !== "CREDIT").reduce((pAcc: number, p: any) => pAcc + Number(p.amount), 0) : 0;
+            const due = Math.max(0, Math.round((Number(o.totalAmount) - paid) * 100) / 100);
             const isCompleted = o.isPaid || o.paymentStatus === "COMPLETED" || o.paymentStatus === "PAID" || due <= 0;
             const isPartial = !isCompleted && paid > 0;
             const isUnpaid = !isCompleted && paid === 0;
@@ -992,8 +993,8 @@ export const getCustomerHistory = async (req: AuthenticatedRequest, res: Respons
         });
 
         dueOrders.forEach(o => {
-            const paid = o.payments ? o.payments.filter((p: any) => p.status === "SUCCESS" || !p.status).reduce((pAcc: number, p: any) => pAcc + Number(p.amount), 0) : 0;
-            const remaining = Number(o.totalAmount) - paid;
+            const paid = o.payments ? o.payments.filter((p: any) => p.status === "SUCCESS" && p.method !== "CREDIT").reduce((pAcc: number, p: any) => pAcc + Number(p.amount), 0) : 0;
+            const remaining = Math.max(0, Math.round((Number(o.totalAmount) - paid) * 100) / 100);
             if (remaining > 0) {
                 if (new Date(o.createdAt) >= startOfToday) {
                     todayDue += remaining;
@@ -1003,8 +1004,13 @@ export const getCustomerHistory = async (req: AuthenticatedRequest, res: Respons
             }
         });
 
-        const totalDue = todayDue + pastDue;
-        const totalSpend = orders.filter(o => o.status !== "CANCELLED" && o.status !== "FAILED").reduce((acc, o) => acc + Number(o.totalAmount), 0);
+        const activeOrders = orders.filter(o => o.status !== "CANCELLED" && o.status !== "FAILED");
+        const totalSpend = Math.round(activeOrders.reduce((acc, o) => acc + Number(o.totalAmount), 0) * 100) / 100;
+        const totalPaid = Math.round(activeOrders.reduce((acc, o) => {
+            const paid = o.payments ? o.payments.filter((p: any) => p.status === "SUCCESS" && p.method !== "CREDIT").reduce((pAcc: number, p: any) => pAcc + Number(p.amount), 0) : 0;
+            return acc + paid;
+        }, 0) * 100) / 100;
+        const totalDue = Math.max(0, Math.round((totalSpend - totalPaid) * 100) / 100);
         const lastVisit = orders[0]?.createdAt || null;
 
         res.json({
@@ -1016,11 +1022,12 @@ export const getCustomerHistory = async (req: AuthenticatedRequest, res: Respons
             orders: enrichedOrders,
             walletTransactions,
             summary: { 
-                totalOrders: orders.length, 
+                totalOrders: activeOrders.length, 
                 totalSpend, 
+                totalPaid,
                 totalDue, 
-                todayDue, 
-                pastDue, 
+                todayDue: Math.round(todayDue * 100) / 100, 
+                pastDue: Math.round(pastDue * 100) / 100, 
                 accountBalance: calculatedWalletBalance,
                 lastVisit 
             }

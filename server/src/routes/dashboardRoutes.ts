@@ -6,7 +6,8 @@ import {
     getSalesReports,
     getCustomerSalesAndDueReports,
     getCustomerDetailedReport,
-    getDailyProductReport
+    getDailyProductReport,
+    triggerFinancialReconciliation
 } from "../controllers/dashboardController";
 import { authenticate, authorize } from "../middleware/auth";
 
@@ -18,6 +19,7 @@ router.get("/reports", authenticate, authorize(["ADMIN", "STORE_ADMIN"]), getSal
 router.get("/daily-product-reports", authenticate, authorize(["ADMIN", "STORE_ADMIN", "MANAGER"]), getDailyProductReport);
 router.get("/customer-reports", authenticate, authorize(["ADMIN", "STORE_ADMIN"]), getCustomerSalesAndDueReports);
 router.get("/customer-reports/:customerId", authenticate, authorize(["ADMIN", "STORE_ADMIN"]), getCustomerDetailedReport);
+router.post("/financial-reconciliation", authenticate, authorize(["ADMIN", "SUPER_ADMIN"]), triggerFinancialReconciliation);
 
 // Shift Management (Hub/Staff specific)
 router.post("/shift/open", authenticate, openShift);

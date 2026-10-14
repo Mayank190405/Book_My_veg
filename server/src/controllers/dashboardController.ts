@@ -875,8 +875,8 @@ export const getCustomerDetailedReport = async (req: AuthenticatedRequest, res: 
         // Construct detailed bill-wise due list
         const unpaidBills = orders.filter((o: any) => !o.isPaid && o.paymentStatus !== "COMPLETED" && o.paymentStatus !== "PAID" && o.paymentStatus !== "SETTLED");
         const billWiseDues = unpaidBills.map((o: any) => {
-            const paidAmount = (o.payments as any[]).reduce((pSum: number, p: any) => pSum + Number(p.amount), 0);
-            const remainingDue = Number(o.totalAmount) - paidAmount;
+            const paidAmount = (o.payments as any[]).filter((p: any) => p.status === "SUCCESS" && p.method !== "CREDIT").reduce((pSum: number, p: any) => pSum + Number(p.amount), 0);
+            const remainingDue = Math.max(0, Math.round((Number(o.totalAmount) - paidAmount) * 100) / 100);
             return {
                 id: o.id,
                 createdAt: o.createdAt,
@@ -884,18 +884,18 @@ export const getCustomerDetailedReport = async (req: AuthenticatedRequest, res: 
                 staffName: o.staff?.name || "N/A",
                 totalAmount: Number(o.totalAmount),
                 paidAmount,
-                remainingDue: remainingDue > 0 ? remainingDue : 0,
+                remainingDue: remainingDue,
                 paymentStatus: o.paymentStatus,
                 status: o.status
             };
         }).filter(b => b.remainingDue > 0);
 
-        // Summary Statistics
-        const totalSpend = orders.reduce((sum: number, o: any) => sum + Number(o.totalAmount), 0);
-        const totalPaid = orders.reduce((sum: number, o: any) => {
-            return sum + (o.payments as any[]).reduce((pSum: number, p: any) => pSum + Number(p.amount), 0);
-        }, 0);
-        const outstandingDue = Number((totalSpend - totalPaid).toFixed(2));
+        // Summary Statistics (Strictly derived from unified, deduplicated ledger events for 100% mathematical reconciliation)
+        const totalCharges = events.filter(e => e.type === "CHARGE").reduce((sum, e) => sum + e.amount, 0);
+        const totalPayments = events.filter(e => e.type === "PAYMENT").reduce((sum, e) => sum + e.amount, 0);
+        const totalSpend = Math.round(totalCharges * 100) / 100;
+        const totalPaid = Math.round(totalPayments * 100) / 100;
+        const outstandingDue = Math.max(0, Math.round((totalSpend - totalPaid) * 100) / 100);
         const lastVisit = orders.length > 0 ? orders[orders.length - 1].createdAt : null;
 
         res.json({
@@ -914,6 +914,20 @@ export const getCustomerDetailedReport = async (req: AuthenticatedRequest, res: 
             billWiseDues
         });
 
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * Trigger Automated or Manual Ledger Financial Audit & Reconciliation
+ */
+export const triggerFinancialReconciliation = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+        const { commit = false } = req.body || {};
+        const { runFinancialAuditAndReconciliation } = await import("../scripts/reconcileFinancialLedger");
+        const result = await runFinancialAuditAndReconciliation(Boolean(commit));
+        res.json(result);
     } catch (error) {
         next(error);
     }

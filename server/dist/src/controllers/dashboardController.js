@@ -1,4 +1,27 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || function (mod) {
+    if (mod && mod.__esModule) return mod;
+    var result = {};
+    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
+    __setModuleDefault(result, mod);
+    return result;
+};
 var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
     function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
     return new (P || (P = Promise))(function (resolve, reject) {
@@ -12,7 +35,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getDailyProductReport = exports.getCustomerDetailedReport = exports.getCustomerSalesAndDueReports = exports.closeShift = exports.getSalesReports = exports.openShift = exports.getDashboardStats = void 0;
+exports.getDailyProductReport = exports.triggerFinancialReconciliation = exports.getCustomerDetailedReport = exports.getCustomerSalesAndDueReports = exports.closeShift = exports.getSalesReports = exports.openShift = exports.getDashboardStats = void 0;
 const prisma_1 = __importDefault(require("../config/prisma"));
 const client_1 = require("@prisma/client");
 /**
@@ -751,8 +774,8 @@ const getCustomerDetailedReport = (req, res, next) => __awaiter(void 0, void 0, 
         const unpaidBills = orders.filter((o) => !o.isPaid && o.paymentStatus !== "COMPLETED" && o.paymentStatus !== "PAID" && o.paymentStatus !== "SETTLED");
         const billWiseDues = unpaidBills.map((o) => {
             var _a, _b;
-            const paidAmount = o.payments.reduce((pSum, p) => pSum + Number(p.amount), 0);
-            const remainingDue = Number(o.totalAmount) - paidAmount;
+            const paidAmount = o.payments.filter((p) => p.status === "SUCCESS" && p.method !== "CREDIT").reduce((pSum, p) => pSum + Number(p.amount), 0);
+            const remainingDue = Math.max(0, Math.round((Number(o.totalAmount) - paidAmount) * 100) / 100);
             return {
                 id: o.id,
                 createdAt: o.createdAt,
@@ -760,17 +783,17 @@ const getCustomerDetailedReport = (req, res, next) => __awaiter(void 0, void 0, 
                 staffName: ((_b = o.staff) === null || _b === void 0 ? void 0 : _b.name) || "N/A",
                 totalAmount: Number(o.totalAmount),
                 paidAmount,
-                remainingDue: remainingDue > 0 ? remainingDue : 0,
+                remainingDue: remainingDue,
                 paymentStatus: o.paymentStatus,
                 status: o.status
             };
         }).filter(b => b.remainingDue > 0);
-        // Summary Statistics
-        const totalSpend = orders.reduce((sum, o) => sum + Number(o.totalAmount), 0);
-        const totalPaid = orders.reduce((sum, o) => {
-            return sum + o.payments.reduce((pSum, p) => pSum + Number(p.amount), 0);
-        }, 0);
-        const outstandingDue = Number((totalSpend - totalPaid).toFixed(2));
+        // Summary Statistics (Strictly derived from unified, deduplicated ledger events for 100% mathematical reconciliation)
+        const totalCharges = events.filter(e => e.type === "CHARGE").reduce((sum, e) => sum + e.amount, 0);
+        const totalPayments = events.filter(e => e.type === "PAYMENT").reduce((sum, e) => sum + e.amount, 0);
+        const totalSpend = Math.round(totalCharges * 100) / 100;
+        const totalPaid = Math.round(totalPayments * 100) / 100;
+        const outstandingDue = Math.max(0, Math.round((totalSpend - totalPaid) * 100) / 100);
         const lastVisit = orders.length > 0 ? orders[orders.length - 1].createdAt : null;
         res.json({
             customer: Object.assign(Object.assign({}, customer), { address: ((_d = (_c = customer.addresses) === null || _c === void 0 ? void 0 : _c[0]) === null || _d === void 0 ? void 0 : _d.fullAddress) || customer.profileAddress || "N/A" }),
@@ -790,6 +813,21 @@ const getCustomerDetailedReport = (req, res, next) => __awaiter(void 0, void 0, 
     }
 });
 exports.getCustomerDetailedReport = getCustomerDetailedReport;
+/**
+ * Trigger Automated or Manual Ledger Financial Audit & Reconciliation
+ */
+const triggerFinancialReconciliation = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { commit = false } = req.body || {};
+        const { runFinancialAuditAndReconciliation } = yield Promise.resolve().then(() => __importStar(require("../scripts/reconcileFinancialLedger")));
+        const result = yield runFinancialAuditAndReconciliation(Boolean(commit));
+        res.json(result);
+    }
+    catch (error) {
+        next(error);
+    }
+});
+exports.triggerFinancialReconciliation = triggerFinancialReconciliation;
 /**
  * Daily Product-Wise Sales & Inventory Report
  */

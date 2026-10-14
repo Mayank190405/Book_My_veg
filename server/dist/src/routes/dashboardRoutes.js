@@ -10,6 +10,7 @@ router.get("/reports", auth_1.authenticate, (0, auth_1.authorize)(["ADMIN", "STO
 router.get("/daily-product-reports", auth_1.authenticate, (0, auth_1.authorize)(["ADMIN", "STORE_ADMIN", "MANAGER"]), dashboardController_1.getDailyProductReport);
 router.get("/customer-reports", auth_1.authenticate, (0, auth_1.authorize)(["ADMIN", "STORE_ADMIN"]), dashboardController_1.getCustomerSalesAndDueReports);
 router.get("/customer-reports/:customerId", auth_1.authenticate, (0, auth_1.authorize)(["ADMIN", "STORE_ADMIN"]), dashboardController_1.getCustomerDetailedReport);
+router.post("/financial-reconciliation", auth_1.authenticate, (0, auth_1.authorize)(["ADMIN", "SUPER_ADMIN"]), dashboardController_1.triggerFinancialReconciliation);
 // Shift Management (Hub/Staff specific)
 router.post("/shift/open", auth_1.authenticate, dashboardController_1.openShift);
 router.post("/shift/close", auth_1.authenticate, dashboardController_1.closeShift);

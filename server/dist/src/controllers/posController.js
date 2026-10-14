@@ -448,17 +448,16 @@ const processPOSOrder = (req, res, next) => __awaiter(void 0, void 0, void 0, fu
                 .filter((p) => p.status === "SUCCESS")
                 .reduce((sum, p) => sum + Number(p.amount), 0);
         }
-        // Fetch current due BEFORE processing
+        // Fetch current due BEFORE processing across all customer's active orders
         const prevOrders = yield prisma_1.default.order.findMany({
             where: {
                 userId: customerId,
-                channel: client_1.Channel.POS,
                 paymentStatus: { in: ["PENDING", "PARTIAL"] },
                 status: { notIn: ["CANCELLED", "FAILED", "PAYMENT_PENDING"] }
             },
             include: { payments: true }
         });
-        const previousDue = prevOrders.reduce((acc, o) => acc + (Number(o.totalAmount) - o.payments.reduce((pAcc, p) => pAcc + Number(p.amount), 0)), 0);
+        const previousDue = prevOrders.reduce((acc, o) => acc + (Number(o.totalAmount) - o.payments.filter((p) => p.status === "SUCCESS" && p.method !== "CREDIT").reduce((pAcc, p) => pAcc + Number(p.amount), 0)), 0);
         let validatedStaffId = staffId;
         const staffExists = yield prisma_1.default.user.findUnique({
             where: { id: staffId },
@@ -680,7 +679,6 @@ const processPOSOrder = (req, res, next) => __awaiter(void 0, void 0, void 0, fu
             const unpaidOrders = yield prisma_1.default.order.findMany({
                 where: {
                     userId: customerId,
-                    channel: client_1.Channel.POS,
                     id: { not: result.id },
                     paymentStatus: { in: ["PENDING", "PARTIAL"] },
                     status: { notIn: ["CANCELLED", "FAILED", "PAYMENT_PENDING"] }
@@ -877,6 +875,7 @@ const getCustomerHistory = (req, res, next) => __awaiter(void 0, void 0, void 0,
         catch (_b) {
             walletTransactions = [];
         }
+        const targetChannel = req.query.channel ? req.query.channel : undefined;
         const [customerUser, orders] = yield Promise.all([
             prisma_1.default.user.findUnique({
                 where: { id: customerId },
@@ -889,23 +888,20 @@ const getCustomerHistory = (req, res, next) => __awaiter(void 0, void 0, void 0,
                 }
             }),
             prisma_1.default.order.findMany({
-                where: { userId: customerId, channel: "POS" },
+                where: Object.assign(Object.assign({ userId: customerId }, (targetChannel ? { channel: targetChannel } : {})), { status: { notIn: ["CANCELLED", "FAILED"] } }),
                 include: {
                     items: { include: { product: { select: { name: true, sku: true } } } },
                     payments: true,
                     staff: { select: { name: true } },
                     location: { select: { name: true } }
                 },
-                orderBy: { createdAt: "desc" },
-                take: 100
+                orderBy: { createdAt: "desc" }
             })
         ]);
         const dueOrders = orders.filter(o => !o.isPaid &&
             o.paymentStatus !== "COMPLETED" &&
             o.paymentStatus !== "PAID" &&
-            o.paymentStatus !== "SETTLED" &&
-            o.status !== "CANCELLED" &&
-            o.status !== "FAILED");
+            o.paymentStatus !== "SETTLED");
         const startOfToday = new Date();
         startOfToday.setHours(0, 0, 0, 0);
         let todayDue = 0;
@@ -914,16 +910,16 @@ const getCustomerHistory = (req, res, next) => __awaiter(void 0, void 0, void 0,
             return tx.type === "DEPOSIT" ? acc + Number(tx.amount) : acc - Number(tx.amount);
         }, 0));
         const enrichedOrders = orders.map(o => {
-            const paid = o.payments ? o.payments.filter((p) => p.status === "SUCCESS" || !p.status).reduce((pAcc, p) => pAcc + Number(p.amount), 0) : 0;
-            const due = Math.max(0, Number(o.totalAmount) - paid);
+            const paid = o.payments ? o.payments.filter((p) => p.status === "SUCCESS" && p.method !== "CREDIT").reduce((pAcc, p) => pAcc + Number(p.amount), 0) : 0;
+            const due = Math.max(0, Math.round((Number(o.totalAmount) - paid) * 100) / 100);
             const isCompleted = o.isPaid || o.paymentStatus === "COMPLETED" || o.paymentStatus === "PAID" || due <= 0;
             const isPartial = !isCompleted && paid > 0;
             const isUnpaid = !isCompleted && paid === 0;
             return Object.assign(Object.assign({}, o), { paidAmount: paid, dueAmount: due, billStatus: isCompleted ? "PAID" : (isPartial ? "PARTIAL" : "UNPAID") });
         });
         dueOrders.forEach(o => {
-            const paid = o.payments ? o.payments.filter((p) => p.status === "SUCCESS" || !p.status).reduce((pAcc, p) => pAcc + Number(p.amount), 0) : 0;
-            const remaining = Number(o.totalAmount) - paid;
+            const paid = o.payments ? o.payments.filter((p) => p.status === "SUCCESS" && p.method !== "CREDIT").reduce((pAcc, p) => pAcc + Number(p.amount), 0) : 0;
+            const remaining = Math.max(0, Math.round((Number(o.totalAmount) - paid) * 100) / 100);
             if (remaining > 0) {
                 if (new Date(o.createdAt) >= startOfToday) {
                     todayDue += remaining;
@@ -933,19 +929,25 @@ const getCustomerHistory = (req, res, next) => __awaiter(void 0, void 0, void 0,
                 }
             }
         });
-        const totalDue = todayDue + pastDue;
-        const totalSpend = orders.filter(o => o.status !== "CANCELLED" && o.status !== "FAILED").reduce((acc, o) => acc + Number(o.totalAmount), 0);
+        const activeOrders = orders.filter(o => o.status !== "CANCELLED" && o.status !== "FAILED");
+        const totalSpend = Math.round(activeOrders.reduce((acc, o) => acc + Number(o.totalAmount), 0) * 100) / 100;
+        const totalPaid = Math.round(activeOrders.reduce((acc, o) => {
+            const paid = o.payments ? o.payments.filter((p) => p.status === "SUCCESS" && p.method !== "CREDIT").reduce((pAcc, p) => pAcc + Number(p.amount), 0) : 0;
+            return acc + paid;
+        }, 0) * 100) / 100;
+        const totalDue = Math.max(0, Math.round((totalSpend - totalPaid) * 100) / 100);
         const lastVisit = ((_a = orders[0]) === null || _a === void 0 ? void 0 : _a.createdAt) || null;
         res.json({
             customer: customerUser ? Object.assign(Object.assign({}, customerUser), { accountBalance: calculatedWalletBalance, totalDue: totalDue }) : null,
             orders: enrichedOrders,
             walletTransactions,
             summary: {
-                totalOrders: orders.length,
+                totalOrders: activeOrders.length,
                 totalSpend,
+                totalPaid,
                 totalDue,
-                todayDue,
-                pastDue,
+                todayDue: Math.round(todayDue * 100) / 100,
+                pastDue: Math.round(pastDue * 100) / 100,
                 accountBalance: calculatedWalletBalance,
                 lastVisit
             }
