@@ -1,5 +1,6 @@
 import axios from "axios";
 import dotenv from "dotenv";
+import { formatCurrencyAmount } from "./dueCalculationService";
 
 dotenv.config();
 
@@ -300,8 +301,8 @@ export const sendInvoiceDueViaWhatsapp = async (
     // Meta WhatsApp Cloud API rejects template variable parameters containing newlines (\n) with HTTP 400 (#100) Invalid parameter.
     // Keep URL parameter single-line and clean.
     const invoiceAndPayLink = `${origin}/invoice/${orderId} | Pay Online: ${payLink}`;
-    const formattedTotal = Number(totalAmount || 0).toFixed(2);
-    const formattedDue = Number(dueAmount || 0).toFixed(2);
+    const formattedTotal = formatCurrencyAmount(totalAmount);
+    const formattedDue = formatCurrencyAmount(dueAmount);
 
     return sendTemplateViaChatHub(phone, "bill_created", {
         body: [customerName, invoiceNo, formattedTotal, `DUE: ₹${formattedDue} (${paymentMode})`, invoiceAndPayLink]
@@ -314,7 +315,7 @@ export const sendInvoiceDueViaWhatsapp = async (
 export const sendPaymentReminderViaWhatsapp = async (
     phone: string,
     customerName: string,
-    dueAmount: number,
+    dueAmount: number | any,
     invoiceNo: string,
     userId?: string,
     orderId?: string
@@ -331,8 +332,7 @@ export const sendPaymentReminderViaWhatsapp = async (
     }
 
     const dueTiming = `Immediate. Pay online: ${payLink}`;
-    const num = Number(dueAmount);
-    const formattedDue = isNaN(num) ? "0.00" : num.toFixed(2);
+    const formattedDue = formatCurrencyAmount(dueAmount);
 
     const response = await sendTemplateViaChatHub(phone, "payment_due_reminder", {
         body: [customerName, invoiceNo, `₹${formattedDue}`, dueTiming]

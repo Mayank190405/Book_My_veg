@@ -33,6 +33,7 @@ const io_1 = require("../sockets/io");
 const otp_1 = require("../utils/otp");
 const mbgcard_1 = require("../services/mbgcard");
 const idGenerator_1 = require("../utils/idGenerator");
+const dueCalculationService_1 = require("../services/dueCalculationService");
 // ─── Assigning Operations ─────────────────────────────────────────────────────
 const assignPacker = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
@@ -857,11 +858,7 @@ const getCustomerOutstandingDues = (req, res) => __awaiter(void 0, void 0, void 
             return res.status(404).json({ message: "Customer not found" });
         }
         const pendingOrders = yield prisma_1.default.order.findMany({
-            where: {
-                userId: customerId,
-                paymentStatus: { in: ["PENDING", "PARTIAL"] },
-                status: { notIn: ["CANCELLED", "FAILED"] }
-            },
+            where: (0, dueCalculationService_1.getEligibleOrdersWhereClause)({ customerId }),
             include: {
                 payments: true,
                 items: { include: { product: true } },
@@ -869,30 +866,26 @@ const getCustomerOutstandingDues = (req, res) => __awaiter(void 0, void 0, void 
             },
             orderBy: { createdAt: "asc" }
         });
-        let totalOutstandingDue = 0;
-        const bills = pendingOrders.map((order) => {
+        const dueSummary = (0, dueCalculationService_1.calculateCustomerDues)(pendingOrders);
+        const bills = dueSummary.eligibleOrders.map((order) => {
             var _a, _b;
-            const paid = order.payments
-                .filter((p) => p.status === "SUCCESS")
-                .reduce((sum, p) => sum + Number(p.amount), 0);
-            const due = Math.max(0, Number(order.totalAmount) - paid);
-            totalOutstandingDue += due;
-            return {
+            return ({
                 id: order.id,
                 createdAt: order.createdAt,
                 totalAmount: Number(order.totalAmount),
-                paidAmount: paid,
-                dueAmount: due,
+                paidAmount: order.paidAmount,
+                dueAmount: order.dueAmount,
                 paymentStatus: order.paymentStatus,
                 status: order.status,
                 storeName: ((_a = order.location) === null || _a === void 0 ? void 0 : _a.name) || "Main Hub",
                 itemCount: ((_b = order.items) === null || _b === void 0 ? void 0 : _b.length) || 0
-            };
+            });
         });
         res.json({
-            customer,
+            customer: Object.assign(Object.assign({}, customer), { totalDue: dueSummary.totalDue }),
             bills,
-            totalOutstandingDue: Number(totalOutstandingDue.toFixed(2))
+            totalOutstandingDue: dueSummary.totalDue,
+            eligibleBillCount: dueSummary.eligibleOrdersCount
         });
     }
     catch (error) {
@@ -966,24 +959,15 @@ const syncCustomerTotalDue = (customerId, tx) => __awaiter(void 0, void 0, void 
         return 0;
     try {
         const unpaidOrders = yield db.order.findMany({
-            where: {
-                userId: customerId,
-                status: { notIn: ["CANCELLED", "FAILED"] },
-                isPaid: false
-            },
-            include: {
-                payments: { where: { status: "SUCCESS" } }
-            }
+            where: (0, dueCalculationService_1.getEligibleOrdersWhereClause)({ customerId }),
+            include: { payments: true }
         });
-        const totalRemainingDue = unpaidOrders.reduce((sum, ord) => {
-            const paid = ord.payments.reduce((acc, p) => acc + Number(p.amount), 0);
-            return sum + Math.max(0, Number(ord.totalAmount) - paid);
-        }, 0);
+        const dueSummary = (0, dueCalculationService_1.calculateCustomerDues)(unpaidOrders);
         yield db.user.update({
             where: { id: customerId },
-            data: { totalDue: new client_1.Prisma.Decimal(totalRemainingDue) }
+            data: { totalDue: new client_1.Prisma.Decimal(dueSummary.totalDue) }
         });
-        return totalRemainingDue;
+        return dueSummary.totalDue;
     }
     catch (e) {
         logger_1.default.error(`[syncCustomerTotalDue] Failed to sync totalDue for ${customerId}:`, e);

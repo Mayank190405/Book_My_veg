@@ -15,6 +15,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.runFinancialAuditAndReconciliation = void 0;
 const prisma_1 = __importDefault(require("../config/prisma"));
 const logger_1 = __importDefault(require("../utils/logger"));
+const dueCalculationService_1 = require("../services/dueCalculationService");
 const runFinancialAuditAndReconciliation = (...args_1) => __awaiter(void 0, [...args_1], void 0, function* (commit = false) {
     var _a, _b;
     logger_1.default.info(`[Financial Audit] Starting ledger reconciliation... Mode: ${commit ? "COMMIT" : "DRY-RUN"}`);
@@ -22,25 +23,26 @@ const runFinancialAuditAndReconciliation = (...args_1) => __awaiter(void 0, [...
     const adjustments = [];
     // ─── 1. AUDIT DUPLICATE PAYMENTS ──────────────────────────────────────────
     const duplicateTxns = yield prisma_1.default.payment.groupBy({
-        by: ["transactionId"],
+        by: ["orderId", "transactionId"],
         where: { status: "SUCCESS", transactionId: { not: null } },
         _count: { id: true },
         having: { id: { _count: { gt: 1 } } }
     });
     for (const group of duplicateTxns) {
-        if (!group.transactionId)
+        if (!group.transactionId || !group.orderId)
             continue;
         const payments = yield prisma_1.default.payment.findMany({
-            where: { transactionId: group.transactionId, status: "SUCCESS" },
+            where: { orderId: group.orderId, transactionId: group.transactionId, status: "SUCCESS" },
             orderBy: { createdAt: "asc" }
         });
         if (payments.length > 1) {
             discrepancies.push({
                 type: "DUPLICATE_PAYMENT",
-                entityId: group.transactionId,
+                entityId: `${group.orderId}_${group.transactionId}`,
                 details: {
+                    orderId: group.orderId,
+                    transactionId: group.transactionId,
                     count: payments.length,
-                    orderIds: payments.map(p => p.orderId),
                     amounts: payments.map(p => Number(p.amount))
                 }
             });
@@ -62,7 +64,7 @@ const runFinancialAuditAndReconciliation = (...args_1) => __awaiter(void 0, [...
                                 status: dup.status
                             },
                             newValue: {
-                                reason: "IDENTICAL_TRANSACTION_ID_DUPLICATE",
+                                reason: "IDENTICAL_TRANSACTION_ID_DUPLICATE_ON_ORDER",
                                 retainedPaymentId: payments[0].id
                             }
                         }
@@ -88,10 +90,10 @@ const runFinancialAuditAndReconciliation = (...args_1) => __awaiter(void 0, [...
     });
     for (const order of orders) {
         const orderTotal = Number(order.totalAmount);
-        const successfulPayments = order.payments.filter((p) => p.status === "SUCCESS" && p.method !== "CREDIT");
-        const netCollections = successfulPayments.reduce((sum, p) => sum + Number(p.amount), 0);
-        const calculatedRemainingDue = Math.max(0, Math.round((orderTotal - netCollections) * 100) / 100);
-        const expectedIsPaid = calculatedRemainingDue <= 0;
+        const dueResult = (0, dueCalculationService_1.calculateOrderDue)(order);
+        const netCollections = dueResult.paidAmount;
+        const calculatedRemainingDue = dueResult.dueAmount;
+        const expectedIsPaid = !dueResult.isEligible;
         const expectedPaymentStatus = netCollections <= 0 ? "PENDING" : (expectedIsPaid ? "COMPLETED" : "PARTIAL");
         const statusMismatch = order.isPaid !== expectedIsPaid || (order.paymentStatus !== expectedPaymentStatus && !(expectedIsPaid && (order.paymentStatus === "PAID" || order.paymentStatus === "SETTLED")));
         if (statusMismatch) {
@@ -146,25 +148,15 @@ const runFinancialAuditAndReconciliation = (...args_1) => __awaiter(void 0, [...
         include: {
             orders: {
                 where: { status: { notIn: ["CANCELLED", "FAILED"] } },
-                include: { payments: { where: { status: "SUCCESS" } } }
+                include: { payments: true }
             }
         }
     });
     for (const customer of customers) {
-        let expectedTotalDue = 0;
-        let expectedTotalSpend = 0;
-        let expectedTotalPaid = 0;
-        for (const ord of customer.orders) {
-            const ordTotal = Number(ord.totalAmount);
-            const ordPaid = ord.payments.filter((p) => p.method !== "CREDIT").reduce((sum, p) => sum + Number(p.amount), 0);
-            const ordDue = Math.max(0, ordTotal - ordPaid);
-            expectedTotalSpend += ordTotal;
-            expectedTotalPaid += ordPaid;
-            expectedTotalDue += ordDue;
-        }
-        expectedTotalSpend = Math.round(expectedTotalSpend * 100) / 100;
-        expectedTotalPaid = Math.round(expectedTotalPaid * 100) / 100;
-        expectedTotalDue = Math.round(expectedTotalDue * 100) / 100;
+        const summary = (0, dueCalculationService_1.calculateCustomerDues)(customer.orders);
+        const expectedTotalSpend = summary.totalSpend;
+        const expectedTotalPaid = summary.totalPaid;
+        const expectedTotalDue = summary.totalDue;
         const storedDue = Number(customer.totalDue || 0);
         if (Math.abs(storedDue - expectedTotalDue) > 0.01) {
             discrepancies.push({

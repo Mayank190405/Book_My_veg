@@ -117,7 +117,19 @@ const verifySingleEasebuzzTx = (txnid) => __awaiter(void 0, void 0, void 0, func
     }
 });
 exports.verifySingleEasebuzzTx = verifySingleEasebuzzTx;
-const syncEasebuzzTransactions = (customStartDate_1, customEndDate_1, ...args_1) => __awaiter(void 0, [customStartDate_1, customEndDate_1, ...args_1], void 0, function* (customStartDate, customEndDate, forceFullHistory = true) {
+const syncEasebuzzTransactions = (optionsOrStartDate_1, customEndDate_1, ...args_1) => __awaiter(void 0, [optionsOrStartDate_1, customEndDate_1, ...args_1], void 0, function* (optionsOrStartDate, customEndDate, forceFullHistory = true) {
+    var _a, _b;
+    let customStartDate;
+    let dryRun = false;
+    if (typeof optionsOrStartDate === "object" && optionsOrStartDate !== null) {
+        customStartDate = optionsOrStartDate.customStartDate;
+        customEndDate = optionsOrStartDate.customEndDate;
+        forceFullHistory = (_a = optionsOrStartDate.forceFullHistory) !== null && _a !== void 0 ? _a : true;
+        dryRun = (_b = optionsOrStartDate.dryRun) !== null && _b !== void 0 ? _b : false;
+    }
+    else {
+        customStartDate = optionsOrStartDate;
+    }
     const key = process.env.EASEBUZZ_KEY || process.env.EASEBUZZ_MERCHANT_KEY;
     const salt = process.env.EASEBUZZ_SALT;
     const env = process.env.EASEBUZZ_ENV || process.env.ENV || "test";
@@ -126,11 +138,14 @@ const syncEasebuzzTransactions = (customStartDate_1, customEndDate_1, ...args_1)
         logger_1.default.error("[Easebuzz Sync] Skipping sync — EASEBUZZ_KEY or EASEBUZZ_SALT not configured.");
         return { success: false, message: "Easebuzz credentials missing" };
     }
-    logger_1.default.info("[Easebuzz Sync] Starting payment reconciliation...");
+    logger_1.default.info(`[Easebuzz Sync] Starting payment reconciliation... Mode: ${dryRun ? "READ-ONLY DRY-RUN" : "LIVE COMMIT"}`);
     let totalFetched = 0;
     let totalSettled = 0;
     let totalFailed = 0;
     let totalKeptPending = 0;
+    const proposedSettlements = [];
+    const proposedFailures = [];
+    const unmatchedTransactions = [];
     // 1. Fetch all pending/unpaid orders from database
     const unpaidOrders = yield prisma_1.default.order.findMany({
         where: {
@@ -154,7 +169,7 @@ const syncEasebuzzTransactions = (customStartDate_1, customEndDate_1, ...args_1)
     for (let i = 0; i < unpaidOrders.length; i += batchSize) {
         const batch = unpaidOrders.slice(i, i + batchSize);
         yield Promise.all(batch.map((order) => __awaiter(void 0, void 0, void 0, function* () {
-            var _a, _b;
+            var _a, _b, _c;
             // Determine exact transaction IDs associated with this order
             const exactTxnIds = [];
             if (order.channel !== "POS") {
@@ -179,29 +194,57 @@ const syncEasebuzzTransactions = (customStartDate_1, customEndDate_1, ...args_1)
                     if (status === "success" || status === "charged") {
                         const easepayid = (txData === null || txData === void 0 ? void 0 : txData.easepayid) || (txData === null || txData === void 0 ? void 0 : txData.easebuzz_id) || txnid;
                         const amount = Number((txData === null || txData === void 0 ? void 0 : txData.amount) || (txData === null || txData === void 0 ? void 0 : txData.net_amount_debit) || order.totalAmount);
-                        const updateResult = yield (0, paymentController_1.completeOrderPayment)(order.id, {
-                            status: "CHARGED",
-                            txn_id: easepayid,
-                            amount,
-                            payment_method_type: "ONLINE",
-                            phone: (txData === null || txData === void 0 ? void 0 : txData.phone) || ((_a = order.user) === null || _a === void 0 ? void 0 : _a.phone),
-                            email: (txData === null || txData === void 0 ? void 0 : txData.email) || ((_b = order.user) === null || _b === void 0 ? void 0 : _b.email),
-                            firstname: txData === null || txData === void 0 ? void 0 : txData.firstname,
-                            productinfo: txData === null || txData === void 0 ? void 0 : txData.productinfo,
-                            metadata: txData
-                        });
-                        totalSettled++;
-                        resolvedOrderIds.add(order.id);
-                        logger_1.default.info(`[Easebuzz Sync] Order ID: ${order.id} -> Easebuzz txnid: ${txnid} -> Gateway Status: SUCCESS/CHARGED -> DB Result: PAID/CHARGED`);
+                        if (dryRun) {
+                            proposedSettlements.push({
+                                type: "PENDING_ORDER_VERIFIED",
+                                orderId: order.id,
+                                txnid,
+                                easepayid,
+                                amount,
+                                customerPhone: (_a = order.user) === null || _a === void 0 ? void 0 : _a.phone,
+                                proposedAction: "MARK_PAID"
+                            });
+                            totalSettled++;
+                            resolvedOrderIds.add(order.id);
+                            logger_1.default.info(`[Easebuzz Sync DryRun] Order ID: ${order.id} -> txnid: ${txnid} -> Proposed: MARK_PAID (₹${amount})`);
+                        }
+                        else {
+                            const updateResult = yield (0, paymentController_1.completeOrderPayment)(order.id, {
+                                status: "CHARGED",
+                                txn_id: easepayid,
+                                amount,
+                                payment_method_type: "ONLINE",
+                                phone: (txData === null || txData === void 0 ? void 0 : txData.phone) || ((_b = order.user) === null || _b === void 0 ? void 0 : _b.phone),
+                                email: (txData === null || txData === void 0 ? void 0 : txData.email) || ((_c = order.user) === null || _c === void 0 ? void 0 : _c.email),
+                                firstname: txData === null || txData === void 0 ? void 0 : txData.firstname,
+                                productinfo: txData === null || txData === void 0 ? void 0 : txData.productinfo,
+                                metadata: txData
+                            });
+                            totalSettled++;
+                            resolvedOrderIds.add(order.id);
+                            logger_1.default.info(`[Easebuzz Sync] Order ID: ${order.id} -> Easebuzz txnid: ${txnid} -> Gateway Status: SUCCESS/CHARGED -> DB Result: PAID/CHARGED`);
+                        }
                         break;
                     }
                     else if (status === "failed" || status === "dropped" || status === "usercancelled" || status === "user_cancelled") {
-                        totalFailed++;
-                        yield prisma_1.default.payment.updateMany({
-                            where: { orderId: order.id, status: "PENDING" },
-                            data: { status: "FAILED", metadata: txData || {} }
-                        });
-                        logger_1.default.info(`[Easebuzz Sync] Order ID: ${order.id} -> Easebuzz txnid: ${txnid} -> Gateway Status: ${status.toUpperCase()} -> DB Result: FAILED`);
+                        if (dryRun) {
+                            proposedFailures.push({
+                                type: "PENDING_ORDER_FAILED",
+                                orderId: order.id,
+                                txnid,
+                                proposedAction: "MARK_FAILED"
+                            });
+                            totalFailed++;
+                            logger_1.default.info(`[Easebuzz Sync DryRun] Order ID: ${order.id} -> txnid: ${txnid} -> Proposed: MARK_FAILED`);
+                        }
+                        else {
+                            totalFailed++;
+                            yield prisma_1.default.payment.updateMany({
+                                where: { orderId: order.id, status: "PENDING" },
+                                data: { status: "FAILED", metadata: txData || {} }
+                            });
+                            logger_1.default.info(`[Easebuzz Sync] Order ID: ${order.id} -> Easebuzz txnid: ${txnid} -> Gateway Status: ${status.toUpperCase()} -> DB Result: FAILED`);
+                        }
                         break;
                     }
                     else {
@@ -297,34 +340,62 @@ const syncEasebuzzTransactions = (customStartDate_1, customEndDate_1, ...args_1)
                     }
                     try {
                         if (isSuccess) {
-                            const result = yield (0, paymentController_1.completeOrderPayment)(resolvedOrderId, {
-                                status: "CHARGED",
-                                txn_id: easepayid,
-                                amount,
-                                payment_method_type: "ONLINE",
-                                phone: tx.phone,
-                                email: tx.email,
-                                firstname: tx.firstname,
-                                productinfo: tx.productinfo,
-                                metadata: tx
-                            });
-                            if ((result === null || result === void 0 ? void 0 : result.status) === "SUCCESS") {
+                            if (dryRun) {
+                                proposedSettlements.push({
+                                    type: "BULK_HISTORICAL_TXN_MATCHED",
+                                    txnid: tx.txnid,
+                                    resolvedOrderId,
+                                    amount,
+                                    gatewayStatus: "SUCCESS",
+                                    phone: tx.phone,
+                                    email: tx.email,
+                                    proposedAction: "SETTLE_ORDER"
+                                });
                                 totalSettled++;
-                                logger_1.default.info(`[Easebuzz Date Sync] Order ID: ${resolvedOrderId} -> Easebuzz txnid: ${tx.txnid} -> Gateway Status: SUCCESS -> DB Result: PAID/CHARGED`);
+                                logger_1.default.info(`[Easebuzz Date Sync DryRun] Order ID: ${resolvedOrderId} -> txnid: ${tx.txnid} -> Proposed: SETTLE_ORDER (₹${amount})`);
+                            }
+                            else {
+                                const result = yield (0, paymentController_1.completeOrderPayment)(resolvedOrderId, {
+                                    status: "CHARGED",
+                                    txn_id: easepayid,
+                                    amount,
+                                    payment_method_type: "ONLINE",
+                                    phone: tx.phone,
+                                    email: tx.email,
+                                    firstname: tx.firstname,
+                                    productinfo: tx.productinfo,
+                                    metadata: tx
+                                });
+                                if ((result === null || result === void 0 ? void 0 : result.status) === "SUCCESS") {
+                                    totalSettled++;
+                                    logger_1.default.info(`[Easebuzz Date Sync] Order ID: ${resolvedOrderId} -> Easebuzz txnid: ${tx.txnid} -> Gateway Status: SUCCESS -> DB Result: PAID/CHARGED`);
+                                }
                             }
                         }
                         else if (isFailed) {
-                            yield prisma_1.default.payment.updateMany({
-                                where: {
-                                    OR: [
-                                        { orderId: resolvedOrderId },
-                                        { transactionId: tx.txnid }
-                                    ],
-                                    status: "PENDING"
-                                },
-                                data: { status: "FAILED", metadata: tx }
-                            });
-                            logger_1.default.info(`[Easebuzz Date Sync] Order ID: ${resolvedOrderId} -> Easebuzz txnid: ${tx.txnid} -> Gateway Status: ${statusStr.toUpperCase()} -> DB Result: FAILED`);
+                            if (dryRun) {
+                                proposedFailures.push({
+                                    type: "BULK_HISTORICAL_TXN_FAILED",
+                                    txnid: tx.txnid,
+                                    resolvedOrderId,
+                                    proposedAction: "MARK_FAILED"
+                                });
+                                totalFailed++;
+                                logger_1.default.info(`[Easebuzz Date Sync DryRun] Order ID: ${resolvedOrderId} -> txnid: ${tx.txnid} -> Proposed: MARK_FAILED`);
+                            }
+                            else {
+                                yield prisma_1.default.payment.updateMany({
+                                    where: {
+                                        OR: [
+                                            { orderId: resolvedOrderId },
+                                            { transactionId: tx.txnid }
+                                        ],
+                                        status: "PENDING"
+                                    },
+                                    data: { status: "FAILED", metadata: tx }
+                                });
+                                logger_1.default.info(`[Easebuzz Date Sync] Order ID: ${resolvedOrderId} -> Easebuzz txnid: ${tx.txnid} -> Gateway Status: ${statusStr.toUpperCase()} -> DB Result: FAILED`);
+                            }
                         }
                     }
                     catch (txErr) {
@@ -339,17 +410,23 @@ const syncEasebuzzTransactions = (customStartDate_1, customEndDate_1, ...args_1)
                 hasMore = false;
             }
         }
-        // 4. Clean up any existing duplicate payment entries across orders
-        const { cleanUpDuplicatePayments } = yield Promise.resolve().then(() => __importStar(require("../controllers/paymentController")));
-        yield cleanUpDuplicatePayments();
+        // 4. Clean up any existing duplicate payment entries across orders (only in live commit mode)
+        if (!dryRun) {
+            const { cleanUpDuplicatePayments } = yield Promise.resolve().then(() => __importStar(require("../controllers/paymentController")));
+            yield cleanUpDuplicatePayments();
+        }
         logger_1.default.info(`[Easebuzz Sync Summary] Total Pending Verified: ${unpaidOrders.length}, Settled: ${totalSettled}, Failed: ${totalFailed}, Kept Pending: ${totalKeptPending}, Total Bulk Fetched: ${totalFetched}.`);
         return {
             success: true,
+            dryRun,
             totalUnpaidVerified: unpaidOrders.length,
             totalSettled,
             totalFailed,
             totalKeptPending,
             totalFetched,
+            proposedSettlements,
+            proposedFailures,
+            unmatchedTransactions,
             startDate,
             endDate
         };

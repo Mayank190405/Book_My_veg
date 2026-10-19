@@ -38,6 +38,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.getDailyProductReport = exports.triggerFinancialReconciliation = exports.getCustomerDetailedReport = exports.getCustomerSalesAndDueReports = exports.closeShift = exports.getSalesReports = exports.openShift = exports.getDashboardStats = void 0;
 const prisma_1 = __importDefault(require("../config/prisma"));
 const client_1 = require("@prisma/client");
+const dueCalculationService_1 = require("../services/dueCalculationService");
 /**
  * Global Admin & Regional Hub Intelligence
  */
@@ -685,9 +686,7 @@ const getCustomerDetailedReport = (req, res, next) => __awaiter(void 0, void 0, 
                 createdAt: Object.assign(Object.assign({}, (startStr ? { gte: new Date(startStr) } : {})), (endStr ? { lte: new Date(endStr) } : {}))
             } : {})),
             include: {
-                payments: {
-                    where: { status: "SUCCESS" }
-                },
+                payments: true,
                 location: { select: { name: true } },
                 staff: { select: { name: true } }
             },
@@ -696,7 +695,6 @@ const getCustomerDetailedReport = (req, res, next) => __awaiter(void 0, void 0, 
         // Fetch all successful customer payments (including direct account settlements)
         const allCustomerPayments = yield prisma_1.default.payment.findMany({
             where: {
-                status: "SUCCESS",
                 OR: [
                     { orderId: { in: orders.map((o) => o.id) } },
                     { order: { userId: custId } }
@@ -722,15 +720,15 @@ const getCustomerDetailedReport = (req, res, next) => __awaiter(void 0, void 0, 
                     staffName: (_b = order.staff) === null || _b === void 0 ? void 0 : _b.name
                 }
             });
-            // Payment Events for successful payments associated with this order (excluding CREDIT records)
-            order.payments.filter((p) => p.method !== "CREDIT").forEach((payment) => {
+            // Payment Events for valid payments associated with this order
+            order.payments.filter((p) => (0, dueCalculationService_1.isValidPaymentRecord)(p)).forEach((payment) => {
                 processedPaymentIds.add(payment.id);
                 events.push({
                     type: "PAYMENT",
                     date: payment.createdAt,
                     id: `payment_${payment.id}`,
                     referenceId: order.id,
-                    description: `Payment for Order #${order.id.slice(0, 8).toUpperCase()} via ${payment.method}`,
+                    description: `Payment for Order #${order.id.slice(0, 8).toUpperCase()} via ${payment.method || "ONLINE"}`,
                     amount: Number(payment.amount),
                     details: {
                         method: payment.method,
@@ -741,7 +739,7 @@ const getCustomerDetailedReport = (req, res, next) => __awaiter(void 0, void 0, 
         });
         // Add any account settlement payments that were not attached directly to orders
         allCustomerPayments.forEach((p) => {
-            if (!processedPaymentIds.has(p.id)) {
+            if (!processedPaymentIds.has(p.id) && (0, dueCalculationService_1.isValidPaymentRecord)(p)) {
                 processedPaymentIds.add(p.id);
                 events.push({
                     type: "PAYMENT",
@@ -757,54 +755,39 @@ const getCustomerDetailedReport = (req, res, next) => __awaiter(void 0, void 0, 
                 });
             }
         });
-        // Sort events chronologically (ascending)
-        events.sort((a, b) => a.date.getTime() - b.date.getTime());
-        // Compute running balance of dues
-        let runningBalance = 0;
-        const ledger = events.map(event => {
-            if (event.type === "CHARGE") {
-                runningBalance += event.amount;
-            }
-            else {
-                runningBalance -= event.amount;
-            }
-            return Object.assign(Object.assign({}, event), { runningBalance: Number(runningBalance.toFixed(2)) });
-        });
-        // Construct detailed bill-wise due list
-        const unpaidBills = orders.filter((o) => !o.isPaid && o.paymentStatus !== "COMPLETED" && o.paymentStatus !== "PAID" && o.paymentStatus !== "SETTLED");
-        const billWiseDues = unpaidBills.map((o) => {
+        // Compute running balance with deterministic tie-breaking and high precision Decimal arithmetic
+        const reconResult = (0, dueCalculationService_1.calculateChronologicalLedger)(events);
+        // Construct detailed bill-wise due list using unified authoritative due rules
+        const billWiseDues = orders
+            .map((o) => {
             var _a, _b;
-            const paidAmount = o.payments.filter((p) => p.status === "SUCCESS" && p.method !== "CREDIT").reduce((pSum, p) => pSum + Number(p.amount), 0);
-            const remainingDue = Math.max(0, Math.round((Number(o.totalAmount) - paidAmount) * 100) / 100);
+            const dueRes = (0, dueCalculationService_1.calculateOrderDue)(o);
+            if (!dueRes.isEligible || dueRes.dueAmount <= 0)
+                return null;
             return {
                 id: o.id,
                 createdAt: o.createdAt,
                 locationName: ((_a = o.location) === null || _a === void 0 ? void 0 : _a.name) || "Global",
                 staffName: ((_b = o.staff) === null || _b === void 0 ? void 0 : _b.name) || "N/A",
-                totalAmount: Number(o.totalAmount),
-                paidAmount,
-                remainingDue: remainingDue,
+                totalAmount: dueRes.totalAmount,
+                paidAmount: dueRes.paidAmount,
+                remainingDue: dueRes.dueAmount,
                 paymentStatus: o.paymentStatus,
                 status: o.status
             };
-        }).filter(b => b.remainingDue > 0);
-        // Summary Statistics (Strictly derived from unified, deduplicated ledger events for 100% mathematical reconciliation)
-        const totalCharges = events.filter(e => e.type === "CHARGE").reduce((sum, e) => sum + e.amount, 0);
-        const totalPayments = events.filter(e => e.type === "PAYMENT").reduce((sum, e) => sum + e.amount, 0);
-        const totalSpend = Math.round(totalCharges * 100) / 100;
-        const totalPaid = Math.round(totalPayments * 100) / 100;
-        const outstandingDue = Math.max(0, Math.round((totalSpend - totalPaid) * 100) / 100);
+        })
+            .filter((b) => b !== null);
         const lastVisit = orders.length > 0 ? orders[orders.length - 1].createdAt : null;
         res.json({
             customer: Object.assign(Object.assign({}, customer), { address: ((_d = (_c = customer.addresses) === null || _c === void 0 ? void 0 : _c[0]) === null || _d === void 0 ? void 0 : _d.fullAddress) || customer.profileAddress || "N/A" }),
             summary: {
                 totalOrders: orders.length,
-                totalSpend,
-                totalPaid,
-                outstandingDue,
+                totalSpend: reconResult.totalSpend,
+                totalPaid: reconResult.totalPaid,
+                outstandingDue: reconResult.outstandingDue,
                 lastVisit
             },
-            ledger: ledger.reverse(), // Return in reverse chronological order for easy page view
+            ledger: [...reconResult.ledger].reverse(), // Return in reverse chronological order for easy page view
             billWiseDues
         });
     }

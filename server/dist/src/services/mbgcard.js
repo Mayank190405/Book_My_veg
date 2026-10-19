@@ -15,6 +15,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.sendRegistrationThankYouViaWhatsapp = exports.sendInactiveCustomerReminderViaWhatsapp = exports.sendBillCancelledViaWhatsapp = exports.sendOrderStatusUpdateViaWhatsapp = exports.sendPaymentReceivedViaWhatsapp = exports.sendPaymentReminderViaWhatsapp = exports.sendInvoiceDueViaWhatsapp = exports.sendInvoicePaidViaWhatsapp = exports.sendFeedbackRequestViaWhatsapp = exports.sendTemplateViaChatHub = exports.sendOrderConfirmationViaWhatsapp = exports.APPROVED_UTILITY_TEMPLATES = exports.getConversation = exports.getMyMetaTemplates = exports.sendFlowViaChatHub = exports.sendOtpViaWhatsapp = void 0;
 const axios_1 = __importDefault(require("axios"));
 const dotenv_1 = __importDefault(require("dotenv"));
+const dueCalculationService_1 = require("./dueCalculationService");
 dotenv_1.default.config();
 const MBGCARD_API_URL = process.env.MBGCARD_API_URL || "https://chatbotbe.digitalmbg.com/api/whatsapp/send_meta_templet";
 const MBGCARD_API_TOKEN = process.env.MBGCARD_API_TOKEN || "d423777128fdc8a29bef4fb719f3d3c9";
@@ -265,9 +266,13 @@ const sendInvoiceDueViaWhatsapp = (phone, customerName, invoiceNo, totalAmount, 
     if (orderId) {
         payLink += `&billid=${orderId}`;
     }
-    const invoiceAndPayLink = `${origin}/invoice/${orderId}\n\n💳 *Pay Online:* ${payLink}`;
+    // Meta WhatsApp Cloud API rejects template variable parameters containing newlines (\n) with HTTP 400 (#100) Invalid parameter.
+    // Keep URL parameter single-line and clean.
+    const invoiceAndPayLink = `${origin}/invoice/${orderId} | Pay Online: ${payLink}`;
+    const formattedTotal = (0, dueCalculationService_1.formatCurrencyAmount)(totalAmount);
+    const formattedDue = (0, dueCalculationService_1.formatCurrencyAmount)(dueAmount);
     return (0, exports.sendTemplateViaChatHub)(phone, "bill_created", {
-        body: [customerName, invoiceNo, String(totalAmount), `DUE: ₹${dueAmount} (${paymentMode})`, invoiceAndPayLink]
+        body: [customerName, invoiceNo, formattedTotal, `DUE: ₹${formattedDue} (${paymentMode})`, invoiceAndPayLink]
     });
 });
 exports.sendInvoiceDueViaWhatsapp = sendInvoiceDueViaWhatsapp;
@@ -285,11 +290,12 @@ const sendPaymentReminderViaWhatsapp = (phone, customerName, dueAmount, invoiceN
         payLink += `&billid=${orderId}`;
     }
     const dueTiming = `Immediate. Pay online: ${payLink}`;
-    const num = Number(dueAmount);
-    const formattedDue = isNaN(num) ? String(dueAmount) : (Number.isInteger(num) ? String(num) : num.toFixed(2));
-    return (0, exports.sendTemplateViaChatHub)(phone, "payment_due_reminder", {
+    const formattedDue = (0, dueCalculationService_1.formatCurrencyAmount)(dueAmount);
+    const response = yield (0, exports.sendTemplateViaChatHub)(phone, "payment_due_reminder", {
         body: [customerName, invoiceNo, `₹${formattedDue}`, dueTiming]
     });
+    // Explicitly record provider acceptance status (distinct from delivered or read webhook confirmations)
+    return Object.assign(Object.assign({}, response), { dispatchStatus: "ACCEPTED_BY_PROVIDER", formattedDue, recipient: cleanPhone });
 });
 exports.sendPaymentReminderViaWhatsapp = sendPaymentReminderViaWhatsapp;
 /**
