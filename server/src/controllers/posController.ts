@@ -10,8 +10,11 @@ import { syncCustomerTotalDue } from "./orderController";
 import { 
     calculateCustomerDues, 
     calculateOrderDue, 
+    calculateOrderPaidAmountDecimal,
+    allocateBulkPaymentToBills,
     getEligibleOrdersWhereClause 
 } from "../services/dueCalculationService";
+import Decimal from "decimal.js";
 
 interface AuthenticatedRequest extends Request {
     user?: { userId: string; role: string; locationId?: string };
@@ -480,21 +483,15 @@ export const processPOSOrder = async (req: AuthenticatedRequest, res: Response, 
             if (!existingOrder) {
                 return next(new AppError("Order not found for editing", 404));
             }
-            existingPaidTotal = existingOrder.payments
-                .filter((p: any) => p.status === "SUCCESS")
-                .reduce((sum: number, p: any) => sum + Number(p.amount), 0);
+            existingPaidTotal = Number(calculateOrderPaidAmountDecimal(existingOrder.payments).toFixed(2));
         }
 
         // Fetch current due BEFORE processing across all customer's active orders
         const prevOrders = await prisma.order.findMany({
-            where: { 
-                userId: customerId, 
-                paymentStatus: { in: ["PENDING", "PARTIAL"] }, 
-                status: { notIn: ["CANCELLED", "FAILED", "PAYMENT_PENDING"] } 
-            },
+            where: getEligibleOrdersWhereClause({ customerId }),
             include: { payments: true }
         });
-        const previousDue = prevOrders.reduce((acc, o) => acc + (Number(o.totalAmount) - o.payments.filter((p: any) => p.status === "SUCCESS" && p.method !== "CREDIT").reduce((pAcc, p) => pAcc + Number(p.amount), 0)), 0);
+        const previousDue = calculateCustomerDues(prevOrders).totalDue;
         
         let validatedStaffId = staffId;
         const staffExists = await prisma.user.findUnique({ 
@@ -726,44 +723,36 @@ export const processPOSOrder = async (req: AuthenticatedRequest, res: Response, 
 
         // ─── SETTLE OLD DUES ────────────────────────────────────────────────
         let settledFromOld = 0;
-        if (duePaymentAmount > 0 && paymentMethod !== "CREDIT") {
-            let remaining = Number(duePaymentAmount);
+        if (duePaymentAmount > 0 && paymentMethod !== "CREDIT" && customerId) {
             const unpaidOrders = await prisma.order.findMany({
                 where: { 
-                    userId: customerId, 
-                    id: { not: (result as any).id },
-                    paymentStatus: { in: ["PENDING", "PARTIAL"] },
-                    status: { notIn: ["CANCELLED", "FAILED", "PAYMENT_PENDING"] }
+                    ...getEligibleOrdersWhereClause({ customerId }),
+                    id: { not: (result as any).id }
                 },
                 orderBy: { createdAt: "asc" },
                 include: { payments: true }
             });
 
-            for (const oldOrder of unpaidOrders) {
-                if (remaining <= 0) break;
-                const paid = oldOrder.payments.reduce((acc, p) => acc + Number(p.amount), 0);
-                const due = Number(oldOrder.totalAmount) - paid;
-                const toApply = Math.min(remaining, due);
+            const allocation = allocateBulkPaymentToBills(duePaymentAmount, unpaidOrders);
+            for (const alloc of allocation.allocations) {
+                if (alloc.allocatedAmount <= 0) continue;
 
-                if (toApply > 0) {
-                    await prisma.payment.create({
-                        data: {
-                            orderId: oldOrder.id,
-                            amount: new Prisma.Decimal(toApply),
-                            method: paymentMethod || "CASH",
-                            status: "SUCCESS",
-                            transactionId: `POS_SETTLE_${Date.now()}`
-                        }
-                    });
-                    const fullyPaid = (paid + toApply) >= Number(oldOrder.totalAmount);
-                    await prisma.order.update({
-                        where: { id: oldOrder.id },
-                        data: { isPaid: fullyPaid, paymentStatus: fullyPaid ? "COMPLETED" : "PARTIAL" }
-                    });
-                    remaining -= toApply;
-                    settledFromOld += toApply;
-                }
+                await prisma.payment.create({
+                    data: {
+                        orderId: alloc.orderId,
+                        amount: new Prisma.Decimal(alloc.allocatedAmount),
+                        method: paymentMethod || "CASH",
+                        status: "SUCCESS",
+                        transactionId: `POS_SETTLE_${Date.now()}`
+                    }
+                });
+
+                await prisma.order.update({
+                    where: { id: alloc.orderId },
+                    data: { isPaid: alloc.isFullyPaid, paymentStatus: alloc.isFullyPaid ? "COMPLETED" : "PARTIAL" }
+                });
             }
+            settledFromOld = allocation.totalAllocated;
         }
 
         if (customerId) {
@@ -780,29 +769,11 @@ export const processPOSOrder = async (req: AuthenticatedRequest, res: Response, 
                 location: { select: { name: true, contactNumber: true } }
             } 
         });
-        const currentBillPaid = finalOrder.payments.reduce((acc: number, p: any) => acc + Number(p.amount), 0);
-        const currentBillDue = Math.max(0, Number(finalOrder.totalAmount) - currentBillPaid);
+        const currentBillDueResult = calculateOrderDue(finalOrder);
+        const currentBillPaid = currentBillDueResult.paidAmount;
+        const currentBillDue = currentBillDueResult.dueAmount;
 
-        // Update customer totalDue field
-        if (customerId) {
-            const allUnpaid = await prisma.order.findMany({
-                where: {
-                    userId: customerId,
-                    paymentStatus: { in: ["PENDING", "PARTIAL"] },
-                    status: { notIn: ["CANCELLED", "FAILED"] }
-                },
-                include: { payments: true }
-            });
-            const netDue = allUnpaid.reduce((sum, o) => {
-                const pPaid = o.payments.reduce((pSum: number, p: any) => pSum + Number(p.amount), 0);
-                return sum + Math.max(0, Number(o.totalAmount) - pPaid);
-            }, 0);
-
-            await prisma.user.update({
-                where: { id: customerId },
-                data: { totalDue: new Prisma.Decimal(netDue) }
-            }).catch(() => null);
-        }
+        const netOutstanding = Number(new Decimal(previousDue).minus(settledFromOld).plus(currentBillDue).toFixed(2));
 
         res.status(201).json({ 
             message: "POS Order Processed", 
@@ -811,7 +782,7 @@ export const processPOSOrder = async (req: AuthenticatedRequest, res: Response, 
                 previousDue,
                 settledFromOld,
                 currentBillDue,
-                netOutstanding: previousDue - settledFromOld + currentBillDue
+                netOutstanding
             }
         });
 
@@ -1256,16 +1227,13 @@ export const collectDuePayment = async (req: AuthenticatedRequest, res: Response
         });
         if (!order) return next(new AppError("Order not found", 404));
 
-        const paidAlready = (order.payments || []).reduce((acc: number, p: any) => {
-            const isSuccess = p.status === "SUCCESS" || p.status === "COMPLETED" || p.status === "PAID";
-            return isSuccess ? acc + Number(p.amount) : acc;
-        }, 0);
-        const orderTotal = Number(order.totalAmount);
-        const remainingDue = Math.max(0, orderTotal - paidAlready);
-
-        if (remainingDue <= 0) {
+        const dueResult = calculateOrderDue(order);
+        if (!dueResult.isEligible || dueResult.dueAmount <= 0) {
             return res.status(400).json({ message: "This bill has already been fully paid and settled." });
         }
+        const paidAlready = dueResult.paidAmount;
+        const orderTotal = dueResult.totalAmount;
+        const remainingDue = dueResult.dueAmount;
 
         // Determine payment slices
         let paymentSlices: Array<{ method: string; amount: number; transactionId?: string; denominations?: any }> = [];
@@ -1353,47 +1321,36 @@ export const collectDuePayment = async (req: AuthenticatedRequest, res: Response
 
             // If there's overflow money and customerId is present, roll over to settle customer's other unpaid orders
             if (overflow > 0 && customerId) {
-                let remainingOverflow = overflow;
                 const otherUnpaid = await tx.order.findMany({
                     where: {
-                        userId: customerId,
-                        id: { not: orderId },
-                        isPaid: false,
-                        status: { notIn: ["CANCELLED", "FAILED"] }
+                        ...getEligibleOrdersWhereClause({ customerId }),
+                        id: { not: orderId }
                     },
                     orderBy: { createdAt: "asc" },
                     include: { payments: true }
                 });
 
-                for (const otherOrder of otherUnpaid) {
-                    if (remainingOverflow <= 0) break;
-                    const otherPaid = (otherOrder.payments || [])
-                        .filter((p: any) => p.status === "SUCCESS" || p.status === "COMPLETED" || p.status === "PAID")
-                        .reduce((acc: number, p: any) => acc + Number(p.amount), 0);
-                    const otherDue = Number(otherOrder.totalAmount) - otherPaid;
-                    const applyToOther = Math.min(remainingOverflow, otherDue);
+                const overflowAllocation = allocateBulkPaymentToBills(overflow, otherUnpaid);
+                for (const alloc of overflowAllocation.allocations) {
+                    if (alloc.allocatedAmount <= 0) continue;
 
-                    if (applyToOther > 0) {
-                        await tx.payment.create({
-                            data: {
-                                orderId: otherOrder.id,
-                                amount: new Prisma.Decimal(applyToOther),
-                                method: paymentSlices[0]?.method || method || "CASH",
-                                status: "SUCCESS",
-                                transactionId: `POS_OVERFLOW_${Date.now()}_${otherOrder.id.slice(0, 6)}`
-                            }
-                        });
+                    await tx.payment.create({
+                        data: {
+                            orderId: alloc.orderId,
+                            amount: new Prisma.Decimal(alloc.allocatedAmount),
+                            method: paymentSlices[0]?.method || method || "CASH",
+                            status: "SUCCESS",
+                            transactionId: `POS_OVERFLOW_${Date.now()}_${alloc.orderId.slice(0, 6)}`
+                        }
+                    });
 
-                        const otherFull = (otherPaid + applyToOther) >= Number(otherOrder.totalAmount);
-                        await tx.order.update({
-                            where: { id: otherOrder.id },
-                            data: {
-                                isPaid: otherFull,
-                                paymentStatus: otherFull ? "COMPLETED" : "PARTIAL"
-                            }
-                        });
-                        remainingOverflow -= applyToOther;
-                    }
+                    await tx.order.update({
+                        where: { id: alloc.orderId },
+                        data: {
+                            isPaid: alloc.isFullyPaid,
+                            paymentStatus: alloc.isFullyPaid ? "COMPLETED" : "PARTIAL"
+                        }
+                    });
                 }
             }
 
@@ -1492,51 +1449,38 @@ export const settleAccountBalance = async (req: AuthenticatedRequest, res: Respo
     if (!staffId) return next(new AppError("Unauthorized", 401));
 
     try {
-        let remaining = Number(amount);
         const result = await prisma.$transaction(async (tx) => {
             const unpaid = await (tx as any).order.findMany({
-                where: { 
-                    userId: customerId, 
-                    isPaid: false, 
-                    status: { notIn: ["CANCELLED", "FAILED"] } 
-                },
+                where: getEligibleOrdersWhereClause({ customerId }),
                 orderBy: { createdAt: "asc" },
                 include: { payments: true }
             }) as any[];
 
+            const allocation = allocateBulkPaymentToBills(amount, unpaid);
             let firstPaymentSaved = false;
 
-            for (const order of unpaid) {
-                if (remaining <= 0) break;
-                const paid = (order.payments as any[]).reduce((acc: number, p: any) => {
-                    const isSuccess = p.status === "SUCCESS" || p.status === "COMPLETED" || p.status === "PAID";
-                    return isSuccess ? acc + Number(p.amount) : acc;
-                }, 0);
-                const due = Number(order.totalAmount) - paid;
-                const toApply = Math.min(remaining, due);
+            for (const alloc of allocation.allocations) {
+                if (alloc.allocatedAmount <= 0) continue;
 
-                if (toApply > 0) {
-                    await tx.payment.create({
-                        data: {
-                            orderId: order.id,
-                            amount: new Prisma.Decimal(toApply),
-                            method: method || "CASH",
-                            status: "SUCCESS",
-                            transactionId: transactionId || `SETTLE_${Date.now()}`,
-                            denominations: (!firstPaymentSaved && method === "CASH") ? (denominations || null) : null
-                        }
-                    });
-                    firstPaymentSaved = true;
-                    const isFull = (paid + toApply) >= Number(order.totalAmount);
-                    await tx.order.update({ 
-                        where: { id: order.id }, 
-                        data: { 
-                            isPaid: isFull, 
-                            paymentStatus: isFull ? "COMPLETED" : "PARTIAL" 
-                        } 
-                    });
-                    remaining -= toApply;
-                }
+                await tx.payment.create({
+                    data: {
+                        orderId: alloc.orderId,
+                        amount: new Prisma.Decimal(alloc.allocatedAmount),
+                        method: method || "CASH",
+                        status: "SUCCESS",
+                        transactionId: transactionId || `SETTLE_${Date.now()}`,
+                        denominations: (!firstPaymentSaved && method === "CASH") ? (denominations || null) : null
+                    }
+                });
+                firstPaymentSaved = true;
+
+                await tx.order.update({ 
+                    where: { id: alloc.orderId }, 
+                    data: { 
+                        isPaid: alloc.isFullyPaid, 
+                        paymentStatus: alloc.isFullyPaid ? "COMPLETED" : "PARTIAL" 
+                    } 
+                });
             }
 
             if (method === "CASH" && denominations && locationId) {
@@ -1573,7 +1517,7 @@ export const settleAccountBalance = async (req: AuthenticatedRequest, res: Respo
 
             await syncCustomerTotalDue(customerId, tx);
 
-            return { settled: Number(amount) - remaining };
+            return { settled: allocation.totalAllocated };
         });
         res.json(result);
     } catch (error) { next(error); }

@@ -22,6 +22,7 @@ const inventoryService_1 = require("../services/inventoryService");
 const searchService_1 = require("../services/searchService");
 const orderController_1 = require("./orderController");
 const dueCalculationService_1 = require("../services/dueCalculationService");
+const decimal_js_1 = __importDefault(require("decimal.js"));
 // ─── Customer Management ──────────────────────────────────────────────────────
 const searchCustomer = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     const rawQuery = String(req.query.query || "").trim().replace(/\\+/g, "");
@@ -445,20 +446,14 @@ const processPOSOrder = (req, res, next) => __awaiter(void 0, void 0, void 0, fu
             if (!existingOrder) {
                 return next(new errors_1.AppError("Order not found for editing", 404));
             }
-            existingPaidTotal = existingOrder.payments
-                .filter((p) => p.status === "SUCCESS")
-                .reduce((sum, p) => sum + Number(p.amount), 0);
+            existingPaidTotal = Number((0, dueCalculationService_1.calculateOrderPaidAmountDecimal)(existingOrder.payments).toFixed(2));
         }
         // Fetch current due BEFORE processing across all customer's active orders
         const prevOrders = yield prisma_1.default.order.findMany({
-            where: {
-                userId: customerId,
-                paymentStatus: { in: ["PENDING", "PARTIAL"] },
-                status: { notIn: ["CANCELLED", "FAILED", "PAYMENT_PENDING"] }
-            },
+            where: (0, dueCalculationService_1.getEligibleOrdersWhereClause)({ customerId }),
             include: { payments: true }
         });
-        const previousDue = prevOrders.reduce((acc, o) => acc + (Number(o.totalAmount) - o.payments.filter((p) => p.status === "SUCCESS" && p.method !== "CREDIT").reduce((pAcc, p) => pAcc + Number(p.amount), 0)), 0);
+        const previousDue = (0, dueCalculationService_1.calculateCustomerDues)(prevOrders).totalDue;
         let validatedStaffId = staffId;
         const staffExists = yield prisma_1.default.user.findUnique({
             where: { id: staffId },
@@ -675,43 +670,31 @@ const processPOSOrder = (req, res, next) => __awaiter(void 0, void 0, void 0, fu
         }));
         // ─── SETTLE OLD DUES ────────────────────────────────────────────────
         let settledFromOld = 0;
-        if (duePaymentAmount > 0 && paymentMethod !== "CREDIT") {
-            let remaining = Number(duePaymentAmount);
+        if (duePaymentAmount > 0 && paymentMethod !== "CREDIT" && customerId) {
             const unpaidOrders = yield prisma_1.default.order.findMany({
-                where: {
-                    userId: customerId,
-                    id: { not: result.id },
-                    paymentStatus: { in: ["PENDING", "PARTIAL"] },
-                    status: { notIn: ["CANCELLED", "FAILED", "PAYMENT_PENDING"] }
-                },
+                where: Object.assign(Object.assign({}, (0, dueCalculationService_1.getEligibleOrdersWhereClause)({ customerId })), { id: { not: result.id } }),
                 orderBy: { createdAt: "asc" },
                 include: { payments: true }
             });
-            for (const oldOrder of unpaidOrders) {
-                if (remaining <= 0)
-                    break;
-                const paid = oldOrder.payments.reduce((acc, p) => acc + Number(p.amount), 0);
-                const due = Number(oldOrder.totalAmount) - paid;
-                const toApply = Math.min(remaining, due);
-                if (toApply > 0) {
-                    yield prisma_1.default.payment.create({
-                        data: {
-                            orderId: oldOrder.id,
-                            amount: new client_1.Prisma.Decimal(toApply),
-                            method: paymentMethod || "CASH",
-                            status: "SUCCESS",
-                            transactionId: `POS_SETTLE_${Date.now()}`
-                        }
-                    });
-                    const fullyPaid = (paid + toApply) >= Number(oldOrder.totalAmount);
-                    yield prisma_1.default.order.update({
-                        where: { id: oldOrder.id },
-                        data: { isPaid: fullyPaid, paymentStatus: fullyPaid ? "COMPLETED" : "PARTIAL" }
-                    });
-                    remaining -= toApply;
-                    settledFromOld += toApply;
-                }
+            const allocation = (0, dueCalculationService_1.allocateBulkPaymentToBills)(duePaymentAmount, unpaidOrders);
+            for (const alloc of allocation.allocations) {
+                if (alloc.allocatedAmount <= 0)
+                    continue;
+                yield prisma_1.default.payment.create({
+                    data: {
+                        orderId: alloc.orderId,
+                        amount: new client_1.Prisma.Decimal(alloc.allocatedAmount),
+                        method: paymentMethod || "CASH",
+                        status: "SUCCESS",
+                        transactionId: `POS_SETTLE_${Date.now()}`
+                    }
+                });
+                yield prisma_1.default.order.update({
+                    where: { id: alloc.orderId },
+                    data: { isPaid: alloc.isFullyPaid, paymentStatus: alloc.isFullyPaid ? "COMPLETED" : "PARTIAL" }
+                });
             }
+            settledFromOld = allocation.totalAllocated;
         }
         if (customerId) {
             try {
@@ -727,27 +710,10 @@ const processPOSOrder = (req, res, next) => __awaiter(void 0, void 0, void 0, fu
                 location: { select: { name: true, contactNumber: true } }
             }
         });
-        const currentBillPaid = finalOrder.payments.reduce((acc, p) => acc + Number(p.amount), 0);
-        const currentBillDue = Math.max(0, Number(finalOrder.totalAmount) - currentBillPaid);
-        // Update customer totalDue field
-        if (customerId) {
-            const allUnpaid = yield prisma_1.default.order.findMany({
-                where: {
-                    userId: customerId,
-                    paymentStatus: { in: ["PENDING", "PARTIAL"] },
-                    status: { notIn: ["CANCELLED", "FAILED"] }
-                },
-                include: { payments: true }
-            });
-            const netDue = allUnpaid.reduce((sum, o) => {
-                const pPaid = o.payments.reduce((pSum, p) => pSum + Number(p.amount), 0);
-                return sum + Math.max(0, Number(o.totalAmount) - pPaid);
-            }, 0);
-            yield prisma_1.default.user.update({
-                where: { id: customerId },
-                data: { totalDue: new client_1.Prisma.Decimal(netDue) }
-            }).catch(() => null);
-        }
+        const currentBillDueResult = (0, dueCalculationService_1.calculateOrderDue)(finalOrder);
+        const currentBillPaid = currentBillDueResult.paidAmount;
+        const currentBillDue = currentBillDueResult.dueAmount;
+        const netOutstanding = Number(new decimal_js_1.default(previousDue).minus(settledFromOld).plus(currentBillDue).toFixed(2));
         res.status(201).json({
             message: "POS Order Processed",
             order: finalOrder,
@@ -755,7 +721,7 @@ const processPOSOrder = (req, res, next) => __awaiter(void 0, void 0, void 0, fu
                 previousDue,
                 settledFromOld,
                 currentBillDue,
-                netOutstanding: previousDue - settledFromOld + currentBillDue
+                netOutstanding
             }
         });
         // 🔔 Alert Packer if assigned
@@ -1160,15 +1126,13 @@ const collectDuePayment = (req, res, next) => __awaiter(void 0, void 0, void 0, 
         });
         if (!order)
             return next(new errors_1.AppError("Order not found", 404));
-        const paidAlready = (order.payments || []).reduce((acc, p) => {
-            const isSuccess = p.status === "SUCCESS" || p.status === "COMPLETED" || p.status === "PAID";
-            return isSuccess ? acc + Number(p.amount) : acc;
-        }, 0);
-        const orderTotal = Number(order.totalAmount);
-        const remainingDue = Math.max(0, orderTotal - paidAlready);
-        if (remainingDue <= 0) {
+        const dueResult = (0, dueCalculationService_1.calculateOrderDue)(order);
+        if (!dueResult.isEligible || dueResult.dueAmount <= 0) {
             return res.status(400).json({ message: "This bill has already been fully paid and settled." });
         }
+        const paidAlready = dueResult.paidAmount;
+        const orderTotal = dueResult.totalAmount;
+        const remainingDue = dueResult.dueAmount;
         // Determine payment slices
         let paymentSlices = [];
         if (Array.isArray(splitPayments) && splitPayments.length > 0) {
@@ -1249,45 +1213,31 @@ const collectDuePayment = (req, res, next) => __awaiter(void 0, void 0, void 0, 
             });
             // If there's overflow money and customerId is present, roll over to settle customer's other unpaid orders
             if (overflow > 0 && customerId) {
-                let remainingOverflow = overflow;
                 const otherUnpaid = yield tx.order.findMany({
-                    where: {
-                        userId: customerId,
-                        id: { not: orderId },
-                        isPaid: false,
-                        status: { notIn: ["CANCELLED", "FAILED"] }
-                    },
+                    where: Object.assign(Object.assign({}, (0, dueCalculationService_1.getEligibleOrdersWhereClause)({ customerId })), { id: { not: orderId } }),
                     orderBy: { createdAt: "asc" },
                     include: { payments: true }
                 });
-                for (const otherOrder of otherUnpaid) {
-                    if (remainingOverflow <= 0)
-                        break;
-                    const otherPaid = (otherOrder.payments || [])
-                        .filter((p) => p.status === "SUCCESS" || p.status === "COMPLETED" || p.status === "PAID")
-                        .reduce((acc, p) => acc + Number(p.amount), 0);
-                    const otherDue = Number(otherOrder.totalAmount) - otherPaid;
-                    const applyToOther = Math.min(remainingOverflow, otherDue);
-                    if (applyToOther > 0) {
-                        yield tx.payment.create({
-                            data: {
-                                orderId: otherOrder.id,
-                                amount: new client_1.Prisma.Decimal(applyToOther),
-                                method: ((_a = paymentSlices[0]) === null || _a === void 0 ? void 0 : _a.method) || method || "CASH",
-                                status: "SUCCESS",
-                                transactionId: `POS_OVERFLOW_${Date.now()}_${otherOrder.id.slice(0, 6)}`
-                            }
-                        });
-                        const otherFull = (otherPaid + applyToOther) >= Number(otherOrder.totalAmount);
-                        yield tx.order.update({
-                            where: { id: otherOrder.id },
-                            data: {
-                                isPaid: otherFull,
-                                paymentStatus: otherFull ? "COMPLETED" : "PARTIAL"
-                            }
-                        });
-                        remainingOverflow -= applyToOther;
-                    }
+                const overflowAllocation = (0, dueCalculationService_1.allocateBulkPaymentToBills)(overflow, otherUnpaid);
+                for (const alloc of overflowAllocation.allocations) {
+                    if (alloc.allocatedAmount <= 0)
+                        continue;
+                    yield tx.payment.create({
+                        data: {
+                            orderId: alloc.orderId,
+                            amount: new client_1.Prisma.Decimal(alloc.allocatedAmount),
+                            method: ((_a = paymentSlices[0]) === null || _a === void 0 ? void 0 : _a.method) || method || "CASH",
+                            status: "SUCCESS",
+                            transactionId: `POS_OVERFLOW_${Date.now()}_${alloc.orderId.slice(0, 6)}`
+                        }
+                    });
+                    yield tx.order.update({
+                        where: { id: alloc.orderId },
+                        data: {
+                            isPaid: alloc.isFullyPaid,
+                            paymentStatus: alloc.isFullyPaid ? "COMPLETED" : "PARTIAL"
+                        }
+                    });
                 }
             }
             // Update cashier shift cash denominations if CASH was collected
@@ -1383,49 +1333,35 @@ const settleAccountBalance = (req, res, next) => __awaiter(void 0, void 0, void 
     if (!staffId)
         return next(new errors_1.AppError("Unauthorized", 401));
     try {
-        let remaining = Number(amount);
         const result = yield prisma_1.default.$transaction((tx) => __awaiter(void 0, void 0, void 0, function* () {
             const unpaid = yield tx.order.findMany({
-                where: {
-                    userId: customerId,
-                    isPaid: false,
-                    status: { notIn: ["CANCELLED", "FAILED"] }
-                },
+                where: (0, dueCalculationService_1.getEligibleOrdersWhereClause)({ customerId }),
                 orderBy: { createdAt: "asc" },
                 include: { payments: true }
             });
+            const allocation = (0, dueCalculationService_1.allocateBulkPaymentToBills)(amount, unpaid);
             let firstPaymentSaved = false;
-            for (const order of unpaid) {
-                if (remaining <= 0)
-                    break;
-                const paid = order.payments.reduce((acc, p) => {
-                    const isSuccess = p.status === "SUCCESS" || p.status === "COMPLETED" || p.status === "PAID";
-                    return isSuccess ? acc + Number(p.amount) : acc;
-                }, 0);
-                const due = Number(order.totalAmount) - paid;
-                const toApply = Math.min(remaining, due);
-                if (toApply > 0) {
-                    yield tx.payment.create({
-                        data: {
-                            orderId: order.id,
-                            amount: new client_1.Prisma.Decimal(toApply),
-                            method: method || "CASH",
-                            status: "SUCCESS",
-                            transactionId: transactionId || `SETTLE_${Date.now()}`,
-                            denominations: (!firstPaymentSaved && method === "CASH") ? (denominations || null) : null
-                        }
-                    });
-                    firstPaymentSaved = true;
-                    const isFull = (paid + toApply) >= Number(order.totalAmount);
-                    yield tx.order.update({
-                        where: { id: order.id },
-                        data: {
-                            isPaid: isFull,
-                            paymentStatus: isFull ? "COMPLETED" : "PARTIAL"
-                        }
-                    });
-                    remaining -= toApply;
-                }
+            for (const alloc of allocation.allocations) {
+                if (alloc.allocatedAmount <= 0)
+                    continue;
+                yield tx.payment.create({
+                    data: {
+                        orderId: alloc.orderId,
+                        amount: new client_1.Prisma.Decimal(alloc.allocatedAmount),
+                        method: method || "CASH",
+                        status: "SUCCESS",
+                        transactionId: transactionId || `SETTLE_${Date.now()}`,
+                        denominations: (!firstPaymentSaved && method === "CASH") ? (denominations || null) : null
+                    }
+                });
+                firstPaymentSaved = true;
+                yield tx.order.update({
+                    where: { id: alloc.orderId },
+                    data: {
+                        isPaid: alloc.isFullyPaid,
+                        paymentStatus: alloc.isFullyPaid ? "COMPLETED" : "PARTIAL"
+                    }
+                });
             }
             if (method === "CASH" && denominations && locationId) {
                 const activeShift = yield tx.cashierShift.findFirst({
@@ -1456,7 +1392,7 @@ const settleAccountBalance = (req, res, next) => __awaiter(void 0, void 0, void 
                 }
             }
             yield (0, orderController_1.syncCustomerTotalDue)(customerId, tx);
-            return { settled: Number(amount) - remaining };
+            return { settled: allocation.totalAllocated };
         }));
         res.json(result);
     }

@@ -425,13 +425,24 @@ export const calculateChronologicalLedger = (
  * Guarantees zero floating-point drift and enforces exact bill limits.
  */
 export const allocateBulkPaymentAcrossBills = (
-    bills: Array<{ id: string; totalAmount: DecimalLike; payments?: PaymentLike[] }>,
-    availableAmount: DecimalLike
+    param1: any,
+    param2: any
 ): {
     allocations: Array<{ orderId: string; allocatedAmount: number; previousPaid: number; remainingDue: number; isFullyPaid: boolean }>;
     totalAllocated: number;
     excessAmount: number;
 } => {
+    let bills: Array<{ id: string; totalAmount: DecimalLike; payments?: PaymentLike[] }>;
+    let availableAmount: DecimalLike;
+
+    if (Array.isArray(param1)) {
+        bills = param1;
+        availableAmount = param2;
+    } else {
+        availableAmount = param1;
+        bills = param2 || [];
+    }
+
     let remaining = new Decimal(availableAmount !== undefined && availableAmount !== null ? availableAmount.toString() : 0);
     let totalAllocatedDec = new Decimal(0);
     const allocations: Array<{ orderId: string; allocatedAmount: number; previousPaid: number; remainingDue: number; isFullyPaid: boolean }> = [];
@@ -489,4 +500,6 @@ export const allocateBulkPaymentAcrossBills = (
         excessAmount: Number(remaining.toFixed(2))
     };
 };
+
+export const allocateBulkPaymentToBills = allocateBulkPaymentAcrossBills;
 

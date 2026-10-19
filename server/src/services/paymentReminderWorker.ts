@@ -13,10 +13,205 @@ const THREE_HOURS_MS = 3 * ONE_HOUR_MS;
 const ONE_DAY_MS = 24 * ONE_HOUR_MS;
 const FOUR_DAYS_MS = 4 * ONE_DAY_MS;
 
+export const REMINDER_CLAIM_LEASE_MS = 15 * 60 * 1000; // 15 minutes lease
+
+export interface ReminderClaimOptions {
+    cooldownMs: number;
+    leaseMs?: number;
+    totalDue: number;
+    orderCount: number;
+    invoiceLabel: string;
+    trigger?: string;
+}
+
+export interface ReminderClaimResult {
+    claimed: boolean;
+    reason?: "COOLDOWN_ACTIVE" | "ACTIVE_CLAIM_IN_PROGRESS" | "DB_ERROR";
+    claimId?: string;
+}
+
+/**
+ * Database-backed atomic claim to prevent duplicate WhatsApp reminders across
+ * concurrent worker runs and multi-replica server instances.
+ */
+export const claimCustomerReminder = async (
+    customerId: string,
+    options: ReminderClaimOptions
+): Promise<ReminderClaimResult> => {
+    const leaseMs = options.leaseMs || REMINDER_CLAIM_LEASE_MS;
+    const now = new Date();
+
+    try {
+        return await prisma.$transaction(async (tx) => {
+            // In PostgreSQL, row lock the User record to serialize concurrent replica workers
+            try {
+                await (tx as any).$queryRaw`SELECT id FROM "User" WHERE id = ${customerId} FOR UPDATE`;
+            } catch (_) {
+                // Non-blocking fallback if $queryRaw FOR UPDATE is unsupported (e.g. SQLite / mock tests)
+            }
+
+            // 1. Check completed reminders within the cooldown window
+            const recentReminder = await (tx.auditLog.findFirst as any)({
+                where: {
+                    entityType: "USER",
+                    entityId: customerId,
+                    action: "WHATSAPP_DUE_REMINDER",
+                    createdAt: { gte: new Date(now.getTime() - options.cooldownMs) }
+                },
+                orderBy: { createdAt: "desc" }
+            });
+
+            if (recentReminder) {
+                return { claimed: false, reason: "COOLDOWN_ACTIVE" };
+            }
+
+            // 2. Check active claims within the lease window
+            const recentClaim = await (tx.auditLog.findFirst as any)({
+                where: {
+                    entityType: "USER",
+                    entityId: customerId,
+                    action: "WHATSAPP_DUE_REMINDER_CLAIM",
+                    createdAt: { gte: new Date(now.getTime() - leaseMs) }
+                },
+                orderBy: { createdAt: "desc" }
+            });
+
+            if (recentClaim) {
+                const claimData = recentClaim.newValue as any;
+                // If claim is still in progress (CLAIMED) within the lease window, block concurrent claim
+                if (claimData?.status === "CLAIMED") {
+                    return { claimed: false, reason: "ACTIVE_CLAIM_IN_PROGRESS" };
+                }
+            }
+
+            // 3. Also check if a claim was already completed within the cooldown
+            const completedClaim = await (tx.auditLog.findFirst as any)({
+                where: {
+                    entityType: "USER",
+                    entityId: customerId,
+                    action: "WHATSAPP_DUE_REMINDER_CLAIM",
+                    createdAt: { gte: new Date(now.getTime() - options.cooldownMs) }
+                },
+                orderBy: { createdAt: "desc" }
+            });
+
+            if (completedClaim) {
+                const val = completedClaim.newValue as any;
+                if (val?.status === "COMPLETED") {
+                    return { claimed: false, reason: "COOLDOWN_ACTIVE" };
+                }
+            }
+
+            // 4. Atomically create the CLAIM record BEFORE attempting WhatsApp dispatch
+            const claim = await (tx.auditLog.create as any)({
+                data: {
+                    entityType: "USER",
+                    entityId: customerId,
+                    action: "WHATSAPP_DUE_REMINDER_CLAIM",
+                    newValue: {
+                        status: "CLAIMED",
+                        trigger: options.trigger || "AUTOMATIC_WORKER",
+                        totalDue: options.totalDue,
+                        orderCount: options.orderCount,
+                        invoiceLabel: options.invoiceLabel,
+                        claimedAt: now,
+                        leaseExpiresAt: new Date(now.getTime() + leaseMs)
+                    }
+                }
+            });
+
+            return { claimed: true, claimId: claim.id };
+        });
+    } catch (e: any) {
+        logger.error(`[claimCustomerReminder] Error claiming reminder for customer ${customerId}:`, e);
+        return { claimed: false, reason: "DB_ERROR" };
+    }
+};
+
+/**
+ * Finalizes an atomic reminder claim: records provider acceptance and message ID
+ * upon success, or marks the claim as FAILED to release the lease on failure.
+ */
+export const finalizeCustomerReminderClaim = async (
+    customerId: string,
+    claimId: string,
+    result: {
+        success: boolean;
+        providerStatus?: string;
+        providerMessageId?: string | null;
+        totalDue: number;
+        orderCount: number;
+        invoiceLabel: string;
+        trigger?: string;
+        error?: string;
+    }
+) => {
+    const now = new Date();
+    try {
+        if (result.success) {
+            // Record completed reminder in AuditLog for cooldown enforcement
+            await (prisma.auditLog.create as any)({
+                data: {
+                    entityType: "USER",
+                    entityId: customerId,
+                    action: "WHATSAPP_DUE_REMINDER",
+                    newValue: {
+                        status: "ACCEPTED",
+                        providerStatus: result.providerStatus || "ACCEPTED_BY_PROVIDER",
+                        providerMessageId: result.providerMessageId || null,
+                        totalDue: result.totalDue,
+                        orderCount: result.orderCount,
+                        invoiceLabel: result.invoiceLabel,
+                        trigger: result.trigger || "AUTOMATIC_WORKER",
+                        claimId,
+                        sentAt: now
+                    }
+                }
+            });
+
+            // Mark claim record as COMPLETED
+            await (prisma.auditLog.update as any)({
+                where: { id: claimId },
+                data: {
+                    newValue: {
+                        status: "COMPLETED",
+                        providerMessageId: result.providerMessageId || null,
+                        completedAt: now
+                    }
+                }
+            }).catch(() => null);
+        } else {
+            // Update claim record as FAILED so lease is immediately released
+            await (prisma.auditLog.update as any)({
+                where: { id: claimId },
+                data: {
+                    newValue: {
+                        status: "FAILED",
+                        error: result.error || "Provider rejected or network failed",
+                        failedAt: now
+                    }
+                }
+            }).catch(() => null);
+        }
+    } catch (err: any) {
+        logger.error(`[finalizeCustomerReminderClaim] Error finalizing claim ${claimId} for customer ${customerId}:`, err);
+    }
+};
+
+let isReminderWorkerRunning = false;
+
+export const getIsReminderWorkerRunning = () => isReminderWorkerRunning;
+
 export const startPaymentReminderWorker = () => {
     logger.info("[Payment & Retention Reminder Worker] Daemon initialized.");
 
     const runRemindersAndFeedbackCheck = async () => {
+        if (isReminderWorkerRunning) {
+            logger.warn("[Payment Reminder Worker] Previous worker cycle still executing. Skipping overlapping run to prevent duplicates.");
+            return;
+        }
+
+        isReminderWorkerRunning = true;
         logger.info("[Payment & Retention Worker] Running background tasks (Dues, Inactivity & Feedback)...");
         try {
             const now = new Date();
@@ -148,35 +343,34 @@ export const startPaymentReminderWorker = () => {
                             return;
                         }
 
-                        // Check if a reminder was already sent to this customer recently (AuditLog cooldown)
-                        const lastReminderAudit = await (prisma.auditLog.findFirst as any)({
-                            where: {
-                                entityType: "USER",
-                                entityId: customer.id,
-                                action: "WHATSAPP_DUE_REMINDER"
-                            },
-                            orderBy: { createdAt: "desc" }
-                        });
-
-                        if (lastReminderAudit) {
-                            const timeSinceLastReminder = now.getTime() - new Date(lastReminderAudit.createdAt).getTime();
-                            // Cooldown: at least dueIntervalMs, with minimum 24 hours to prevent multiple messages on the same day
-                            const cooldownMs = Math.max(dueIntervalMs, ONE_DAY_MS);
-                            if (timeSinceLastReminder < cooldownMs) {
-                                return; // Cooldown active, skip customer
-                            }
-                        }
-
+                        // Cooldown: at least dueIntervalMs, with minimum 24 hours to prevent multiple messages on the same day
+                        const cooldownMs = Math.max(dueIntervalMs, ONE_DAY_MS);
                         const orderCount = summary.eligibleOrdersCount;
                         const latestOrder = summary.eligibleOrders[0];
                         const invoiceLabel = orderCount > 1 
                             ? `All Dues (${orderCount} Bills)` 
                             : latestOrder.id;
 
-                        logger.info(`[Payment Reminder Worker] Dispatching automatic due reminder to customer ${customer.name} (${customer.phone}) - Total Due: ₹${summary.totalDueFormatted} [${invoiceLabel}]`);
+                        // ─── ATOMIC DATABASE CLAIM (MULTI-REPLICA IDEMPOTENCY) ───────────────
+                        // Atomically claims customer in database BEFORE WhatsApp dispatch
+                        const claimResult = await claimCustomerReminder(customer.id, {
+                            cooldownMs,
+                            totalDue: summary.totalDue,
+                            orderCount,
+                            invoiceLabel,
+                            trigger: "AUTOMATIC_WORKER"
+                        });
 
+                        if (!claimResult.claimed || !claimResult.claimId) {
+                            logger.info(`[Payment Reminder Worker] Skipping customer ${customer.name || customer.id} (${customer.phone}): ${claimResult.reason}`);
+                            return;
+                        }
+
+                        logger.info(`[Payment Reminder Worker] Claim acquired (${claimResult.claimId}). Dispatching due reminder to ${customer.name} (${customer.phone}) - Total Due: ₹${summary.totalDueFormatted} [${invoiceLabel}]`);
+
+                        // ─── DISPATCH REMINDER & FINALIZE CLAIM ──────────────────────────────
                         try {
-                            await sendPaymentReminderViaWhatsapp(
+                            const sendResult: any = await sendPaymentReminderViaWhatsapp(
                                 customer.phone,
                                 customer.name || "Customer",
                                 summary.totalDue,
@@ -185,23 +379,28 @@ export const startPaymentReminderWorker = () => {
                                 latestOrder.id
                             );
 
-                            // Record AuditLog to prevent duplicate reminders within cooldown
-                            await (prisma.auditLog.create as any)({
-                                data: {
-                                    entityType: "USER",
-                                    entityId: customer.id,
-                                    action: "WHATSAPP_DUE_REMINDER",
-                                    newValue: {
-                                        totalDue: summary.totalDue,
-                                        orderCount,
-                                        invoiceLabel,
-                                        trigger: "AUTOMATIC_WORKER",
-                                        sentAt: now
-                                    }
-                                }
+                            const providerMessageId = sendResult?.messageId || sendResult?.id || sendResult?.message_id || null;
+                            const isAccepted = sendResult?.dispatchStatus === "ACCEPTED_BY_PROVIDER" || sendResult?.success !== false;
+
+                            await finalizeCustomerReminderClaim(customer.id, claimResult.claimId, {
+                                success: isAccepted,
+                                providerStatus: sendResult?.dispatchStatus || "ACCEPTED_BY_PROVIDER",
+                                providerMessageId,
+                                totalDue: summary.totalDue,
+                                orderCount,
+                                invoiceLabel,
+                                trigger: "AUTOMATIC_WORKER"
                             });
                         } catch (err: any) {
                             logger.error(`[Payment Reminder Worker] Error sending automatic reminder to ${customer.phone}: ${err.message}`);
+                            await finalizeCustomerReminderClaim(customer.id, claimResult.claimId, {
+                                success: false,
+                                error: err.message,
+                                totalDue: summary.totalDue,
+                                orderCount,
+                                invoiceLabel,
+                                trigger: "AUTOMATIC_WORKER"
+                            });
                         }
                     }
                 });
@@ -293,6 +492,8 @@ export const startPaymentReminderWorker = () => {
 
         } catch (error) {
             logger.error("[Payment Reminder Worker] Background check error:", error);
+        } finally {
+            isReminderWorkerRunning = false;
         }
     };
 

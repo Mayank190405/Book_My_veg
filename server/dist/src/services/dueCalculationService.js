@@ -12,7 +12,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.allocateBulkPaymentAcrossBills = exports.calculateChronologicalLedger = exports.isAllDuesDisplayLabel = exports.processCustomersWithDuesInBatches = exports.getEligibleOrdersWhereClause = exports.calculateCustomerDues = exports.calculateOrderDue = exports.formatCurrencyAmount = exports.calculateOrderPaidAmountDecimal = exports.isValidPaymentRecord = exports.INELIGIBLE_ORDER_STATUSES = exports.FULLY_SETTLED_ORDER_PAYMENT_STATUSES = exports.INVALID_PAYMENT_STATUSES = exports.VALID_PAYMENT_STATUSES = void 0;
+exports.allocateBulkPaymentToBills = exports.allocateBulkPaymentAcrossBills = exports.calculateChronologicalLedger = exports.isAllDuesDisplayLabel = exports.processCustomersWithDuesInBatches = exports.getEligibleOrdersWhereClause = exports.calculateCustomerDues = exports.calculateOrderDue = exports.formatCurrencyAmount = exports.calculateOrderPaidAmountDecimal = exports.isValidPaymentRecord = exports.INELIGIBLE_ORDER_STATUSES = exports.FULLY_SETTLED_ORDER_PAYMENT_STATUSES = exports.INVALID_PAYMENT_STATUSES = exports.VALID_PAYMENT_STATUSES = void 0;
 const decimal_js_1 = __importDefault(require("decimal.js"));
 const prisma_1 = __importDefault(require("../config/prisma"));
 /**
@@ -318,7 +318,17 @@ exports.calculateChronologicalLedger = calculateChronologicalLedger;
  * Pure function to simulate or compute multi-bill payment allocation.
  * Guarantees zero floating-point drift and enforces exact bill limits.
  */
-const allocateBulkPaymentAcrossBills = (bills, availableAmount) => {
+const allocateBulkPaymentAcrossBills = (param1, param2) => {
+    let bills;
+    let availableAmount;
+    if (Array.isArray(param1)) {
+        bills = param1;
+        availableAmount = param2;
+    }
+    else {
+        availableAmount = param1;
+        bills = param2 || [];
+    }
     let remaining = new decimal_js_1.default(availableAmount !== undefined && availableAmount !== null ? availableAmount.toString() : 0);
     let totalAllocatedDec = new decimal_js_1.default(0);
     const allocations = [];
@@ -369,3 +379,4 @@ const allocateBulkPaymentAcrossBills = (bills, availableAmount) => {
     };
 };
 exports.allocateBulkPaymentAcrossBills = allocateBulkPaymentAcrossBills;
+exports.allocateBulkPaymentToBills = exports.allocateBulkPaymentAcrossBills;
