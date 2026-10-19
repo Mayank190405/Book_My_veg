@@ -2118,12 +2118,17 @@ export const triggerEasebuzzSync = async (req: AuthenticatedRequest, res: Respon
     if (!req.user) {
         return res.status(401).json({ message: "Unauthorized" });
     }
-    const { startDate, endDate } = req.body || {};
+    const { startDate, endDate, dryRun } = req.body || {};
     try {
         const { syncEasebuzzTransactions } = await import("../services/easebuzzSyncService");
         
-        // Await fast sync synchronously so UI receives settlement results and updates immediately
-        const result = await syncEasebuzzTransactions(startDate, endDate);
+        // Support dry-run mode and custom date filters
+        const result = await syncEasebuzzTransactions({
+            customStartDate: startDate,
+            customEndDate: endDate,
+            dryRun: Boolean(dryRun),
+            forceFullHistory: !startDate
+        });
 
         return res.json(result);
     } catch (error: any) {
