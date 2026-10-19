@@ -631,7 +631,7 @@ const trackTrendingOnOrder = (items, locationId) => __awaiter(void 0, void 0, vo
     try {
         for (const item of items) {
             const key = `trending:${locationId}:${item.productId}`;
-            yield redis_1.default.incrBy(key, Number(item.quantity) || 1);
+            yield redis_1.default.incrByFloat(key, Number(item.quantity) || 1);
             yield redis_1.default.expire(key, TRENDING_TTL);
         }
     }

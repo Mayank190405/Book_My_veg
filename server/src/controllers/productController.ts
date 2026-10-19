@@ -639,7 +639,7 @@ export const trackTrendingOnOrder = async (items: { productId: string, quantity:
     try {
         for (const item of items) {
             const key = `trending:${locationId}:${item.productId}`;
-            await redisClient.incrBy(key, Number(item.quantity) || 1);
+            await redisClient.incrByFloat(key, Number(item.quantity) || 1);
             await redisClient.expire(key, TRENDING_TTL);
         }
     } catch (error) {
