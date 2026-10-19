@@ -1,5 +1,9 @@
 import prisma from "../config/prisma";
 import logger from "../utils/logger";
+import { 
+    calculateOrderDue, 
+    calculateCustomerDues 
+} from "../services/dueCalculationService";
 
 interface FinancialDiscrepancy {
     type: "ORDER_STATUS_MISMATCH" | "CUSTOMER_DUE_MISMATCH" | "DUPLICATE_PAYMENT" | "SUSPICIOUS_AMOUNT";
@@ -15,26 +19,27 @@ export const runFinancialAuditAndReconciliation = async (commit: boolean = false
 
     // ─── 1. AUDIT DUPLICATE PAYMENTS ──────────────────────────────────────────
     const duplicateTxns = await prisma.payment.groupBy({
-        by: ["transactionId"],
+        by: ["orderId", "transactionId"],
         where: { status: "SUCCESS", transactionId: { not: null } },
         _count: { id: true },
         having: { id: { _count: { gt: 1 } } }
     });
 
     for (const group of duplicateTxns) {
-        if (!group.transactionId) continue;
+        if (!group.transactionId || !group.orderId) continue;
         const payments = await prisma.payment.findMany({
-            where: { transactionId: group.transactionId, status: "SUCCESS" },
+            where: { orderId: group.orderId, transactionId: group.transactionId, status: "SUCCESS" },
             orderBy: { createdAt: "asc" }
         });
 
         if (payments.length > 1) {
             discrepancies.push({
                 type: "DUPLICATE_PAYMENT",
-                entityId: group.transactionId,
+                entityId: `${group.orderId}_${group.transactionId}`,
                 details: {
+                    orderId: group.orderId,
+                    transactionId: group.transactionId,
                     count: payments.length,
-                    orderIds: payments.map(p => p.orderId),
                     amounts: payments.map(p => Number(p.amount))
                 }
             });
@@ -57,7 +62,7 @@ export const runFinancialAuditAndReconciliation = async (commit: boolean = false
                                 status: dup.status
                             },
                             newValue: {
-                                reason: "IDENTICAL_TRANSACTION_ID_DUPLICATE",
+                                reason: "IDENTICAL_TRANSACTION_ID_DUPLICATE_ON_ORDER",
                                 retainedPaymentId: payments[0].id
                             }
                         }
@@ -85,11 +90,11 @@ export const runFinancialAuditAndReconciliation = async (commit: boolean = false
 
     for (const order of orders) {
         const orderTotal = Number(order.totalAmount);
-        const successfulPayments = order.payments.filter((p: any) => p.status === "SUCCESS" && p.method !== "CREDIT");
-        const netCollections = successfulPayments.reduce((sum: number, p: any) => sum + Number(p.amount), 0);
-        const calculatedRemainingDue = Math.max(0, Math.round((orderTotal - netCollections) * 100) / 100);
+        const dueResult = calculateOrderDue(order);
+        const netCollections = dueResult.paidAmount;
+        const calculatedRemainingDue = dueResult.dueAmount;
 
-        const expectedIsPaid = calculatedRemainingDue <= 0;
+        const expectedIsPaid = !dueResult.isEligible;
         const expectedPaymentStatus = netCollections <= 0 ? "PENDING" : (expectedIsPaid ? "COMPLETED" : "PARTIAL");
 
         const statusMismatch = order.isPaid !== expectedIsPaid || (order.paymentStatus !== expectedPaymentStatus && !(expectedIsPaid && (order.paymentStatus === "PAID" || order.paymentStatus === "SETTLED")));
@@ -150,29 +155,16 @@ export const runFinancialAuditAndReconciliation = async (commit: boolean = false
         include: {
             orders: {
                 where: { status: { notIn: ["CANCELLED", "FAILED"] } },
-                include: { payments: { where: { status: "SUCCESS" } } }
+                include: { payments: true }
             }
         }
     });
 
     for (const customer of customers) {
-        let expectedTotalDue = 0;
-        let expectedTotalSpend = 0;
-        let expectedTotalPaid = 0;
-
-        for (const ord of customer.orders) {
-            const ordTotal = Number(ord.totalAmount);
-            const ordPaid = ord.payments.filter((p: any) => p.method !== "CREDIT").reduce((sum: number, p: any) => sum + Number(p.amount), 0);
-            const ordDue = Math.max(0, ordTotal - ordPaid);
-
-            expectedTotalSpend += ordTotal;
-            expectedTotalPaid += ordPaid;
-            expectedTotalDue += ordDue;
-        }
-
-        expectedTotalSpend = Math.round(expectedTotalSpend * 100) / 100;
-        expectedTotalPaid = Math.round(expectedTotalPaid * 100) / 100;
-        expectedTotalDue = Math.round(expectedTotalDue * 100) / 100;
+        const summary = calculateCustomerDues(customer.orders);
+        const expectedTotalSpend = summary.totalSpend;
+        const expectedTotalPaid = summary.totalPaid;
+        const expectedTotalDue = summary.totalDue;
 
         const storedDue = Number(customer.totalDue || 0);
 

@@ -297,10 +297,14 @@ export const sendInvoiceDueViaWhatsapp = async (
         payLink += `&billid=${orderId}`;
     }
 
-    const invoiceAndPayLink = `${origin}/invoice/${orderId}\n\n💳 *Pay Online:* ${payLink}`;
+    // Meta WhatsApp Cloud API rejects template variable parameters containing newlines (\n) with HTTP 400 (#100) Invalid parameter.
+    // Keep URL parameter single-line and clean.
+    const invoiceAndPayLink = `${origin}/invoice/${orderId} | Pay Online: ${payLink}`;
+    const formattedTotal = Number(totalAmount || 0).toFixed(2);
+    const formattedDue = Number(dueAmount || 0).toFixed(2);
 
     return sendTemplateViaChatHub(phone, "bill_created", {
-        body: [customerName, invoiceNo, String(totalAmount), `DUE: ₹${dueAmount} (${paymentMode})`, invoiceAndPayLink]
+        body: [customerName, invoiceNo, formattedTotal, `DUE: ₹${formattedDue} (${paymentMode})`, invoiceAndPayLink]
     });
 };
 
@@ -328,11 +332,19 @@ export const sendPaymentReminderViaWhatsapp = async (
 
     const dueTiming = `Immediate. Pay online: ${payLink}`;
     const num = Number(dueAmount);
-    const formattedDue = isNaN(num) ? String(dueAmount) : (Number.isInteger(num) ? String(num) : num.toFixed(2));
+    const formattedDue = isNaN(num) ? "0.00" : num.toFixed(2);
 
-    return sendTemplateViaChatHub(phone, "payment_due_reminder", {
+    const response = await sendTemplateViaChatHub(phone, "payment_due_reminder", {
         body: [customerName, invoiceNo, `₹${formattedDue}`, dueTiming]
     });
+
+    // Explicitly record provider acceptance status (distinct from delivered or read webhook confirmations)
+    return {
+        ...response,
+        dispatchStatus: "ACCEPTED_BY_PROVIDER",
+        formattedDue,
+        recipient: cleanPhone
+    };
 };
 
 /**

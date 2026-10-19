@@ -7,6 +7,11 @@ import { generateOrderId } from "../utils/idGenerator";
 import { InventoryService, InventoryLogType } from "../services/inventoryService";
 import { SearchService } from "../services/searchService";
 import { syncCustomerTotalDue } from "./orderController";
+import { 
+    calculateCustomerDues, 
+    calculateOrderDue, 
+    getEligibleOrdersWhereClause 
+} from "../services/dueCalculationService";
 
 interface AuthenticatedRequest extends Request {
     user?: { userId: string; role: string; locationId?: string };
@@ -977,40 +982,33 @@ export const getCustomerHistory = async (req: AuthenticatedRequest, res: Respons
             return tx.type === "DEPOSIT" ? acc + Number(tx.amount) : acc - Number(tx.amount);
         }, 0));
 
+        const activeOrders = orders.filter(o => o.status !== "CANCELLED" && o.status !== "FAILED");
+        const customerDueSummary = calculateCustomerDues(activeOrders);
+
         const enrichedOrders = orders.map(o => {
-            const paid = o.payments ? o.payments.filter((p: any) => p.status === "SUCCESS" && p.method !== "CREDIT").reduce((pAcc: number, p: any) => pAcc + Number(p.amount), 0) : 0;
-            const due = Math.max(0, Math.round((Number(o.totalAmount) - paid) * 100) / 100);
-            const isCompleted = o.isPaid || o.paymentStatus === "COMPLETED" || o.paymentStatus === "PAID" || due <= 0;
-            const isPartial = !isCompleted && paid > 0;
-            const isUnpaid = !isCompleted && paid === 0;
+            const dueRes = calculateOrderDue(o);
+            const isCompleted = !dueRes.isEligible;
+            const isPartial = dueRes.paidAmount > 0 && dueRes.dueAmount > 0;
 
             return {
                 ...o,
-                paidAmount: paid,
-                dueAmount: due,
+                paidAmount: dueRes.paidAmount,
+                dueAmount: dueRes.dueAmount,
                 billStatus: isCompleted ? "PAID" : (isPartial ? "PARTIAL" : "UNPAID")
             };
         });
 
-        dueOrders.forEach(o => {
-            const paid = o.payments ? o.payments.filter((p: any) => p.status === "SUCCESS" && p.method !== "CREDIT").reduce((pAcc: number, p: any) => pAcc + Number(p.amount), 0) : 0;
-            const remaining = Math.max(0, Math.round((Number(o.totalAmount) - paid) * 100) / 100);
-            if (remaining > 0) {
-                if (new Date(o.createdAt) >= startOfToday) {
-                    todayDue += remaining;
-                } else {
-                    pastDue += remaining;
-                }
+        customerDueSummary.eligibleOrders.forEach(o => {
+            if (new Date(o.createdAt || Date.now()) >= startOfToday) {
+                todayDue += o.dueAmount;
+            } else {
+                pastDue += o.dueAmount;
             }
         });
 
-        const activeOrders = orders.filter(o => o.status !== "CANCELLED" && o.status !== "FAILED");
-        const totalSpend = Math.round(activeOrders.reduce((acc, o) => acc + Number(o.totalAmount), 0) * 100) / 100;
-        const totalPaid = Math.round(activeOrders.reduce((acc, o) => {
-            const paid = o.payments ? o.payments.filter((p: any) => p.status === "SUCCESS" && p.method !== "CREDIT").reduce((pAcc: number, p: any) => pAcc + Number(p.amount), 0) : 0;
-            return acc + paid;
-        }, 0) * 100) / 100;
-        const totalDue = Math.max(0, Math.round((totalSpend - totalPaid) * 100) / 100);
+        const totalSpend = customerDueSummary.totalSpend;
+        const totalPaid = customerDueSummary.totalPaid;
+        const totalDue = customerDueSummary.totalDue;
         const lastVisit = orders[0]?.createdAt || null;
 
         res.json({
@@ -1584,22 +1582,18 @@ export const settleAccountBalance = async (req: AuthenticatedRequest, res: Respo
 // ─── POS WhatsApp Due Reminders ────────────────────────────────────────────────
 
 export const getPOSDueCustomers = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
-    let locationId = req.user?.locationId;
     const isGlobal = req.user?.role === "ADMIN" || req.user?.role === "SUPER_ADMIN";
+    let locationId = req.user?.locationId;
 
-    if (!locationId && isGlobal) {
-        const loc = await prisma.location.findFirst();
-        locationId = loc?.id;
+    if (req.query.locationId) {
+        locationId = req.query.locationId === "all" ? undefined : String(req.query.locationId);
+    } else if (isGlobal) {
+        locationId = undefined; // Global admin sees all stores, unless explicitly filtered
     }
 
     try {
         const orders = await prisma.order.findMany({
-            where: {
-                ...(locationId ? { locationId } : {}),
-                status: { notIn: ["CANCELLED", "FAILED"] },
-                isPaid: false,
-                paymentStatus: { notIn: ["COMPLETED", "PAID", "SETTLED"] }
-            },
+            where: getEligibleOrdersWhereClause({ locationId }),
             include: {
                 user: {
                     select: {
@@ -1614,84 +1608,72 @@ export const getPOSDueCustomers = async (req: AuthenticatedRequest, res: Respons
             orderBy: { createdAt: "desc" }
         });
 
-        const customerMap: Record<string, {
-            id: string;
-            name: string;
-            phone: string;
-            email: string;
-            totalDue: number;
-            dueOrdersCount: number;
-            latestOrderId: string;
-        }> = {};
+        const customerOrdersMap: Record<string, { user: any; orders: any[] }> = {};
 
         for (const order of orders) {
             if (!order.user || !order.user.phone) continue;
-            const paid = order.payments ? order.payments.filter((p: any) => p.status === "SUCCESS" || !p.status).reduce((acc: number, p: any) => acc + Number(p.amount), 0) : 0;
-            const dueAmount = Number(order.totalAmount) - paid;
-            if (dueAmount <= 0) continue;
-
             const uId = order.user.id;
-            if (!customerMap[uId]) {
-                customerMap[uId] = {
-                    id: order.user.id,
-                    name: order.user.name || "Customer",
-                    phone: order.user.phone,
-                    email: order.user.email || "",
-                    totalDue: 0,
-                    dueOrdersCount: 0,
-                    latestOrderId: order.id
+            if (!customerOrdersMap[uId]) {
+                customerOrdersMap[uId] = {
+                    user: order.user,
+                    orders: []
                 };
             }
-            customerMap[uId].totalDue += dueAmount;
-            customerMap[uId].dueOrdersCount += 1;
+            customerOrdersMap[uId].orders.push(order);
         }
 
-        const dueCustomers = Object.values(customerMap).sort((a, b) => b.totalDue - a.totalDue);
+        const dueCustomers: any[] = [];
+        for (const entry of Object.values(customerOrdersMap)) {
+            const summary = calculateCustomerDues(entry.orders);
+            if (summary.eligibleOrdersCount > 0 && summary.totalDue > 0) {
+                dueCustomers.push({
+                    id: entry.user.id,
+                    name: entry.user.name || "Customer",
+                    phone: entry.user.phone,
+                    email: entry.user.email || "",
+                    totalDue: summary.totalDue,
+                    dueOrdersCount: summary.eligibleOrdersCount,
+                    latestOrderId: summary.eligibleOrders[0]?.id || ""
+                });
+            }
+        }
+
+        dueCustomers.sort((a, b) => b.totalDue - a.totalDue);
         res.json({ dueCustomers });
     } catch (error) { next(error); }
 };
 
 export const sendPOSWhatsappDueReminders = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     const { customerIds } = req.body; // Array of selected customer IDs, or empty/all to send to all due customers
+    const isGlobal = req.user?.role === "ADMIN" || req.user?.role === "SUPER_ADMIN";
+
+    // Location filter: maintain strict parity with getPOSDueCustomers view
+    let locationId = (req.body.locationId || req.query.locationId || req.user?.locationId) as string | undefined;
+    if (locationId === "all" || (isGlobal && !req.body.locationId && !req.query.locationId)) {
+        locationId = undefined;
+    }
 
     try {
         const { sendPaymentReminderViaWhatsapp } = require("../services/mbgcard");
 
         const orders = await prisma.order.findMany({
-            where: {
-                status: { notIn: ["CANCELLED", "FAILED"] },
-                isPaid: false,
-                paymentStatus: { notIn: ["COMPLETED", "PAID", "SETTLED"] },
-                ...(Array.isArray(customerIds) && customerIds.length > 0 ? { userId: { in: customerIds } } : {})
-            },
-            include: { user: true, payments: true }
+            where: getEligibleOrdersWhereClause({ customerIds, locationId }),
+            include: { user: true, payments: true },
+            orderBy: { createdAt: "desc" }
         });
 
-        const customerDueSummary: Record<string, {
-            user: any;
-            totalDue: number;
-            orderCount: number;
-            latestOrderId: string;
-        }> = {};
+        const customerOrdersMap: Record<string, { user: any; orders: any[] }> = {};
 
         for (const order of orders) {
             if (!order.user || !order.user.phone) continue;
-            const paid = order.payments ? order.payments.filter((p: any) => p.status === "SUCCESS" || !p.status).reduce((acc: number, p: any) => acc + Number(p.amount), 0) : 0;
-            const dueAmount = Number(order.totalAmount) - paid;
-            if (dueAmount <= 0) continue;
-
             const uId = order.user.id;
-            if (!customerDueSummary[uId]) {
-                customerDueSummary[uId] = {
+            if (!customerOrdersMap[uId]) {
+                customerOrdersMap[uId] = {
                     user: order.user,
-                    totalDue: 0,
-                    orderCount: 0,
-                    latestOrderId: order.id
+                    orders: []
                 };
             }
-            customerDueSummary[uId].totalDue += dueAmount;
-            customerDueSummary[uId].orderCount += 1;
-            customerDueSummary[uId].latestOrderId = order.id;
+            customerOrdersMap[uId].orders.push(order);
         }
 
         let sentCount = 0;
@@ -1701,16 +1683,20 @@ export const sendPOSWhatsappDueReminders = async (req: AuthenticatedRequest, res
         const isBulk = !Array.isArray(customerIds) || customerIds.length === 0;
         const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-        for (const summary of Object.values(customerDueSummary)) {
-            const formattedTotal = Math.round(summary.totalDue * 100) / 100;
-            if (formattedTotal <= 0) continue;
+        for (const entry of Object.values(customerOrdersMap)) {
+            const summary = calculateCustomerDues(entry.orders);
+            if (summary.eligibleOrdersCount <= 0 || summary.totalDue <= 0) continue;
+
+            const formattedTotal = summary.totalDue;
+            const orderCount = summary.eligibleOrdersCount;
+            const latestOrderId = summary.eligibleOrders[0].id;
 
             // In bulk mode, avoid spamming customers who already received a reminder in the last 24 hours
             if (isBulk) {
                 const recentReminder = await (prisma.auditLog.findFirst as any)({
                     where: {
                         entityType: "USER",
-                        entityId: summary.user.id,
+                        entityId: entry.user.id,
                         action: "WHATSAPP_DUE_REMINDER",
                         createdAt: { gte: oneDayAgo }
                     }
@@ -1723,17 +1709,17 @@ export const sendPOSWhatsappDueReminders = async (req: AuthenticatedRequest, res
             }
 
             try {
-                const invoiceLabel = summary.orderCount > 1 
-                    ? `All Dues (${summary.orderCount} Bills)` 
-                    : summary.latestOrderId;
+                const invoiceLabel = orderCount > 1 
+                    ? `All Dues (${orderCount} Bills)` 
+                    : latestOrderId;
 
                 await sendPaymentReminderViaWhatsapp(
-                    summary.user.phone,
-                    summary.user.name || "Customer",
+                    entry.user.phone,
+                    entry.user.name || "Customer",
                     formattedTotal,
                     invoiceLabel,
-                    summary.user.id,
-                    summary.latestOrderId
+                    entry.user.id,
+                    latestOrderId
                 );
                 sentCount++;
 
@@ -1741,20 +1727,22 @@ export const sendPOSWhatsappDueReminders = async (req: AuthenticatedRequest, res
                 await (prisma.auditLog.create as any)({
                     data: {
                         entityType: "USER",
-                        entityId: summary.user.id,
+                        entityId: entry.user.id,
                         action: "WHATSAPP_DUE_REMINDER",
                         staffId: req.user?.userId,
+                        locationId: locationId || null,
                         newValue: {
                             totalDue: formattedTotal,
-                            orderCount: summary.orderCount,
+                            orderCount,
                             invoiceLabel,
                             trigger: "POS_MANUAL",
+                            locationId: locationId || "GLOBAL",
                             sentAt: new Date()
                         }
                     }
                 });
             } catch (err: any) {
-                console.error(`Failed to send WhatsApp reminder to ${summary.user.phone}:`, err.message);
+                console.error(`Failed to send WhatsApp reminder to ${entry.user.phone}:`, err.message);
                 failedCount++;
             }
         }

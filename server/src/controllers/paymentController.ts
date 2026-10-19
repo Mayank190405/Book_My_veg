@@ -11,6 +11,14 @@ import axios from "axios";
 import crypto from "crypto";
 import { getPaymentEligibility } from "../services/paymentEligibilityService";
 import { syncCustomerTotalDue } from "./orderController";
+import { 
+    calculateCustomerDues, 
+    calculateOrderDue, 
+    getEligibleOrdersWhereClause,
+    isAllDuesDisplayLabel,
+    calculateOrderPaidAmountDecimal
+} from "../services/dueCalculationService";
+import Decimal from "decimal.js";
 
 const generateSha512 = (str: string) => {
     return crypto.createHash("sha512").update(str).digest("hex").toLowerCase();
@@ -462,6 +470,23 @@ export const settleDuesForCustomer = async (
     if (!remaining || remaining <= 0) return;
 
     await prisma.$transaction(async (tx: any) => {
+        const effectiveTxnId = transactionId || `SETTLE_${Date.now()}`;
+
+        // ── 0. Idempotency Check: Prevent duplicate settlement across webhooks / callbacks / retries ──
+        const existingTxnPayment = await tx.payment.findFirst({
+            where: {
+                status: "SUCCESS",
+                OR: [
+                    { transactionId: effectiveTxnId },
+                    { transactionId: { startsWith: `${effectiveTxnId}_` } }
+                ]
+            }
+        });
+        if (existingTxnPayment) {
+            logger.info(`[Settlement] Transaction ${effectiveTxnId} already settled. Skipping duplicate.`);
+            return;
+        }
+
         let targetUserId = userId;
         const userExists = await tx.user.findUnique({ where: { id: userId } });
         if (!userExists) {
@@ -493,47 +518,109 @@ export const settleDuesForCustomer = async (
             }
         }
 
-        let unpaid = await tx.order.findMany({
+        // ── Check if a saved PAYMENT_REQUEST exists for this transaction ──
+        const savedRequestLog = await tx.auditLog.findFirst({
             where: {
-                userId: targetUserId,
-                isPaid: false,
-                status: { notIn: ["CANCELLED", "FAILED"] }
+                entityType: "PAYMENT_REQUEST",
+                OR: [
+                    { entityId: effectiveTxnId },
+                    { entityId: metadata?.txnid || "" },
+                    { entityId: metadata?.orderId || "" }
+                ]
             },
-            orderBy: { createdAt: "asc" },
-            include: { payments: true }
+            orderBy: { createdAt: "desc" }
         });
+        const savedRequest = savedRequestLog?.newValue as any;
 
-        // If preferredOrderId is specified, move it to the front of the unpaid queue
-        if (preferredOrderId) {
-            const prefIndex = unpaid.findIndex((o: any) => o.id === preferredOrderId);
-            if (prefIndex > 0) {
-                const [prefOrder] = unpaid.splice(prefIndex, 1);
-                unpaid.unshift(prefOrder);
+        let ordersToSettle: any[] = [];
+        if (savedRequest?.billIds && Array.isArray(savedRequest.billIds) && savedRequest.billIds.length > 0) {
+            const explicitOrders = await tx.order.findMany({
+                where: {
+                    id: { in: savedRequest.billIds },
+                    status: { notIn: ["CANCELLED", "FAILED"] }
+                },
+                include: { payments: true }
+            });
+            // Preserve the exact order of bills from the original payment request
+            ordersToSettle = savedRequest.billIds
+                .map((id: string) => explicitOrders.find((o: any) => o.id === id))
+                .filter((o: any): o is any => !!o);
+        } else {
+            ordersToSettle = await tx.order.findMany({
+                where: {
+                    userId: targetUserId,
+                    isPaid: false,
+                    status: { notIn: ["CANCELLED", "FAILED"] }
+                },
+                orderBy: { createdAt: "asc" },
+                include: { payments: true }
+            });
+
+            if (preferredOrderId) {
+                const prefIndex = ordersToSettle.findIndex((o: any) => o.id === preferredOrderId);
+                if (prefIndex > 0) {
+                    const [prefOrder] = ordersToSettle.splice(prefIndex, 1);
+                    ordersToSettle.unshift(prefOrder);
+                }
             }
         }
 
-        const effectiveTxnId = transactionId || `SETTLE_${Date.now()}`;
+        let remainingDec = new Decimal(amount);
 
-        for (const order of unpaid) {
-            if (remaining <= 0) break;
-            const paid = order.payments.filter((p: any) => p.status === "SUCCESS").reduce((acc: number, p: any) => acc + Number(p.amount), 0);
-            const due = Number(order.totalAmount) - paid;
-            const toApply = Math.min(remaining, due);
+        for (const order of ordersToSettle) {
+            if (remainingDec.lessThanOrEqualTo(0)) break;
+
+            const paidDec = calculateOrderPaidAmountDecimal(order.payments);
+            const orderTotalDec = new Decimal(order.totalAmount ? order.totalAmount.toString() : 0);
+            const dueDec = Decimal.max(0, orderTotalDec.minus(paidDec));
+            if (dueDec.lessThanOrEqualTo(0.005)) continue;
+
+            const intendedAlloc = savedRequest?.intendedAllocations?.find((b: any) => b.orderId === order.id);
+            const maxToApply = intendedAlloc && intendedAlloc.intendedAmount 
+                ? Decimal.min(dueDec, new Decimal(intendedAlloc.intendedAmount))
+                : dueDec;
+            const toApplyDec = Decimal.min(remainingDec, maxToApply);
+            const toApply = Number(toApplyDec.toFixed(2));
 
             if (toApply > 0) {
-                await tx.payment.create({
-                    data: {
+                const targetTxn = `${effectiveTxnId}_${order.id.slice(0, 6)}`;
+                const pendingPayment = await tx.payment.findFirst({
+                    where: {
                         orderId: order.id,
-                        amount: toApply,
-                        method: metadata?.payment_method_type || "EASEBUZZ",
-                        status: "SUCCESS",
-                        transactionId: `${effectiveTxnId}_${order.id.slice(0, 6)}`,
-                        metadata: metadata || {}
+                        status: "PENDING",
+                        OR: [
+                            { transactionId: targetTxn },
+                            { transactionId: effectiveTxnId }
+                        ]
                     }
                 });
 
-                const totalPaidNow = paid + toApply;
-                const isFull = totalPaidNow >= Number(order.totalAmount);
+                if (pendingPayment) {
+                    await tx.payment.update({
+                        where: { id: pendingPayment.id },
+                        data: {
+                            amount: toApply,
+                            method: metadata?.payment_method_type || metadata?.mode || "ONLINE",
+                            status: "SUCCESS",
+                            transactionId: targetTxn,
+                            metadata: metadata || {}
+                        }
+                    });
+                } else {
+                    await tx.payment.create({
+                        data: {
+                            orderId: order.id,
+                            amount: toApply,
+                            method: metadata?.payment_method_type || metadata?.mode || "ONLINE",
+                            status: "SUCCESS",
+                            transactionId: targetTxn,
+                            metadata: metadata || {}
+                        }
+                    });
+                }
+
+                const totalPaidNowDec = paidDec.plus(toApplyDec);
+                const isFull = totalPaidNowDec.greaterThanOrEqualTo(orderTotalDec.minus(new Decimal(0.005)));
                 const nonRevertableStatuses = ["DELIVERED", "SHIPPED", "OUT_FOR_DELIVERY", "COMPLETED"];
                 const shouldUpdateStatus = !nonRevertableStatuses.includes(order.status);
 
@@ -547,11 +634,17 @@ export const settleDuesForCustomer = async (
                     }
                 });
 
+                if (isFull) {
+                    await tx.payment.deleteMany({
+                        where: { orderId: order.id, status: "PENDING" }
+                    });
+                }
+
                 // Create notification for customer
                 const notifTitle = isFull ? "Payment Complete" : "Payment Received";
                 const notifBody = isFull
-                    ? `Your bill #${order.id} of ₹${order.totalAmount} has been fully paid. Thank you!`
-                    : `Payment of ₹${toApply.toFixed(2)} received for bill #${order.id}. Remaining: ₹${(Number(order.totalAmount) - totalPaidNow).toFixed(2)}`;
+                    ? `Your bill #${order.id} of ₹${orderTotalDec.toFixed(2)} has been fully paid. Thank you!`
+                    : `Payment of ₹${toApply.toFixed(2)} received for bill #${order.id}. Remaining: ₹${orderTotalDec.minus(totalPaidNowDec).toFixed(2)}`;
 
                 await tx.notification.create({
                     data: {
@@ -567,13 +660,47 @@ export const settleDuesForCustomer = async (
                     data: {
                         orderId: order.id,
                         status: (shouldUpdateStatus ? "CONFIRMED" : order.status) as PrismaOrderStatus,
-                        remark: `Payment of ₹${toApply.toFixed(2)} received via ${metadata?.payment_method_type || "ONLINE"}${isFull ? " (Fully Paid)" : " (Partial)"}`,
+                        remark: `Payment of ₹${toApply.toFixed(2)} received via ${metadata?.payment_method_type || metadata?.mode || "ONLINE"}${isFull ? " (Fully Paid)" : " (Partial)"}`,
                         changedBy: "SYSTEM",
                     },
                 });
 
-                remaining -= toApply;
+                remainingDec = remainingDec.minus(toApplyDec);
             }
+        }
+
+        // Check for excess unallocated payment
+        if (remainingDec.greaterThan(0.005)) {
+            const excessVal = Number(remainingDec.toFixed(2));
+            logger.warn(`[Settlement Excess] Customer ${targetUserId} has excess payment of ₹${excessVal} for txn ${effectiveTxnId}`);
+            await tx.auditLog.create({
+                data: {
+                    entityType: "PAYMENT_EXCESS",
+                    entityId: effectiveTxnId,
+                    action: "EXCESS_PAYMENT_LOGGED",
+                    newValue: {
+                        userId: targetUserId,
+                        excessAmount: excessVal,
+                        receivedTotal: amount,
+                        settledBills: ordersToSettle.map((o: any) => o.id),
+                        transactionId: effectiveTxnId
+                    }
+                }
+            });
+        }
+
+        // Mark saved payment request as SETTLED
+        if (savedRequestLog) {
+            await tx.auditLog.update({
+                where: { id: savedRequestLog.id },
+                data: {
+                    newValue: {
+                        ...savedRequest,
+                        status: "SETTLED",
+                        settledAt: new Date().toISOString()
+                    }
+                }
+            });
         }
 
         if (targetUserId) {
@@ -740,25 +867,7 @@ export const completeOrderPayment = async (orderId: string, paymentDetails: any)
     if (paymentDetails.status === "CHARGED" || paymentDetails.status === "SUCCESS") {
         const targetTxnId = paymentDetails.txn_id || paymentDetails.order_id || orderId;
 
-        // If the customer has multiple unpaid orders, apply settlement across all unpaid orders
-        if (existing.userId) {
-            const otherUnpaidCount = await prisma.order.count({
-                where: {
-                    userId: existing.userId,
-                    id: { not: existing.id },
-                    isPaid: false,
-                    status: { notIn: ["CANCELLED", "FAILED"] }
-                }
-            });
-
-            if (otherUnpaidCount > 0) {
-                logger.info(`[Payment] Customer ${existing.userId} has ${otherUnpaidCount} other unpaid orders. Settling all dues with preferred order ${existing.id}`);
-                await settleDuesForCustomer(existing.userId, Number(paymentDetails.amount), targetTxnId, paymentDetails, existing.id);
-                return { status: "SUCCESS" };
-            }
-        }
-
-        // Check 1: Has this exact transaction ID already been processed successfully?
+        // Check 1: Has this exact transaction ID already been processed successfully? (Idempotency)
         const existingTxnPayment = await prisma.payment.findFirst({
             where: {
                 status: "SUCCESS",
@@ -771,6 +880,31 @@ export const completeOrderPayment = async (orderId: string, paymentDetails: any)
         if (existingTxnPayment) {
             logger.info(`[Payment] Transaction ${targetTxnId} already recorded for order ${resolvedOrderId}. Skipping duplicate.`);
             return { status: "ALREADY_PROCESSED" };
+        }
+
+        // Check if this transaction is an explicit multi-order settlement request
+        const isExplicitSettlement = (
+            orderId.startsWith("DUE_") || 
+            orderId.startsWith("SET_") || 
+            orderId.startsWith("SETTLE_") ||
+            Boolean(paymentDetails.settleDues)
+        );
+
+        if (isExplicitSettlement && existing.userId) {
+            const otherUnpaidCount = await prisma.order.count({
+                where: {
+                    userId: existing.userId,
+                    id: { not: existing.id },
+                    isPaid: false,
+                    status: { notIn: ["CANCELLED", "FAILED"] }
+                }
+            });
+
+            if (otherUnpaidCount > 0) {
+                logger.info(`[Payment] Customer ${existing.userId} initiated settlement with preferred order ${existing.id}.`);
+                await settleDuesForCustomer(existing.userId, Number(paymentDetails.amount), targetTxnId, paymentDetails, existing.id);
+                return { status: "SUCCESS" };
+            }
         }
 
         // Check 2: Is order already fully paid?
@@ -1545,14 +1679,13 @@ export const getPayInfo = async (req: Request, res: Response) => {
                 if (!customer && order.user) {
                     customer = order.user;
                 }
-                const paid = order.payments.filter((p: any) => p.status === "SUCCESS").reduce((sum: number, p: any) => sum + Number(p.amount), 0);
-                const dueAmount = Math.max(0, Number(order.totalAmount) - paid);
+                const dueRes = calculateOrderDue(order);
                 singleBill = {
                     id: order.id,
-                    totalAmount: Number(order.totalAmount),
-                    paidAmount: paid,
-                    dueAmount: dueAmount,
-                    isPaid: order.isPaid || order.paymentStatus === "COMPLETED" || order.paymentStatus === "PAID",
+                    totalAmount: dueRes.totalAmount,
+                    paidAmount: dueRes.paidAmount,
+                    dueAmount: dueRes.dueAmount,
+                    isPaid: !dueRes.isEligible,
                     paymentStatus: order.paymentStatus,
                     status: order.status,
                     createdAt: order.createdAt,
@@ -1584,29 +1717,22 @@ export const getPayInfo = async (req: Request, res: Response) => {
         const effectiveUserId = customer?.id || userid;
         if (effectiveUserId) {
             const orders = await prisma.order.findMany({
-                where: {
-                    userId: effectiveUserId,
-                    paymentStatus: { in: ["PENDING", "PARTIAL"] },
-                    status: { notIn: ["CANCELLED", "FAILED", "PAYMENT_PENDING"] }
-                },
+                where: getEligibleOrdersWhereClause({ customerId: effectiveUserId }),
                 orderBy: { createdAt: "asc" },
                 include: { payments: true }
             });
 
-            unpaidOrders = orders.map((o: any) => {
-                const paid = o.payments.filter((p: any) => p.status === "SUCCESS").reduce((sum: number, p: any) => sum + Number(p.amount), 0);
-                const due = Math.max(0, Number(o.totalAmount) - paid);
-                totalDue += due;
-                return {
-                    id: o.id,
-                    createdAt: o.createdAt,
-                    totalAmount: Number(o.totalAmount),
-                    paidAmount: paid,
-                    dueAmount: due,
-                    status: o.status,
-                    paymentStatus: o.paymentStatus
-                };
-            }).filter((o: any) => o.dueAmount > 0);
+            const summary = calculateCustomerDues(orders);
+            totalDue = summary.totalDue;
+            unpaidOrders = summary.eligibleOrders.map((o: any) => ({
+                id: o.id,
+                createdAt: o.createdAt,
+                totalAmount: Number(o.totalAmount),
+                paidAmount: o.paidAmount,
+                dueAmount: o.dueAmount,
+                status: o.status,
+                paymentStatus: o.paymentStatus
+            }));
         }
 
         return res.json({
@@ -1625,7 +1751,12 @@ export const initiatePayDue = async (req: Request, res: Response) => {
     try {
         const { userId, phone, amount } = req.body;
         const rawBillId = (req.body.billId || req.body.orderId || req.body.order_id || req.body.billid || "").toString().trim();
-        const cleanBillId = rawBillId.replace(/^#/, "").trim();
+        let cleanBillId = rawBillId.replace(/^#/, "").trim();
+
+        // ── Guard against display label "All Dues (N Bills)" being treated as an order ID ──
+        if (isAllDuesDisplayLabel(cleanBillId)) {
+            cleanBillId = "";
+        }
 
         let customer: any = null;
         if (userId) customer = await prisma.user.findUnique({ where: { id: userId } });
@@ -1638,7 +1769,7 @@ export const initiatePayDue = async (req: Request, res: Response) => {
 
         let order: any = null;
         if (cleanBillId) {
-            order = await prisma.order.findUnique({ where: { id: cleanBillId } });
+            order = await prisma.order.findUnique({ where: { id: cleanBillId }, include: { payments: true } });
             if (!order) {
                 order = await prisma.order.findFirst({
                     where: {
@@ -1646,7 +1777,8 @@ export const initiatePayDue = async (req: Request, res: Response) => {
                             { id: { equals: cleanBillId, mode: "insensitive" } },
                             { id: { contains: cleanBillId, mode: "insensitive" } }
                         ]
-                    }
+                    },
+                    include: { payments: true }
                 });
             }
         }
@@ -1662,6 +1794,60 @@ export const initiatePayDue = async (req: Request, res: Response) => {
         const isValidEmail = rawEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail);
         const customerEmail = isValidEmail ? rawEmail : `pay.${(customerPhone || "0000000000").replace(/\D/g, "").slice(-10)}@bookmyveg.co.in`;
 
+        const amountToPay = Number(amount);
+        if (!amountToPay || amountToPay <= 0) {
+            return res.status(400).json({ message: "Invalid payment amount" });
+        }
+
+        // ── Persist Original Bill Selection & Intended Allocations ──
+        const intendedBills: Array<{ orderId: string; intendedAmount: number; dueAmount: number }> = [];
+        let remainingToAllocate = amountToPay;
+
+        if (order) {
+            const orderDue = calculateOrderDue(order).dueAmount;
+            const toAlloc = Math.min(remainingToAllocate, orderDue > 0 ? orderDue : amountToPay);
+            intendedBills.push({
+                orderId: order.id,
+                intendedAmount: toAlloc,
+                dueAmount: orderDue
+            });
+        } else if (Array.isArray(req.body.billIds) && req.body.billIds.length > 0) {
+            const validBillIds = req.body.billIds
+                .map((b: any) => String(b).replace(/^#/, "").trim())
+                .filter((b: string) => b && !isAllDuesDisplayLabel(b));
+
+            const explicitOrders = await prisma.order.findMany({
+                where: { id: { in: validBillIds }, status: { notIn: ["CANCELLED", "FAILED"] } },
+                include: { payments: true },
+                orderBy: { createdAt: "asc" }
+            });
+
+            for (const ord of explicitOrders) {
+                if (remainingToAllocate <= 0) break;
+                const ordDue = calculateOrderDue(ord).dueAmount;
+                if (ordDue > 0) {
+                    const toAlloc = Math.min(remainingToAllocate, ordDue);
+                    intendedBills.push({ orderId: ord.id, intendedAmount: toAlloc, dueAmount: ordDue });
+                    remainingToAllocate -= toAlloc;
+                }
+            }
+        } else if (effectiveUserId && effectiveUserId !== "ANONYMOUS") {
+            const custOrders = await prisma.order.findMany({
+                where: getEligibleOrdersWhereClause({ customerId: effectiveUserId }),
+                include: { payments: true },
+                orderBy: { createdAt: "asc" }
+            });
+            for (const ord of custOrders) {
+                if (remainingToAllocate <= 0) break;
+                const ordDue = calculateOrderDue(ord).dueAmount;
+                if (ordDue > 0) {
+                    const toAlloc = Math.min(remainingToAllocate, ordDue);
+                    intendedBills.push({ orderId: ord.id, intendedAmount: toAlloc, dueAmount: ordDue });
+                    remainingToAllocate -= toAlloc;
+                }
+            }
+        }
+
         // Easebuzz requires a unique txnid <= 40 characters matching ^[a-zA-Z0-9_|/\-]{1,40}$
         const timestamp = Date.now();
         const shortNonce = String(timestamp).slice(-6); // 6 digits
@@ -1669,7 +1855,6 @@ export const initiatePayDue = async (req: Request, res: Response) => {
         let productInfoLabel: string;
 
         if (order) {
-            // Keep txnid strictly <= 40 characters with DUE_ prefix
             const compactOrder = order.id.replace(/[^a-zA-Z0-9]/g, "").slice(0, 18);
             const compactUser = String(effectiveUserId).replace(/[^a-zA-Z0-9]/g, "").slice(0, 10);
             txnid = `DUE_${compactUser}_${compactOrder}_${shortNonce}`;
@@ -1677,10 +1862,6 @@ export const initiatePayDue = async (req: Request, res: Response) => {
                 txnid = `DUE_${compactOrder}_${shortNonce}`;
             }
             productInfoLabel = `Bill Payment ${order.id.slice(0, 20)}`;
-        } else if (cleanBillId) {
-            const compactBill = cleanBillId.replace(/[^a-zA-Z0-9]/g, "").slice(0, 25);
-            txnid = `DUE_${compactBill}_${shortNonce}`;
-            productInfoLabel = `Bill Payment ${cleanBillId.slice(0, 20)}`;
         } else {
             const cleanCustPhone = (customerPhone || "").replace(/\D/g, "").slice(-10);
             if (cleanCustPhone.length === 10) {
@@ -1692,21 +1873,41 @@ export const initiatePayDue = async (req: Request, res: Response) => {
             productInfoLabel = `Account Settlement ${customerPhone || String(effectiveUserId).slice(0, 15)}`;
         }
 
-        const amountToPay = Number(amount);
-        if (!amountToPay || amountToPay <= 0) {
-            return res.status(400).json({ message: "Invalid payment amount" });
+        // Persist Payment Request in AuditLog for auditable server-side verification & settlement
+        try {
+            await prisma.auditLog.create({
+                data: {
+                    entityType: "PAYMENT_REQUEST",
+                    entityId: txnid,
+                    action: "INITIATE_PAYMENT_REQUEST",
+                    newValue: {
+                        customerId: effectiveUserId,
+                        customerPhone,
+                        customerName,
+                        expectedAmount: amountToPay,
+                        txnid,
+                        billIds: intendedBills.map(b => b.orderId),
+                        intendedAllocations: intendedBills,
+                        status: "INITIATED",
+                        createdAt: new Date().toISOString()
+                    }
+                }
+            });
+        } catch (auditErr: any) {
+            logger.warn(`[Initiate Pay Due] Could not create audit payment request: ${auditErr.message}`);
         }
 
-        // Record a pending payment record so any webhook/callback/verify can resolve orderId immediately
-        if (order) {
+        // Record a pending payment record for each intended bill so webhooks/callbacks can trace order immediately
+        for (const b of intendedBills) {
             try {
+                const targetTxn = intendedBills.length === 1 && order ? txnid : `${txnid}_${b.orderId.slice(0, 6)}`;
                 await prisma.payment.create({
                     data: {
-                        orderId: order.id,
-                        amount: amountToPay,
+                        orderId: b.orderId,
+                        amount: b.intendedAmount,
                         method: "ONLINE",
                         status: "PENDING",
-                        transactionId: txnid
+                        transactionId: targetTxn
                     }
                 });
             } catch (pErr) {
@@ -1947,8 +2148,11 @@ export const sendPaymentReminderController = async (req: Request, res: Response,
             return res.status(404).json({ message: "Order not found" });
         }
 
-        if (order.isPaid || order.paymentStatus === "COMPLETED" || order.paymentStatus === "PAID") {
-            return res.status(400).json({ message: "Order is already fully paid" });
+        const dueResult = calculateOrderDue(order);
+        if (!dueResult.isEligible || dueResult.dueAmount <= 0) {
+            return res.status(400).json({ 
+                message: `Order is not eligible for payment reminder (${dueResult.ineligibilityReason || "Already settled"})` 
+            });
         }
 
         const user = order.user;
@@ -1956,10 +2160,7 @@ export const sendPaymentReminderController = async (req: Request, res: Response,
             return res.status(400).json({ message: "Customer phone number not found" });
         }
 
-        const paid = order.payments
-            .filter((p: any) => p.status === "SUCCESS" || p.status === "COMPLETED" || p.status === "PAID" || !p.status)
-            .reduce((sum: number, p: any) => sum + Number(p.amount), 0);
-        const dueAmount = Math.round(Math.max(0, Number(order.totalAmount) - paid) * 100) / 100;
+        const dueAmount = dueResult.dueAmount;
 
         const { sendPaymentReminderViaWhatsapp } = require("../services/mbgcard");
         await sendPaymentReminderViaWhatsapp(user.phone, user.name || "Customer", dueAmount, order.id, user.id, order.id);
@@ -1991,18 +2192,19 @@ export const sendPaymentReminderController = async (req: Request, res: Response,
 
 export const cleanUpDuplicatePayments = async () => {
     try {
-        // 1. Delete duplicate transactionId records across system with full audit trail
+        // 1. Delete duplicate transactionId records ON THE SAME ORDER with full audit trail
+        // Group by BOTH orderId and transactionId so that multi-order allocations with the same transactionId are preserved!
         const duplicateTxns = await prisma.payment.groupBy({
-            by: ["transactionId"],
+            by: ["orderId", "transactionId"],
             where: { status: "SUCCESS", transactionId: { not: null } },
             _count: { id: true },
             having: { id: { _count: { gt: 1 } } }
         });
 
         for (const item of duplicateTxns) {
-            if (!item.transactionId) continue;
+            if (!item.transactionId || !item.orderId) continue;
             const txns = await prisma.payment.findMany({
-                where: { transactionId: item.transactionId, status: "SUCCESS" },
+                where: { orderId: item.orderId, transactionId: item.transactionId, status: "SUCCESS" },
                 orderBy: { createdAt: "asc" }
             });
             const toDelete = txns.slice(1);
@@ -2022,7 +2224,7 @@ export const cleanUpDuplicatePayments = async () => {
                                 createdAt: d.createdAt
                             },
                             newValue: {
-                                reason: "Duplicate transactionId purged to maintain ledger integrity",
+                                reason: "Duplicate transactionId on same order purged to maintain ledger integrity",
                                 retainedPaymentId: txns[0].id
                             }
                         }
@@ -2030,7 +2232,7 @@ export const cleanUpDuplicatePayments = async () => {
                 }
                 const toDeleteIds = toDelete.map(t => t.id);
                 await prisma.payment.deleteMany({ where: { id: { in: toDeleteIds } } });
-                logger.info(`[Payment Cleanup] Deleted ${toDelete.length} duplicate payments for transactionId ${item.transactionId}`);
+                logger.info(`[Payment Cleanup] Deleted ${toDelete.length} duplicate payments for order ${item.orderId} and transactionId ${item.transactionId}`);
 
                 // Synchronize customer dues for all affected orders
                 for (const d of toDelete) {
@@ -2042,7 +2244,8 @@ export const cleanUpDuplicatePayments = async () => {
             }
         }
 
-        // 2. Delete excess payment records where total paid exceeds order total amount with audit logging
+        // 2. Identify exact duplicate payments on the same order where total paid exceeds order total amount.
+        // A true duplicate overpayment occurs when duplicate submissions have identical amounts and methods.
         const duplicateOrders = await prisma.payment.groupBy({
             by: ["orderId"],
             where: { status: "SUCCESS" },
@@ -2061,15 +2264,30 @@ export const cleanUpDuplicatePayments = async () => {
             });
 
             const orderTotal = Number(order.totalAmount);
-            let accum = 0;
-            const duplicateIds: string[] = [];
+            let totalPaid = payments.reduce((sum, p) => sum + Number(p.amount), 0);
+            
+            // Only examine orders where total paid exceeds order total amount (overpayment)
+            if (totalPaid <= orderTotal) continue;
 
-            for (const p of payments) {
-                const amt = Number(p.amount);
-                if (accum >= orderTotal) {
-                    duplicateIds.push(p.id);
-                } else {
-                    accum += amt;
+            const duplicateIds: string[] = [];
+            // Look for near-identical duplicate records (same amount, within 5 minutes)
+            for (let i = 0; i < payments.length; i++) {
+                for (let j = i + 1; j < payments.length; j++) {
+                    const p1 = payments[i];
+                    const p2 = payments[j];
+                    if (duplicateIds.includes(p2.id)) continue;
+
+                    const amt1 = Number(p1.amount);
+                    const amt2 = Number(p2.amount);
+                    const timeDiff = Math.abs(new Date(p1.createdAt).getTime() - new Date(p2.createdAt).getTime());
+                    const isSameAmount = Math.abs(amt1 - amt2) < 0.01;
+                    const isWithinDuplicateWindow = timeDiff < 5 * 60 * 1000; // 5 mins
+                    const isSameMethod = p1.method === p2.method;
+
+                    if (isSameAmount && isSameMethod && isWithinDuplicateWindow && totalPaid - amt2 >= orderTotal - 0.01) {
+                        duplicateIds.push(p2.id);
+                        totalPaid -= amt2;
+                    }
                 }
             }
 
@@ -2090,7 +2308,7 @@ export const cleanUpDuplicatePayments = async () => {
                                 createdAt: d.createdAt
                             },
                             newValue: {
-                                reason: "Excess payment record exceeding order totalAmount purged to maintain ledger integrity",
+                                reason: "Excess duplicate payment record exceeding order totalAmount purged to maintain ledger integrity",
                                 orderTotal
                             }
                         }
