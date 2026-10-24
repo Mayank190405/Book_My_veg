@@ -175,21 +175,16 @@ export function PayContent({ slugParams, forceShowOtpForm }: PayPageProps) {
 
         setProcessing(true);
         try {
-            // Determine if paying all dues or an amount covering multiple bills
-            const hasMultipleUnpaid = payData?.unpaidOrders && payData.unpaidOrders.length > 1;
-            const isSettlingAll = !selectedBillId || (hasMultipleUnpaid && payAmount >= (payData?.totalDue || 0));
-            const targetBillId = isSettlingAll ? undefined : (selectedBillId || extractedParams.billid || payData?.bill?.id);
-
+            // Link payment clears all customer bills together in bulk
             const res = await fetch(`${getBaseURL()}/pay/pay-due`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     userId: extractedParams.userid || payData?.customer?.id,
                     phone: extractedParams.number || payData?.customer?.phone,
-                    billId: targetBillId || undefined,
-                    orderId: targetBillId || undefined,
                     amount: payAmount,
-                    settleDues: isSettlingAll || hasMultipleUnpaid
+                    clearAll: true,
+                    settleDues: true
                 })
             });
 
@@ -231,10 +226,10 @@ export function PayContent({ slugParams, forceShowOtpForm }: PayPageProps) {
                                                 method: "POST",
                                                 headers: { "Content-Type": "application/json" },
                                                 body: JSON.stringify({
-                                                    order_id: data.txnid || data.orderId || targetBillId || payData?.bill?.id,
+                                                    order_id: data.txnid,
                                                     status: "SUCCESS",
                                                     amount: payAmount,
-                                                    txn_id: response.easepayid || response.txnid || response.easebuzz_id,
+                                                    txn_id: response.easepayid || response.txnid || data.txnid,
                                                     phone: extractedParams.number || payData?.customer?.phone,
                                                     userId: extractedParams.userid || payData?.customer?.id,
                                                     settleDues: true

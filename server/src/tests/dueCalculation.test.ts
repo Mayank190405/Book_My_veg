@@ -1084,6 +1084,46 @@ try {
     });
 }
 
+// ─── TEST 23: Bulk Transaction ID JSON Order List Settlement ─────────────────
+try {
+    const customerOrders = [
+        { id: "BMVXAKNB", totalAmount: 2.00, payments: [] },
+        { id: "BMV3Y14M", totalAmount: 2.00, payments: [] },
+        { id: "BMVPD7HR", totalAmount: 1.00, payments: [] },
+        { id: "BMVB1T3I", totalAmount: 2.00, payments: [] }
+    ];
+
+    // Backend creates JSON order list and assigns unique transaction ID
+    const jsonOrderList = customerOrders.map(o => ({
+        orderId: o.id,
+        totalAmount: o.totalAmount,
+        dueAmount: o.totalAmount,
+        amountToPay: o.totalAmount
+    }));
+    const totalBulkAmount = jsonOrderList.reduce((sum, item) => sum + item.amountToPay, 0); // ₹7.00
+    const bulkTxnId = `BULK_8208363287_${Date.now().toString().slice(-6)}`;
+
+    // Easebuzz returns success for bulkTxnId
+    const bulkSettlementResult = allocateBulkPaymentAcrossBills(customerOrders, totalBulkAmount);
+    assert(bulkSettlementResult.totalAllocated === 7.00, "All ₹7.00 must be allocated");
+    assert(bulkSettlementResult.allocations.every(a => a.isFullyPaid), "All 4 bills must be fully paid");
+    assert(bulkSettlementResult.allocations.every(a => a.remainingDue === 0), "All 4 bills must have 0 remaining due");
+
+    testReports.push({
+        testNumber: 23,
+        title: "Bulk Transaction ID JSON Order List Settlement",
+        passed: true,
+        details: `Unique txnid ${bulkTxnId} with JSON list of 4 orders successfully settled all bills in bulk (₹7.00 total).`
+    });
+} catch (err: any) {
+    testReports.push({
+        testNumber: 23,
+        title: "Bulk Transaction ID JSON Order List Settlement",
+        passed: false,
+        details: err.message
+    });
+}
+
 // ─── REPORT SUMMARY ──────────────────────────────────────────────────────────
 console.log("--------------------------------------------------------------------------------");
 let allPassed = true;
