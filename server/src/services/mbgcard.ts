@@ -294,9 +294,6 @@ export const sendInvoiceDueViaWhatsapp = async (
     if (userId) {
         payLink += `&userid=${userId}`;
     }
-    if (orderId) {
-        payLink += `&billid=${orderId}`;
-    }
 
     // Meta WhatsApp Cloud API rejects template variable parameters containing newlines (\n) with HTTP 400 (#100) Invalid parameter.
     // Keep URL parameter single-line and clean.
@@ -318,7 +315,7 @@ export const sendPaymentReminderViaWhatsapp = async (
     dueAmount: number | any,
     invoiceNo: string,
     userId?: string,
-    orderId?: string
+    _orderId?: string
 ) => {
     const origin = process.env.CLIENT_URL || "https://bookmyveg.co.in";
     const cleanPhone = phone.replace(/\D/g, "");
@@ -326,9 +323,6 @@ export const sendPaymentReminderViaWhatsapp = async (
     let payLink = `${origin}/pay?number=${cleanPhone}`;
     if (userId) {
         payLink += `&userid=${userId}`;
-    }
-    if (orderId && !invoiceNo.startsWith("All Dues")) {
-        payLink += `&billid=${orderId}`;
     }
 
     const dueTiming = `Immediate. Pay online: ${payLink}`;

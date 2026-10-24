@@ -177,7 +177,7 @@ export const getAvailableTemplates = async (req: AuthRequest, res: Response, nex
                 status: "APPROVED",
                 body: "Hello {{1}}, order #{{2}} of ₹{{3}} has an outstanding due of ₹{{4}}. Download invoice: {{5}} or Pay online: {{6}}",
                 variablesCount: 6,
-                exampleVariables: ["Customer", "1001", "1200", "500", "https://bookmyveg.co.in/invoice/1001", "https://bookmyveg.co.in/pay?id=1001"]
+                exampleVariables: ["Customer", "1001", "1200", "500", "https://bookmyveg.co.in/invoice/1001", "https://bookmyveg.co.in/pay?number=8208363287&userid=1dc3c477-2d03-4241-9328-96dc4a755a18"]
             },
             {
                 name: "due_payment_reminder",
@@ -185,7 +185,7 @@ export const getAvailableTemplates = async (req: AuthRequest, res: Response, nex
                 status: "APPROVED",
                 body: "Dear {{1}}, you have a pending payment of ₹{{2}} for bill #{{3}}. Please settle your payment using this secure link: {{4}}",
                 variablesCount: 4,
-                exampleVariables: ["Customer", "500", "1001", "https://bookmyveg.co.in/pay?id=1001"]
+                exampleVariables: ["Customer", "500", "1001", "https://bookmyveg.co.in/pay?number=8208363287&userid=1dc3c477-2d03-4241-9328-96dc4a755a18"]
             },
             {
                 name: "customer_inactive_reminder",
