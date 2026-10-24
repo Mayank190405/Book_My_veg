@@ -1023,6 +1023,66 @@ try {
     });
 }
 
+// ─── TEST 21: Easebuzz Multi-Bill Collection Settlement Across Multiple Orders ────
+try {
+    const bill1 = { id: "ORD-EBZ-1", totalAmount: 500.00, payments: [] };
+    const bill2 = { id: "ORD-EBZ-2", totalAmount: 1000.00, payments: [] };
+    const bill3 = { id: "ORD-EBZ-3", totalAmount: 1500.00, payments: [] };
+
+    // Customer settles ₹3,000 for all 3 bills via Easebuzz
+    const bulkResult = allocateBulkPaymentAcrossBills([bill1, bill2, bill3], 3000.00);
+    assert(bulkResult.totalAllocated === 3000.00, "Must allocate full ₹3,000.00");
+    assert(bulkResult.excessAmount === 0, "No excess amount");
+    assert(bulkResult.allocations.length === 3, "Must produce 3 allocations");
+
+    assert(bulkResult.allocations[0].allocatedAmount === 500.00 && bulkResult.allocations[0].isFullyPaid, "Bill 1 must be settled fully");
+    assert(bulkResult.allocations[1].allocatedAmount === 1000.00 && bulkResult.allocations[1].isFullyPaid, "Bill 2 must be settled fully");
+    assert(bulkResult.allocations[2].allocatedAmount === 1500.00 && bulkResult.allocations[2].isFullyPaid, "Bill 3 must be settled fully");
+
+    testReports.push({
+        testNumber: 21,
+        title: "Easebuzz Multi-Bill Collection Settlement Across Multiple Orders",
+        passed: true,
+        details: "₹3,000 Easebuzz collection completely settles Bill 1 (₹500), Bill 2 (₹1,000), and Bill 3 (₹1,500)."
+    });
+} catch (err: any) {
+    testReports.push({
+        testNumber: 21,
+        title: "Easebuzz Multi-Bill Collection Settlement Across Multiple Orders",
+        passed: false,
+        details: err.message
+    });
+}
+
+// ─── TEST 22: Easebuzz Partial Multi-Bill Payment Cascade ────────────────────
+try {
+    const bill1 = { id: "ORD-EBZ-A", totalAmount: 600.00, payments: [] };
+    const bill2 = { id: "ORD-EBZ-B", totalAmount: 1200.00, payments: [] };
+    const bill3 = { id: "ORD-EBZ-C", totalAmount: 800.00, payments: [] };
+
+    // Customer pays ₹1,500 via Easebuzz (covers Bill A fully, Bill B partially with ₹900, Bill C untouched)
+    const partialResult = allocateBulkPaymentAcrossBills([bill1, bill2, bill3], 1500.00);
+    assert(partialResult.totalAllocated === 1500.00, "Must allocate exact ₹1,500.00");
+    assert(partialResult.allocations[0].allocatedAmount === 600.00 && partialResult.allocations[0].isFullyPaid, "Bill A must be fully settled");
+    assert(partialResult.allocations[1].allocatedAmount === 900.00 && !partialResult.allocations[1].isFullyPaid, "Bill B must receive ₹900 partial settlement");
+    assert(partialResult.allocations[1].remainingDue === 300.00, "Bill B must have ₹300 remaining due");
+    assert(partialResult.allocations[2].allocatedAmount === 0 && !partialResult.allocations[2].isFullyPaid, "Bill C must have ₹0 allocated");
+    assert(partialResult.allocations[2].remainingDue === 800.00, "Bill C must have ₹800 remaining due");
+
+    testReports.push({
+        testNumber: 22,
+        title: "Easebuzz Partial Multi-Bill Payment Cascade",
+        passed: true,
+        details: "₹1,500 Easebuzz payment settles Bill A (₹600 full), cascades ₹900 to Bill B (₹300 due left), isolates Bill C (₹800 due)."
+    });
+} catch (err: any) {
+    testReports.push({
+        testNumber: 22,
+        title: "Easebuzz Partial Multi-Bill Payment Cascade",
+        passed: false,
+        details: err.message
+    });
+}
 
 // ─── REPORT SUMMARY ──────────────────────────────────────────────────────────
 console.log("--------------------------------------------------------------------------------");

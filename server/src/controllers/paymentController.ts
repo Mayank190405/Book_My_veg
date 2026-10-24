@@ -487,52 +487,76 @@ export const settleDuesForCustomer = async (
             return;
         }
 
-        let targetUserId = userId;
-        const userExists = await tx.user.findUnique({ where: { id: userId } });
-        if (!userExists) {
-            // 1. Try finding by phone from metadata, paymentDetails or userId
-            const rawPhone = (metadata?.phone || metadata?.customer_phone || metadata?.mobile || userId || "").toString();
-            const cleanPhone = rawPhone.replace(/\D/g, "").slice(-10);
-            if (cleanPhone.length === 10) {
-                const foundUser = await tx.user.findFirst({
-                    where: { OR: [{ phone: cleanPhone }, { phone: `+91${cleanPhone}` }, { phone: `91${cleanPhone}` }] }
-                });
-                if (foundUser) targetUserId = foundUser.id;
-            }
-
-            // 2. Try finding by sliced UUID prefix if userId is hexadecimal prefix
-            if ((!targetUserId || targetUserId === userId) && userId && userId.length >= 8) {
-                const prefix8 = userId.slice(0, 8);
-                const matchedUser = await tx.user.findFirst({
-                    where: { id: { startsWith: prefix8, mode: "insensitive" } }
-                });
-                if (matchedUser) targetUserId = matchedUser.id;
-            }
-
-            // 3. Try finding by email if available in metadata
-            if ((!targetUserId || targetUserId === userId) && metadata?.email) {
-                const foundByEmail = await tx.user.findFirst({
-                    where: { email: { equals: String(metadata.email).trim(), mode: "insensitive" } }
-                });
-                if (foundByEmail) targetUserId = foundByEmail.id;
-            }
-        }
-
         // ── Check if a saved PAYMENT_REQUEST exists for this transaction ──
+        const candidateEntityIds = Array.from(new Set([
+            effectiveTxnId,
+            metadata?.txnid,
+            metadata?.txn_id,
+            metadata?.orderId,
+            metadata?.order_id,
+            metadata?.easepayid,
+            metadata?.easebuzz_id,
+            transactionId
+        ].map((s: any) => String(s || "").trim()).filter(Boolean)));
+
         const savedRequestLog = await tx.auditLog.findFirst({
             where: {
                 entityType: "PAYMENT_REQUEST",
-                OR: [
-                    { entityId: effectiveTxnId },
-                    { entityId: metadata?.txnid || "" },
-                    { entityId: metadata?.orderId || "" }
-                ]
+                entityId: { in: candidateEntityIds }
             },
             orderBy: { createdAt: "desc" }
         });
         const savedRequest = savedRequestLog?.newValue as any;
 
+        let targetUserId = userId;
+        if (savedRequest?.customerId && savedRequest.customerId !== "ANONYMOUS") {
+            targetUserId = savedRequest.customerId;
+        }
+
+        let userObj = targetUserId ? await tx.user.findUnique({ where: { id: targetUserId } }) : null;
+        if (!userObj) {
+            // 1. Try finding by phone from metadata, savedRequest or userId
+            const rawPhone = (metadata?.phone || metadata?.customer_phone || metadata?.mobile || savedRequest?.customerPhone || userId || "").toString();
+            const cleanPhone = rawPhone.replace(/\D/g, "").slice(-10);
+            if (cleanPhone.length === 10) {
+                userObj = await tx.user.findFirst({
+                    where: { OR: [{ phone: cleanPhone }, { phone: `+91${cleanPhone}` }, { phone: `91${cleanPhone}` }] }
+                });
+                if (userObj) targetUserId = userObj.id;
+            }
+
+            // 2. Try preferredOrderId
+            if (!userObj && preferredOrderId) {
+                const pref = await tx.order.findUnique({ where: { id: preferredOrderId } });
+                if (pref?.userId) {
+                    targetUserId = pref.userId;
+                    userObj = await tx.user.findUnique({ where: { id: targetUserId } });
+                }
+            }
+
+            // 3. Try finding by sliced UUID prefix if userId is hexadecimal prefix
+            if (!userObj && userId && userId.length >= 8) {
+                const prefix8 = userId.replace(/[^a-zA-Z0-9]/g, "").slice(0, 8);
+                userObj = await tx.user.findFirst({
+                    where: { id: { startsWith: prefix8, mode: "insensitive" } }
+                });
+                if (userObj) targetUserId = userObj.id;
+            }
+
+            // 4. Try finding by email
+            if (!userObj && (metadata?.email || savedRequest?.customerEmail)) {
+                const emailToMatch = String(metadata?.email || savedRequest?.customerEmail).trim();
+                userObj = await tx.user.findFirst({
+                    where: { email: { equals: emailToMatch, mode: "insensitive" } }
+                });
+                if (userObj) targetUserId = userObj.id;
+            }
+        }
+
         let ordersToSettle: any[] = [];
+        const seenOrderIds = new Set<string>();
+
+        // Step A: Preserve explicit bills from original payment request
         if (savedRequest?.billIds && Array.isArray(savedRequest.billIds) && savedRequest.billIds.length > 0) {
             const explicitOrders = await tx.order.findMany({
                 where: {
@@ -541,14 +565,36 @@ export const settleDuesForCustomer = async (
                 },
                 include: { payments: true }
             });
-            // Preserve the exact order of bills from the original payment request
-            ordersToSettle = savedRequest.billIds
-                .map((id: string) => explicitOrders.find((o: any) => o.id === id))
-                .filter((o: any): o is any => !!o);
-        } else {
-            ordersToSettle = await tx.order.findMany({
+            for (const id of savedRequest.billIds) {
+                const ord = explicitOrders.find((o: any) => o.id === id);
+                if (ord && !seenOrderIds.has(ord.id)) {
+                    ordersToSettle.push(ord);
+                    seenOrderIds.add(ord.id);
+                }
+            }
+        }
+
+        // Step B: Include preferredOrderId first if specified and not yet present
+        if (preferredOrderId && !seenOrderIds.has(preferredOrderId)) {
+            const prefOrder = await tx.order.findUnique({
+                where: { id: preferredOrderId },
+                include: { payments: true }
+            });
+            if (prefOrder && !["CANCELLED", "FAILED"].includes(prefOrder.status)) {
+                ordersToSettle.unshift(prefOrder);
+                seenOrderIds.add(prefOrder.id);
+                if (!targetUserId && prefOrder.userId) {
+                    targetUserId = prefOrder.userId;
+                }
+            }
+        }
+
+        // Step C: Append all remaining unpaid orders of customer to ensure full settlement coverage
+        if (targetUserId) {
+            const custUnpaidOrders = await tx.order.findMany({
                 where: {
                     userId: targetUserId,
+                    id: { notIn: Array.from(seenOrderIds) },
                     isPaid: false,
                     status: { notIn: ["CANCELLED", "FAILED"] }
                 },
@@ -556,11 +602,10 @@ export const settleDuesForCustomer = async (
                 include: { payments: true }
             });
 
-            if (preferredOrderId) {
-                const prefIndex = ordersToSettle.findIndex((o: any) => o.id === preferredOrderId);
-                if (prefIndex > 0) {
-                    const [prefOrder] = ordersToSettle.splice(prefIndex, 1);
-                    ordersToSettle.unshift(prefOrder);
+            for (const ord of custUnpaidOrders) {
+                if (!seenOrderIds.has(ord.id)) {
+                    ordersToSettle.push(ord);
+                    seenOrderIds.add(ord.id);
                 }
             }
         }
@@ -575,11 +620,7 @@ export const settleDuesForCustomer = async (
             const dueDec = Decimal.max(0, orderTotalDec.minus(paidDec));
             if (dueDec.lessThanOrEqualTo(0.005)) continue;
 
-            const intendedAlloc = savedRequest?.intendedAllocations?.find((b: any) => b.orderId === order.id);
-            const maxToApply = intendedAlloc && intendedAlloc.intendedAmount 
-                ? Decimal.min(dueDec, new Decimal(intendedAlloc.intendedAmount))
-                : dueDec;
-            const toApplyDec = Decimal.min(remainingDec, maxToApply);
+            const toApplyDec = Decimal.min(remainingDec, dueDec);
             const toApply = Number(toApplyDec.toFixed(2));
 
             if (toApply > 0) {
@@ -716,24 +757,35 @@ export const completeOrderPayment = async (orderId: string, paymentDetails: any)
     }
 
     // Handle explicit SETTLE_, SET_, or DUE_ settlement transactions first
-    if (orderId.startsWith("SETTLE_") || orderId.startsWith("SET_")) {
-        const parts = orderId.split("_");
-        const targetId = parts[1];
+    if (orderId.startsWith("SETTLE_") || orderId.startsWith("SET_") || orderId.startsWith("DUE_")) {
         if (paymentDetails.status === "CHARGED" || paymentDetails.status === "SUCCESS") {
-            await settleDuesForCustomer(targetId, Number(paymentDetails.amount), paymentDetails.txn_id || orderId, {
-                ...paymentDetails,
-                phone: paymentDetails.phone || (targetId && targetId.length === 10 && !isNaN(Number(targetId)) ? targetId : undefined)
-            });
-            return { status: "SUCCESS" };
-        }
-    } else if (orderId.startsWith("DUE_")) {
-        const parts = orderId.split("_");
-        if (paymentDetails.status === "CHARGED" || paymentDetails.status === "SUCCESS") {
+            const parts = orderId.split("_");
             let targetUserOrBill = parts[1];
             let preferredBill = parts[2];
 
-            let targetUserId: string | null = null;
-            if (targetUserOrBill) {
+            // 1. Check saved PAYMENT_REQUEST for precise customerId & billIds
+            const candidateIds = Array.from(new Set([
+                orderId,
+                paymentDetails.txn_id,
+                paymentDetails.metadata?.txnid,
+                paymentDetails.metadata?.order_id,
+                paymentDetails.metadata?.orderId
+            ].map((s: any) => String(s || "").trim()).filter(Boolean)));
+
+            const savedReq = await prisma.auditLog.findFirst({
+                where: {
+                    entityType: "PAYMENT_REQUEST",
+                    entityId: { in: candidateIds }
+                },
+                orderBy: { createdAt: "desc" }
+            });
+            const savedReqData = savedReq?.newValue as any;
+
+            let targetUserId: string | null = savedReqData?.customerId && savedReqData.customerId !== "ANONYMOUS" 
+                ? savedReqData.customerId 
+                : null;
+
+            if (!targetUserId && targetUserOrBill) {
                 const userObj = await prisma.user.findUnique({ where: { id: targetUserOrBill } });
                 if (userObj) {
                     targetUserId = userObj.id;
@@ -746,16 +798,33 @@ export const completeOrderPayment = async (orderId: string, paymentDetails: any)
                 }
             }
 
-            if (!targetUserId && paymentDetails.phone) {
-                const cleanPhone = String(paymentDetails.phone).replace(/\D/g, "");
-                const foundUser = await prisma.user.findFirst({
-                    where: { OR: [{ phone: paymentDetails.phone }, { phone: cleanPhone }, { phone: `+91${cleanPhone}` }] }
+            if (!targetUserId && targetUserOrBill && targetUserOrBill.length >= 8) {
+                const prefix8 = targetUserOrBill.replace(/[^a-zA-Z0-9]/g, "").slice(0, 8);
+                const userByPrefix = await prisma.user.findFirst({
+                    where: { id: { startsWith: prefix8, mode: "insensitive" } }
                 });
-                if (foundUser) targetUserId = foundUser.id;
+                if (userByPrefix) targetUserId = userByPrefix.id;
+            }
+
+            if (!targetUserId) {
+                const rawPhone = (paymentDetails.phone || paymentDetails.customerPhone || targetUserOrBill || "").toString();
+                const cleanPhone = rawPhone.replace(/\D/g, "").slice(-10);
+                if (cleanPhone.length === 10) {
+                    const foundUser = await prisma.user.findFirst({
+                        where: { OR: [{ phone: cleanPhone }, { phone: `+91${cleanPhone}` }, { phone: `91${cleanPhone}` }] }
+                    });
+                    if (foundUser) targetUserId = foundUser.id;
+                }
             }
 
             const finalUserId = targetUserId || targetUserOrBill;
-            await settleDuesForCustomer(finalUserId, Number(paymentDetails.amount), paymentDetails.txn_id || orderId, paymentDetails, preferredBill);
+            await settleDuesForCustomer(
+                finalUserId, 
+                Number(paymentDetails.amount), 
+                paymentDetails.txn_id || orderId, 
+                paymentDetails, 
+                preferredBill
+            );
             return { status: "SUCCESS" };
         }
     }
@@ -769,9 +838,9 @@ export const completeOrderPayment = async (orderId: string, paymentDetails: any)
         resolvedOrderId = paymentRecord.orderId;
     }
 
-    let existing = await prisma.order.findUnique({
+    let existing: any = await prisma.order.findUnique({
         where: { id: resolvedOrderId },
-        include: { items: true, user: true },
+        include: { items: true, user: true, payments: true },
     });
 
     // 2. If not found and resolvedOrderId looks like 32-char hex (compact UUID without hyphens), try standard UUID format
@@ -779,7 +848,7 @@ export const completeOrderPayment = async (orderId: string, paymentDetails: any)
         const formattedUuid = `${resolvedOrderId.slice(0, 8)}-${resolvedOrderId.slice(8, 12)}-${resolvedOrderId.slice(12, 16)}-${resolvedOrderId.slice(16, 20)}-${resolvedOrderId.slice(20)}`;
         existing = await prisma.order.findUnique({
             where: { id: formattedUuid },
-            include: { items: true, user: true },
+            include: { items: true, user: true, payments: true },
         });
         if (existing) {
             resolvedOrderId = existing.id;
@@ -823,7 +892,7 @@ export const completeOrderPayment = async (orderId: string, paymentDetails: any)
 
         existing = await prisma.order.findFirst({
             where: { OR: orConditions },
-            include: { items: true, user: true }
+            include: { items: true, user: true, payments: true }
         });
 
         if (existing) {
@@ -878,6 +947,32 @@ export const completeOrderPayment = async (orderId: string, paymentDetails: any)
             }
         });
         if (existingTxnPayment) {
+            // Check if this payment left excess/surplus on an order while customer has other unpaid orders
+            if (existing && existing.userId) {
+                const orderPayments = existing.payments && existing.payments.length > 0 
+                    ? existing.payments 
+                    : await prisma.payment.findMany({ where: { orderId: existing.id } });
+                const orderPaidDec = calculateOrderPaidAmountDecimal(orderPayments);
+                const orderTotalDec = new Decimal(existing.totalAmount ? existing.totalAmount.toString() : 0);
+                const surplusDec = Decimal.max(0, orderPaidDec.minus(orderTotalDec));
+
+                if (surplusDec.greaterThan(0.005)) {
+                    const otherUnpaidCount = await prisma.order.count({
+                        where: {
+                            userId: existing.userId,
+                            id: { not: existing.id },
+                            isPaid: false,
+                            status: { notIn: ["CANCELLED", "FAILED"] }
+                        }
+                    });
+
+                    if (otherUnpaidCount > 0) {
+                        logger.info(`[Payment] Order ${existing.id} has surplus payment of ₹${surplusDec.toFixed(2)} from txn ${targetTxnId}. Reallocating surplus to ${otherUnpaidCount} unpaid orders of customer ${existing.userId}.`);
+                        await settleDuesForCustomer(existing.userId, Number(surplusDec.toFixed(2)), `${targetTxnId}_realloc`, paymentDetails);
+                        return { status: "SUCCESS" };
+                    }
+                }
+            }
             logger.info(`[Payment] Transaction ${targetTxnId} already recorded for order ${resolvedOrderId}. Skipping duplicate.`);
             return { status: "ALREADY_PROCESSED" };
         }
@@ -887,23 +982,30 @@ export const completeOrderPayment = async (orderId: string, paymentDetails: any)
             orderId.startsWith("DUE_") || 
             orderId.startsWith("SET_") || 
             orderId.startsWith("SETTLE_") ||
-            Boolean(paymentDetails.settleDues)
+            Boolean(paymentDetails.settleDues) ||
+            Boolean(paymentDetails.metadata?.settleDues) ||
+            Boolean(paymentDetails.metadata?.txnid && (paymentDetails.metadata.txnid.startsWith("DUE_") || paymentDetails.metadata.txnid.startsWith("SET_")))
         );
 
-        if (isExplicitSettlement && existing.userId) {
-            const otherUnpaidCount = await prisma.order.count({
-                where: {
-                    userId: existing.userId,
-                    id: { not: existing.id },
-                    isPaid: false,
-                    status: { notIn: ["CANCELLED", "FAILED"] }
-                }
-            });
+        if (existing.userId) {
+            const orderDueResult = calculateOrderDue(existing);
+            const isAmountExceedingDue = Number(paymentDetails.amount) > (orderDueResult.dueAmount + 0.01);
 
-            if (otherUnpaidCount > 0) {
-                logger.info(`[Payment] Customer ${existing.userId} initiated settlement with preferred order ${existing.id}.`);
-                await settleDuesForCustomer(existing.userId, Number(paymentDetails.amount), targetTxnId, paymentDetails, existing.id);
-                return { status: "SUCCESS" };
+            if (isExplicitSettlement || isAmountExceedingDue) {
+                const otherUnpaidCount = await prisma.order.count({
+                    where: {
+                        userId: existing.userId,
+                        id: { not: existing.id },
+                        isPaid: false,
+                        status: { notIn: ["CANCELLED", "FAILED"] }
+                    }
+                });
+
+                if (otherUnpaidCount > 0) {
+                    logger.info(`[Payment] Customer ${existing.userId} multi-bill settlement triggered for order ${existing.id} (explicit: ${isExplicitSettlement}, excessAmount: ${isAmountExceedingDue}).`);
+                    await settleDuesForCustomer(existing.userId, Number(paymentDetails.amount), targetTxnId, paymentDetails, existing.id);
+                    return { status: "SUCCESS" };
+                }
             }
         }
 
@@ -913,6 +1015,21 @@ export const completeOrderPayment = async (orderId: string, paymentDetails: any)
         });
         const currentTotalPaid = existingSuccessPayments.reduce((sum: number, p: any) => sum + Number(p.amount), 0);
         if (existing.isPaid && currentTotalPaid >= Number(existing.totalAmount)) {
+            if (existing.userId) {
+                const otherUnpaidCount = await prisma.order.count({
+                    where: {
+                        userId: existing.userId,
+                        id: { not: existing.id },
+                        isPaid: false,
+                        status: { notIn: ["CANCELLED", "FAILED"] }
+                    }
+                });
+                if (otherUnpaidCount > 0) {
+                    logger.info(`[Payment] Order ${resolvedOrderId} is already paid, routing settlement of ₹${paymentDetails.amount} to customer's remaining unpaid orders.`);
+                    await settleDuesForCustomer(existing.userId, Number(paymentDetails.amount), targetTxnId, paymentDetails);
+                    return { status: "SUCCESS" };
+                }
+            }
             logger.info(`[Payment] Order ${resolvedOrderId} is already fully paid (₹${currentTotalPaid} / ₹${existing.totalAmount}). Skipping duplicate.`);
             return { status: "ALREADY_PROCESSED" };
         }
@@ -1064,7 +1181,7 @@ export const completeOrderPayment = async (orderId: string, paymentDetails: any)
                 const locationId = (existing.shippingAddress as any)?.locationId || existing.locationId;
                 if (locationId) {
                     await InventoryService.restoreStock({
-                        items: existing.items.map(i => ({ productId: i.productId, variantId: i.variantId || undefined, quantity: i.quantity })),
+                        items: existing.items.map((i: any) => ({ productId: i.productId, variantId: i.variantId || undefined, quantity: i.quantity })),
                         locationId,
                         staffId: "SYSTEM",
                         referenceId: `FAIL_PURGE_${orderId}`
@@ -1494,16 +1611,18 @@ export const handleEasebuzzCallback = async (req: Request, res: Response) => {
 
     // Recover the original orderId from the txnid.
     let resolvedOrderId = txnid;
-    if (!txnid.startsWith("DUE_") && !txnid.startsWith("SET_") && !txnid.startsWith("SETTLE_")) {
+    const isSettlementTxn = txnid.startsWith("DUE_") || txnid.startsWith("SET_") || txnid.startsWith("SETTLE_");
+
+    if (!isSettlementTxn) {
         // Strip the _NNNNNN timestamp suffix added for uniqueness
         resolvedOrderId = txnid.replace(/_\d{3,}$/, "");
-    }
-    const cbPayment = await prisma.payment.findFirst({
-        where: { transactionId: txnid },
-        select: { orderId: true }
-    });
-    if (cbPayment?.orderId) {
-        resolvedOrderId = cbPayment.orderId;
+        const cbPayment = await prisma.payment.findFirst({
+            where: { transactionId: txnid },
+            select: { orderId: true }
+        });
+        if (cbPayment?.orderId) {
+            resolvedOrderId = cbPayment.orderId;
+        }
     }
     
     try {
@@ -1516,6 +1635,7 @@ export const handleEasebuzzCallback = async (req: Request, res: Response) => {
             email,
             firstname,
             productinfo,
+            settleDues: isSettlementTxn,
             metadata: payload
         });
         
@@ -1811,6 +1931,28 @@ export const initiatePayDue = async (req: Request, res: Response) => {
                 intendedAmount: toAlloc,
                 dueAmount: orderDue
             });
+            remainingToAllocate = Math.max(0, remainingToAllocate - toAlloc);
+
+            // If customer has additional unpaid orders and remaining funds, cascade across them
+            if (remainingToAllocate > 0 && effectiveUserId && effectiveUserId !== "ANONYMOUS") {
+                const otherCustOrders = await prisma.order.findMany({
+                    where: {
+                        ...getEligibleOrdersWhereClause({ customerId: effectiveUserId }),
+                        id: { not: order.id }
+                    },
+                    include: { payments: true },
+                    orderBy: { createdAt: "asc" }
+                });
+                for (const ord of otherCustOrders) {
+                    if (remainingToAllocate <= 0) break;
+                    const ordDue = calculateOrderDue(ord).dueAmount;
+                    if (ordDue > 0) {
+                        const cascadeAlloc = Math.min(remainingToAllocate, ordDue);
+                        intendedBills.push({ orderId: ord.id, intendedAmount: cascadeAlloc, dueAmount: ordDue });
+                        remainingToAllocate = Math.max(0, remainingToAllocate - cascadeAlloc);
+                    }
+                }
+            }
         } else if (Array.isArray(req.body.billIds) && req.body.billIds.length > 0) {
             const validBillIds = req.body.billIds
                 .map((b: any) => String(b).replace(/^#/, "").trim())
@@ -1828,7 +1970,27 @@ export const initiatePayDue = async (req: Request, res: Response) => {
                 if (ordDue > 0) {
                     const toAlloc = Math.min(remainingToAllocate, ordDue);
                     intendedBills.push({ orderId: ord.id, intendedAmount: toAlloc, dueAmount: ordDue });
-                    remainingToAllocate -= toAlloc;
+                    remainingToAllocate = Math.max(0, remainingToAllocate - toAlloc);
+                }
+            }
+
+            if (remainingToAllocate > 0 && effectiveUserId && effectiveUserId !== "ANONYMOUS") {
+                const otherOrders = await prisma.order.findMany({
+                    where: {
+                        ...getEligibleOrdersWhereClause({ customerId: effectiveUserId }),
+                        id: { notIn: validBillIds }
+                    },
+                    include: { payments: true },
+                    orderBy: { createdAt: "asc" }
+                });
+                for (const ord of otherOrders) {
+                    if (remainingToAllocate <= 0) break;
+                    const ordDue = calculateOrderDue(ord).dueAmount;
+                    if (ordDue > 0) {
+                        const toAlloc = Math.min(remainingToAllocate, ordDue);
+                        intendedBills.push({ orderId: ord.id, intendedAmount: toAlloc, dueAmount: ordDue });
+                        remainingToAllocate = Math.max(0, remainingToAllocate - toAlloc);
+                    }
                 }
             }
         } else if (effectiveUserId && effectiveUserId !== "ANONYMOUS") {
@@ -1843,10 +2005,12 @@ export const initiatePayDue = async (req: Request, res: Response) => {
                 if (ordDue > 0) {
                     const toAlloc = Math.min(remainingToAllocate, ordDue);
                     intendedBills.push({ orderId: ord.id, intendedAmount: toAlloc, dueAmount: ordDue });
-                    remainingToAllocate -= toAlloc;
+                    remainingToAllocate = Math.max(0, remainingToAllocate - toAlloc);
                 }
             }
         }
+
+        const isMultiBill = intendedBills.length > 1;
 
         // Easebuzz requires a unique txnid <= 40 characters matching ^[a-zA-Z0-9_|/\-]{1,40}$
         const timestamp = Date.now();
@@ -1854,7 +2018,16 @@ export const initiatePayDue = async (req: Request, res: Response) => {
         let txnid: string;
         let productInfoLabel: string;
 
-        if (order) {
+        if (isMultiBill) {
+            const cleanCustPhone = (customerPhone || "").replace(/\D/g, "").slice(-10);
+            if (cleanCustPhone.length === 10) {
+                txnid = `SET_${cleanCustPhone}_${shortNonce}`;
+            } else {
+                const compactUser = String(effectiveUserId).replace(/[^a-zA-Z0-9]/g, "").slice(0, 20);
+                txnid = `SET_${compactUser}_${shortNonce}`;
+            }
+            productInfoLabel = `All Dues (${intendedBills.length} Bills) - ${customerPhone || String(effectiveUserId).slice(0, 10)}`;
+        } else if (order) {
             const compactOrder = order.id.replace(/[^a-zA-Z0-9]/g, "").slice(0, 18);
             const compactUser = String(effectiveUserId).replace(/[^a-zA-Z0-9]/g, "").slice(0, 10);
             txnid = `DUE_${compactUser}_${compactOrder}_${shortNonce}`;
@@ -1942,14 +2115,18 @@ export const initiatePayDue = async (req: Request, res: Response) => {
 
                 return res.json({
                     txnid,
-                    orderId: order?.id || cleanBillId || undefined,
+                    orderId: isMultiBill ? txnid : (order?.id || cleanBillId || txnid),
+                    isMultiBill,
+                    billCount: intendedBills.length,
                     ...easeResult
                 });
             } catch (easebuzzError: any) {
                 logger.error(`[Initiate Pay Due] Easebuzz initiation failed, falling back to mock gateway. Error: ${easebuzzError.message}`);
                 return res.json({
                     txnid,
-                    orderId: order?.id || cleanBillId || undefined,
+                    orderId: isMultiBill ? txnid : (order?.id || cleanBillId || txnid),
+                    isMultiBill,
+                    billCount: intendedBills.length,
                     paymentLink: `${baseUrl.replace(/\/$/, "")}/payment/mock-gateway?orderId=${txnid}&amount=${amountToPay}`,
                 });
             }

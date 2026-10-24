@@ -328,14 +328,15 @@ const syncEasebuzzTransactions = (optionsOrStartDate_1, customEndDate_1, ...args
                     const easepayid = tx.easepayid || tx.easebuzz_id || tx.txnid;
                     const amount = Number(tx.net_debit_amount || tx.total_debit_amount || tx.amount || 0);
                     let resolvedOrderId = tx.txnid;
-                    if (!tx.txnid.startsWith("DUE_") && !tx.txnid.startsWith("SETTLE_") && !tx.txnid.startsWith("SET_")) {
+                    const isSettlement = tx.txnid.startsWith("DUE_") || tx.txnid.startsWith("SETTLE_") || tx.txnid.startsWith("SET_");
+                    if (!isSettlement) {
                         resolvedOrderId = tx.txnid.replace(/_\d{3,}$/, "");
-                    }
-                    // Extract order ID candidate from productinfo if present (e.g. "Bill Payment BMV1EKWBYHX93J1")
-                    if (tx.productinfo) {
-                        const productMatch = String(tx.productinfo).match(/BMV[A-Z0-9]+/i);
-                        if (productMatch && productMatch[0].length >= 6) {
-                            resolvedOrderId = productMatch[0];
+                        // Extract order ID candidate from productinfo if present (e.g. "Bill Payment BMV1EKWBYHX93J1")
+                        if (tx.productinfo) {
+                            const productMatch = String(tx.productinfo).match(/BMV[A-Z0-9]+/i);
+                            if (productMatch && productMatch[0].length >= 6) {
+                                resolvedOrderId = productMatch[0];
+                            }
                         }
                     }
                     try {
@@ -364,6 +365,7 @@ const syncEasebuzzTransactions = (optionsOrStartDate_1, customEndDate_1, ...args
                                     email: tx.email,
                                     firstname: tx.firstname,
                                     productinfo: tx.productinfo,
+                                    settleDues: isSettlement,
                                     metadata: tx
                                 });
                                 if ((result === null || result === void 0 ? void 0 : result.status) === "SUCCESS") {

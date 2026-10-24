@@ -134,10 +134,12 @@ export function PayContent({ slugParams, forceShowOtpForm }: PayPageProps) {
             setPayData(data);
             setShowOtpForm(false);
 
-            if (data.bill && !data.bill.isPaid) {
+            if (data.bill && !data.bill.isPaid && (!data.unpaidOrders || data.unpaidOrders.length <= 1)) {
                 setSelectedBillId(data.bill.id);
                 setCustomAmount(isAmountLocked && data.totalDue > 0 ? data.totalDue.toString() : data.bill.dueAmount.toString());
             } else if (data.totalDue > 0) {
+                // If there are multiple pending bills, default to all-dues settlement
+                setSelectedBillId(null);
                 setCustomAmount(data.totalDue.toString());
             }
         } catch (err: any) {
@@ -173,8 +175,11 @@ export function PayContent({ slugParams, forceShowOtpForm }: PayPageProps) {
 
         setProcessing(true);
         try {
-            // Keep target bill if user selected one or arrived with bill/order in link
-            const targetBillId = selectedBillId || extractedParams.billid || payData?.bill?.id;
+            // Determine if paying all dues or an amount covering multiple bills
+            const hasMultipleUnpaid = payData?.unpaidOrders && payData.unpaidOrders.length > 1;
+            const isSettlingAll = !selectedBillId || (hasMultipleUnpaid && payAmount >= (payData?.totalDue || 0));
+            const targetBillId = isSettlingAll ? undefined : (selectedBillId || extractedParams.billid || payData?.bill?.id);
+
             const res = await fetch(`${getBaseURL()}/pay/pay-due`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -183,7 +188,8 @@ export function PayContent({ slugParams, forceShowOtpForm }: PayPageProps) {
                     phone: extractedParams.number || payData?.customer?.phone,
                     billId: targetBillId || undefined,
                     orderId: targetBillId || undefined,
-                    amount: payAmount
+                    amount: payAmount,
+                    settleDues: isSettlingAll || hasMultipleUnpaid
                 })
             });
 
@@ -225,12 +231,13 @@ export function PayContent({ slugParams, forceShowOtpForm }: PayPageProps) {
                                                 method: "POST",
                                                 headers: { "Content-Type": "application/json" },
                                                 body: JSON.stringify({
-                                                    order_id: data.orderId || data.txnid || targetBillId || payData?.bill?.id,
+                                                    order_id: data.txnid || data.orderId || targetBillId || payData?.bill?.id,
                                                     status: "SUCCESS",
                                                     amount: payAmount,
                                                     txn_id: response.easepayid || response.txnid || response.easebuzz_id,
                                                     phone: extractedParams.number || payData?.customer?.phone,
-                                                    userId: extractedParams.userid || payData?.customer?.id
+                                                    userId: extractedParams.userid || payData?.customer?.id,
+                                                    settleDues: true
                                                 })
                                             });
                                         } catch (e) {

@@ -361,15 +361,17 @@ export const syncEasebuzzTransactions = async (
                     const amount = Number(tx.net_debit_amount || tx.total_debit_amount || tx.amount || 0);
 
                     let resolvedOrderId = tx.txnid;
-                    if (!tx.txnid.startsWith("DUE_") && !tx.txnid.startsWith("SETTLE_") && !tx.txnid.startsWith("SET_")) {
-                        resolvedOrderId = tx.txnid.replace(/_\d{3,}$/, "");
-                    }
+                    const isSettlement = tx.txnid.startsWith("DUE_") || tx.txnid.startsWith("SETTLE_") || tx.txnid.startsWith("SET_");
 
-                    // Extract order ID candidate from productinfo if present (e.g. "Bill Payment BMV1EKWBYHX93J1")
-                    if (tx.productinfo) {
-                        const productMatch = String(tx.productinfo).match(/BMV[A-Z0-9]+/i);
-                        if (productMatch && productMatch[0].length >= 6) {
-                            resolvedOrderId = productMatch[0];
+                    if (!isSettlement) {
+                        resolvedOrderId = tx.txnid.replace(/_\d{3,}$/, "");
+
+                        // Extract order ID candidate from productinfo if present (e.g. "Bill Payment BMV1EKWBYHX93J1")
+                        if (tx.productinfo) {
+                            const productMatch = String(tx.productinfo).match(/BMV[A-Z0-9]+/i);
+                            if (productMatch && productMatch[0].length >= 6) {
+                                resolvedOrderId = productMatch[0];
+                            }
                         }
                     }
 
@@ -398,6 +400,7 @@ export const syncEasebuzzTransactions = async (
                                     email: tx.email,
                                     firstname: tx.firstname,
                                     productinfo: tx.productinfo,
+                                    settleDues: isSettlement,
                                     metadata: tx
                                 });
 
