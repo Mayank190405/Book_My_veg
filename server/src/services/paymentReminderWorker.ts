@@ -3,10 +3,8 @@ import logger from "../utils/logger";
 import { 
     sendTemplateViaChatHub, 
     sendFeedbackRequestViaWhatsapp, 
-    sendPaymentReminderViaWhatsapp,
     APPROVED_UTILITY_TEMPLATES 
 } from "./mbgcard";
-import { processCustomersWithDuesInBatches } from "./dueCalculationService";
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
 const THREE_HOURS_MS = 3 * ONE_HOUR_MS;
@@ -203,29 +201,24 @@ let isReminderWorkerRunning = false;
 export const getIsReminderWorkerRunning = () => isReminderWorkerRunning;
 
 export const startPaymentReminderWorker = () => {
-    logger.info("[Payment & Retention Reminder Worker] Daemon initialized.");
+    logger.info("[Background Worker] Feedback & Retention daemon initialized (Automated dues reminders permanently disabled).");
 
     const runRemindersAndFeedbackCheck = async () => {
         if (isReminderWorkerRunning) {
-            logger.warn("[Payment Reminder Worker] Previous worker cycle still executing. Skipping overlapping run to prevent duplicates.");
+            logger.warn("[Background Worker] Previous worker cycle still executing. Skipping overlapping run to prevent duplicates.");
             return;
         }
 
         isReminderWorkerRunning = true;
-        logger.info("[Payment & Retention Worker] Running background tasks (Dues, Inactivity & Feedback)...");
+        logger.info("[Background Worker] Running background tasks (Feedback & Retention)...");
         try {
             const now = new Date();
             const origin = process.env.CLIENT_URL || "https://bookmyveg.co.in";
 
             // Load active template configurations
-            const [dueConfig, inactiveConfig] = await Promise.all([
-                prisma.whatsAppTemplateConfig.findFirst({
-                    where: { event: "PAYMENT_REMINDER", isActive: true }
-                }),
-                prisma.whatsAppTemplateConfig.findFirst({
-                    where: { event: "CUSTOMER_INACTIVE", isActive: true }
-                })
-            ]);
+            const inactiveConfig = await prisma.whatsAppTemplateConfig.findFirst({
+                where: { event: "CUSTOMER_INACTIVE", isActive: true }
+            });
 
             // ─── 1. DELAYED FEEDBACK REQUESTS (3 HOURS POST ORDER / DELIVERY) ───
             // Strictly sent ONLY ONCE per customer across their entire lifetime (never on every order)
@@ -314,99 +307,10 @@ export const startPaymentReminderWorker = () => {
                 }
             }
 
-            // ─── 2. AUTOMATIC DUES PAYMENT REMINDERS (With Locked Payment Link) ───
-            // Target duration from config or default (7 days)
-            const dueDurationValue = dueConfig?.triggerDurationValue || 7;
-            const dueDurationUnit = dueConfig?.triggerDurationUnit || "DAYS";
-            const dueIntervalMs = dueDurationUnit === "HOURS" ? dueDurationValue * ONE_HOUR_MS : dueDurationValue * ONE_DAY_MS;
+            // ─── 2. AUTOMATIC DUES PAYMENT REMINDERS (DISABLED) ───
+            // Automated reminders to clear dues have been permanently disabled per policy.
+            // System will NOT send any automatic reminders to clear dues.
 
-            // Restrict automatic reminders to daytime (10:00 AM to 8:00 PM IST) to avoid disturbed night-time messages
-            const istTime = new Date(now.getTime() + (5.5 * 60 * 60 * 1000));
-            const istHour = istTime.getUTCHours();
-            const isBusinessHours = istHour >= 10 && istHour < 20;
-
-            if (isBusinessHours) {
-                // Process all active customers with dues using deterministic cursor-based pagination
-                // Eliminates arbitrary query limits (e.g. take: 200) and ensures complete coverage
-                await processCustomersWithDuesInBatches({
-                    batchSize: 100,
-                    handler: async ({ customer, summary }) => {
-                        if (!customer.phone || summary.eligibleOrdersCount === 0 || summary.totalDue <= 0) {
-                            return;
-                        }
-
-                        // Check oldest unpaid order age: only trigger if the customer has dues older than dueIntervalMs
-                        const oldestOrder = summary.eligibleOrders[summary.eligibleOrders.length - 1];
-                        const oldestAgeMs = now.getTime() - new Date(oldestOrder.createdAt || now).getTime();
-
-                        if (oldestAgeMs < dueIntervalMs) {
-                            return;
-                        }
-
-                        // Cooldown: at least dueIntervalMs, with minimum 24 hours to prevent multiple messages on the same day
-                        const cooldownMs = Math.max(dueIntervalMs, ONE_DAY_MS);
-                        const orderCount = summary.eligibleOrdersCount;
-                        const latestOrder = summary.eligibleOrders[0];
-                        const invoiceLabel = orderCount > 1 
-                            ? `All Dues (${orderCount} Bills)` 
-                            : latestOrder.id;
-
-                        // ─── ATOMIC DATABASE CLAIM (MULTI-REPLICA IDEMPOTENCY) ───────────────
-                        // Atomically claims customer in database BEFORE WhatsApp dispatch
-                        const claimResult = await claimCustomerReminder(customer.id, {
-                            cooldownMs,
-                            totalDue: summary.totalDue,
-                            orderCount,
-                            invoiceLabel,
-                            trigger: "AUTOMATIC_WORKER"
-                        });
-
-                        if (!claimResult.claimed || !claimResult.claimId) {
-                            logger.info(`[Payment Reminder Worker] Skipping customer ${customer.name || customer.id} (${customer.phone}): ${claimResult.reason}`);
-                            return;
-                        }
-
-                        logger.info(`[Payment Reminder Worker] Claim acquired (${claimResult.claimId}). Dispatching due reminder to ${customer.name} (${customer.phone}) - Total Due: ₹${summary.totalDueFormatted} [${invoiceLabel}]`);
-
-                        // ─── DISPATCH REMINDER & FINALIZE CLAIM ──────────────────────────────
-                        try {
-                            const sendResult: any = await sendPaymentReminderViaWhatsapp(
-                                customer.phone,
-                                customer.name || "Customer",
-                                summary.totalDue,
-                                invoiceLabel,
-                                customer.id,
-                                latestOrder.id
-                            );
-
-                            const providerMessageId = sendResult?.messageId || sendResult?.id || sendResult?.message_id || null;
-                            const isAccepted = sendResult?.dispatchStatus === "ACCEPTED_BY_PROVIDER" || sendResult?.success !== false;
-
-                            await finalizeCustomerReminderClaim(customer.id, claimResult.claimId, {
-                                success: isAccepted,
-                                providerStatus: sendResult?.dispatchStatus || "ACCEPTED_BY_PROVIDER",
-                                providerMessageId,
-                                totalDue: summary.totalDue,
-                                orderCount,
-                                invoiceLabel,
-                                trigger: "AUTOMATIC_WORKER"
-                            });
-                        } catch (err: any) {
-                            logger.error(`[Payment Reminder Worker] Error sending automatic reminder to ${customer.phone}: ${err.message}`);
-                            await finalizeCustomerReminderClaim(customer.id, claimResult.claimId, {
-                                success: false,
-                                error: err.message,
-                                totalDue: summary.totalDue,
-                                orderCount,
-                                invoiceLabel,
-                                trigger: "AUTOMATIC_WORKER"
-                            });
-                        }
-                    }
-                });
-            } else {
-                logger.info(`[Payment Reminder Worker] Outside business hours (${istHour}:00 IST). Skipping automated dues reminder check.`);
-            }
 
             // ─── 3. 4-DAY INACTIVITY REMINDER (TEMPLATE: fresh_order) ───
             // Triggers when customer has not visited/ordered in 4 days

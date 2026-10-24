@@ -198,7 +198,7 @@ server.listen(PORT, () => __awaiter(void 0, void 0, void 0, function* () {
     }
     // Start background metrics flush daemon
     (0, metricsFlushWorker_1.startMetricsFlushWorker)();
-    // Start background unpaid invoice reminders and feedback dispatch
+    // Start background feedback and retention dispatch (automated dues reminders disabled)
     (0, paymentReminderWorker_1.startPaymentReminderWorker)();
     // Start background 6-hour Easebuzz transaction sync cron
     try {

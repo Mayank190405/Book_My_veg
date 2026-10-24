@@ -206,7 +206,7 @@ server.listen(PORT, async () => {
     // Start background metrics flush daemon
     startMetricsFlushWorker();
     
-    // Start background unpaid invoice reminders and feedback dispatch
+    // Start background feedback and retention dispatch (automated dues reminders disabled)
     startPaymentReminderWorker();
 
     // Start background 6-hour Easebuzz transaction sync cron
