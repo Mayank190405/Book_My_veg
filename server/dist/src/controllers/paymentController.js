@@ -39,10 +39,8 @@ exports.getWalletDetails = exports.verifyWalletDeposit = exports.initiateWalletD
 const client_1 = require("@prisma/client");
 const prisma_1 = __importDefault(require("../config/prisma"));
 const juspayService_1 = require("../services/juspayService");
-const productController_1 = require("./productController");
 const inventoryService_1 = require("../services/inventoryService");
 const logger_1 = __importDefault(require("../utils/logger"));
-const io_1 = require("../sockets/io");
 const idGenerator_1 = require("../utils/idGenerator");
 const axios_1 = __importDefault(require("axios"));
 const crypto_1 = __importDefault(require("crypto"));
@@ -50,6 +48,8 @@ const paymentEligibilityService_1 = require("../services/paymentEligibilityServi
 const orderController_1 = require("./orderController");
 const dueCalculationService_1 = require("../services/dueCalculationService");
 const decimal_js_1 = __importDefault(require("decimal.js"));
+const gatewayVerificationService_1 = require("../services/gatewayVerificationService");
+const paymentVerificationPolicy_1 = require("../services/paymentVerificationPolicy");
 const generateSha512 = (str) => {
     return crypto_1.default.createHash("sha512").update(str).digest("hex").toLowerCase();
 };
@@ -879,358 +879,53 @@ const executeBulkBillSettlement = (txnid, paymentDetails) => __awaiter(void 0, v
     return { status: "SUCCESS", settledOrders, count: settledOrders.length };
 });
 exports.executeBulkBillSettlement = executeBulkBillSettlement;
-const completeOrderPayment = (orderId, paymentDetails) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a, _b, _c, _d, _e, _f, _g, _h;
-    let resolvedOrderId = orderId;
-    if (orderId && !orderId.startsWith("DUE_") && !orderId.startsWith("SET_") && !orderId.startsWith("SETTLE_") && !orderId.startsWith("BULK_")) {
-        resolvedOrderId = orderId.replace(/_\d{3,}$/, "");
+const completeOrderPayment = (orderId, paymentDetails, tx) => __awaiter(void 0, void 0, void 0, function* () {
+    if (!(0, paymentVerificationPolicy_1.isVerifiedPaymentEvidence)(paymentDetails) || paymentDetails.orderId !== orderId || !tx) {
+        throw new paymentVerificationPolicy_1.VerificationRejected("Verified evidence and a locked posting transaction are required");
     }
-    // 0. Primary Interceptor: Check for Bulk Settlement Transaction ID
-    const isBulkSettlement = (orderId.startsWith("BULK_") ||
-        orderId.startsWith("SET_") ||
-        orderId.startsWith("SETTLE_") ||
-        orderId.startsWith("DUE_") ||
-        Boolean((_b = (_a = paymentDetails === null || paymentDetails === void 0 ? void 0 : paymentDetails.metadata) === null || _a === void 0 ? void 0 : _a.txnid) === null || _b === void 0 ? void 0 : _b.startsWith("BULK_")) ||
-        Boolean((_d = (_c = paymentDetails === null || paymentDetails === void 0 ? void 0 : paymentDetails.metadata) === null || _c === void 0 ? void 0 : _c.txnid) === null || _d === void 0 ? void 0 : _d.startsWith("SET_")) ||
-        Boolean(paymentDetails === null || paymentDetails === void 0 ? void 0 : paymentDetails.settleDues));
-    if (isBulkSettlement) {
-        const bulkTxnId = (orderId.startsWith("BULK_") || orderId.startsWith("SET_") || orderId.startsWith("SETTLE_") || orderId.startsWith("DUE_")
-            ? orderId
-            : (((_e = paymentDetails === null || paymentDetails === void 0 ? void 0 : paymentDetails.metadata) === null || _e === void 0 ? void 0 : _e.txnid) || (paymentDetails === null || paymentDetails === void 0 ? void 0 : paymentDetails.txn_id) || orderId));
-        return yield (0, exports.executeBulkBillSettlement)(bulkTxnId, paymentDetails);
+    const existingReceipt = yield tx.payment.findFirst({ where: { transactionId: paymentDetails.txn_id, status: "SUCCESS" } });
+    if (existingReceipt) {
+        if (existingReceipt.orderId !== orderId || existingReceipt.amount.toFixed(2) !== paymentDetails.amount) {
+            throw new paymentVerificationPolicy_1.VerificationRejected("Previously posted receipt mismatch");
+        }
+        return { status: "ALREADY_PROCESSED" };
     }
-    const bulkAudit = yield prisma_1.default.auditLog.findFirst({
-        where: {
-            entityType: { in: ["BULK_BILL_SETTLEMENT", "PAYMENT_REQUEST"] },
-            entityId: { in: [orderId, paymentDetails === null || paymentDetails === void 0 ? void 0 : paymentDetails.txn_id, paymentDetails === null || paymentDetails === void 0 ? void 0 : paymentDetails.order_id].filter(Boolean) }
-        }
-    });
-    if (bulkAudit) {
-        return yield (0, exports.executeBulkBillSettlement)(bulkAudit.entityId, paymentDetails);
+    const order = yield tx.order.findUnique({ where: { id: orderId }, include: { payments: true } });
+    if (!order || ["CANCELLED", "FAILED", "RETURNED"].includes(order.status) || order.isPaid ||
+        ["COMPLETED", "PAID", "SETTLED"].includes(order.paymentStatus)) {
+        throw new paymentVerificationPolicy_1.VerificationRejected("Order requires reconciliation");
     }
-    // 1. Resolve exact orderId from Payment record if it was initiated with a unique txnid
-    const paymentRecord = yield prisma_1.default.payment.findFirst({
-        where: { transactionId: orderId },
-        select: { orderId: true }
-    });
-    if (paymentRecord === null || paymentRecord === void 0 ? void 0 : paymentRecord.orderId) {
-        resolvedOrderId = paymentRecord.orderId;
-    }
-    let existing = yield prisma_1.default.order.findUnique({
-        where: { id: resolvedOrderId },
-        include: { items: true, user: true, payments: true },
-    });
-    // 2. If not found and resolvedOrderId looks like 32-char hex (compact UUID without hyphens), try standard UUID format
-    if (!existing && resolvedOrderId.length === 32 && /^[0-9a-fA-F]{32}$/.test(resolvedOrderId)) {
-        const formattedUuid = `${resolvedOrderId.slice(0, 8)}-${resolvedOrderId.slice(8, 12)}-${resolvedOrderId.slice(12, 16)}-${resolvedOrderId.slice(16, 20)}-${resolvedOrderId.slice(20)}`;
-        existing = yield prisma_1.default.order.findUnique({
-            where: { id: formattedUuid },
-            include: { items: true, user: true, payments: true },
-        });
-        if (existing) {
-            resolvedOrderId = existing.id;
-        }
-    }
-    if (!existing) {
-        // Collect all possible candidate Order IDs from orderId, resolvedOrderId, productinfo, etc.
-        const candidates = [orderId, resolvedOrderId];
-        if (resolvedOrderId.length >= 8) {
-            candidates.push(resolvedOrderId.slice(0, 8));
-        }
-        if (resolvedOrderId.length >= 6) {
-            candidates.push(resolvedOrderId.slice(0, 6));
-        }
-        if (paymentDetails === null || paymentDetails === void 0 ? void 0 : paymentDetails.productinfo) {
-            const productStr = String(paymentDetails.productinfo);
-            const matches = productStr.match(/BMV[A-Z0-9]+/gi);
-            if (matches) {
-                matches.forEach(m => {
-                    candidates.push(m);
-                    if (m.length >= 8)
-                        candidates.push(m.slice(0, 8));
-                });
-            }
-        }
-        const uniqueCandidates = Array.from(new Set(candidates)).filter(Boolean);
-        const orConditions = [];
-        uniqueCandidates.forEach(c => {
-            orConditions.push({ id: c });
-            orConditions.push({ id: { equals: c, mode: "insensitive" } });
-            orConditions.push({ id: { contains: c, mode: "insensitive" } });
-            if (c.length >= 8) {
-                const prefix8 = c.slice(0, 8);
-                orConditions.push({ id: prefix8 });
-                orConditions.push({ id: { equals: prefix8, mode: "insensitive" } });
-            }
-        });
-        existing = yield prisma_1.default.order.findFirst({
-            where: { OR: orConditions },
-            include: { items: true, user: true, payments: true }
-        });
-        if (existing) {
-            resolvedOrderId = existing.id;
-        }
-    }
-    if (!existing) {
-        // Strict Integrity Rule: Phone number and payment amount alone MUST NOT be used to automatically associate a gateway transaction with an order.
-        // Instead, log unresolved/ambiguous gateway transactions to AuditLog for authorized manual reconciliation.
-        logger_1.default.warn(`[Payment Reconciliation] Ambiguous/unmapped Easebuzz transaction: Order ${resolvedOrderId} not found. Gateway txn: ${paymentDetails.txn_id || orderId}, amount: ${paymentDetails.amount}`);
-        try {
-            yield prisma_1.default.auditLog.create({
-                data: {
-                    entityType: "PAYMENT_RECONCILIATION",
-                    entityId: paymentDetails.txn_id || orderId || "UNKNOWN_TXN",
-                    action: "EASEBUZZ_UNMAPPED_TRANSACTION",
-                    newValue: {
-                        orderId,
-                        resolvedOrderId,
-                        amount: paymentDetails.amount,
-                        status: paymentDetails.status,
-                        gatewayTxnId: paymentDetails.txn_id || paymentDetails.easepayid,
-                        phone: paymentDetails.phone || paymentDetails.customerPhone || null,
-                        email: paymentDetails.email || null,
-                        reason: "Order not found and strict ledger rules prevent auto-association by phone/email alone."
-                    }
-                }
-            });
-        }
-        catch (auditErr) {
-            logger_1.default.error(`[Payment Reconciliation] Failed to log unmapped transaction audit: ${auditErr.message}`);
-        }
-        return {
-            status: "UNMAPPED_TRANSACTION_LOGGED",
-            message: `Order ${resolvedOrderId} not found. Gateway transaction logged to audit statement for manual review.`
-        };
-    }
-    if (paymentDetails.status === "CHARGED" || paymentDetails.status === "SUCCESS") {
-        const targetTxnId = paymentDetails.txn_id || paymentDetails.order_id || orderId;
-        // Check 1: Has this exact transaction ID already been processed successfully? (Idempotency)
-        const existingTxnPayment = yield prisma_1.default.payment.findFirst({
-            where: {
-                status: "SUCCESS",
-                OR: [
-                    { transactionId: targetTxnId },
-                    ...(paymentDetails.txn_id ? [{ transactionId: paymentDetails.txn_id }] : [])
-                ]
-            }
-        });
-        if (existingTxnPayment) {
-            // Check if this payment left excess/surplus on an order while customer has other unpaid orders
-            if (existing && existing.userId) {
-                const orderPayments = existing.payments && existing.payments.length > 0
-                    ? existing.payments
-                    : yield prisma_1.default.payment.findMany({ where: { orderId: existing.id } });
-                const orderPaidDec = (0, dueCalculationService_1.calculateOrderPaidAmountDecimal)(orderPayments);
-                const orderTotalDec = new decimal_js_1.default(existing.totalAmount ? existing.totalAmount.toString() : 0);
-                const surplusDec = decimal_js_1.default.max(0, orderPaidDec.minus(orderTotalDec));
-                if (surplusDec.greaterThan(0.005)) {
-                    const otherUnpaidCount = yield prisma_1.default.order.count({
-                        where: {
-                            userId: existing.userId,
-                            id: { not: existing.id },
-                            isPaid: false,
-                            status: { notIn: ["CANCELLED", "FAILED"] }
-                        }
-                    });
-                    if (otherUnpaidCount > 0) {
-                        logger_1.default.info(`[Payment] Order ${existing.id} has surplus payment of ₹${surplusDec.toFixed(2)} from txn ${targetTxnId}. Reallocating surplus to ${otherUnpaidCount} unpaid orders of customer ${existing.userId}.`);
-                        yield (0, exports.settleDuesForCustomer)(existing.userId, Number(surplusDec.toFixed(2)), `${targetTxnId}_realloc`, paymentDetails);
-                        return { status: "SUCCESS" };
-                    }
-                }
-            }
-            logger_1.default.info(`[Payment] Transaction ${targetTxnId} already recorded for order ${resolvedOrderId}. Skipping duplicate.`);
-            return { status: "ALREADY_PROCESSED" };
-        }
-        // Check if this transaction is an explicit multi-order settlement request
-        const isExplicitSettlement = (orderId.startsWith("DUE_") ||
-            orderId.startsWith("SET_") ||
-            orderId.startsWith("SETTLE_") ||
-            Boolean(paymentDetails.settleDues) ||
-            Boolean((_f = paymentDetails.metadata) === null || _f === void 0 ? void 0 : _f.settleDues) ||
-            Boolean(((_g = paymentDetails.metadata) === null || _g === void 0 ? void 0 : _g.txnid) && (paymentDetails.metadata.txnid.startsWith("DUE_") || paymentDetails.metadata.txnid.startsWith("SET_"))));
-        if (existing.userId) {
-            const orderDueResult = (0, dueCalculationService_1.calculateOrderDue)(existing);
-            const isAmountExceedingDue = Number(paymentDetails.amount) > (orderDueResult.dueAmount + 0.01);
-            if (isExplicitSettlement || isAmountExceedingDue) {
-                const otherUnpaidCount = yield prisma_1.default.order.count({
-                    where: {
-                        userId: existing.userId,
-                        id: { not: existing.id },
-                        isPaid: false,
-                        status: { notIn: ["CANCELLED", "FAILED"] }
-                    }
-                });
-                if (otherUnpaidCount > 0) {
-                    logger_1.default.info(`[Payment] Customer ${existing.userId} multi-bill settlement triggered for order ${existing.id} (explicit: ${isExplicitSettlement}, excessAmount: ${isAmountExceedingDue}).`);
-                    yield (0, exports.settleDuesForCustomer)(existing.userId, Number(paymentDetails.amount), targetTxnId, paymentDetails, existing.id);
-                    return { status: "SUCCESS" };
-                }
-            }
-        }
-        // Check 2: Is order already fully paid?
-        const existingSuccessPayments = yield prisma_1.default.payment.findMany({
-            where: { orderId: resolvedOrderId, status: "SUCCESS" }
-        });
-        const currentTotalPaid = existingSuccessPayments.reduce((sum, p) => sum + Number(p.amount), 0);
-        if (existing.isPaid && currentTotalPaid >= Number(existing.totalAmount)) {
-            if (existing.userId) {
-                const otherUnpaidCount = yield prisma_1.default.order.count({
-                    where: {
-                        userId: existing.userId,
-                        id: { not: existing.id },
-                        isPaid: false,
-                        status: { notIn: ["CANCELLED", "FAILED"] }
-                    }
-                });
-                if (otherUnpaidCount > 0) {
-                    logger_1.default.info(`[Payment] Order ${resolvedOrderId} is already paid, routing settlement of ₹${paymentDetails.amount} to customer's remaining unpaid orders.`);
-                    yield (0, exports.settleDuesForCustomer)(existing.userId, Number(paymentDetails.amount), targetTxnId, paymentDetails);
-                    return { status: "SUCCESS" };
-                }
-            }
-            logger_1.default.info(`[Payment] Order ${resolvedOrderId} is already fully paid (₹${currentTotalPaid} / ₹${existing.totalAmount}). Skipping duplicate.`);
-            return { status: "ALREADY_PROCESSED" };
-        }
-        yield prisma_1.default.$transaction((tx) => __awaiter(void 0, void 0, void 0, function* () {
-            // Record the payment first
-            const pendingPayment = (yield tx.payment.findFirst({
-                where: { orderId: resolvedOrderId, status: "PENDING", method: "ONLINE" }
-            })) || (yield tx.payment.findFirst({
-                where: { orderId: resolvedOrderId, status: "PENDING" }
-            }));
-            if (pendingPayment) {
-                yield tx.payment.update({
-                    where: { id: pendingPayment.id },
-                    data: {
-                        status: "SUCCESS",
-                        amount: paymentDetails.amount || pendingPayment.amount,
-                        method: paymentDetails.payment_method_type || pendingPayment.method,
-                        transactionId: targetTxnId,
-                        metadata: paymentDetails || {},
-                    }
-                });
-            }
-            else {
-                yield tx.payment.create({
-                    data: {
-                        orderId: resolvedOrderId,
-                        amount: paymentDetails.amount || existing.totalAmount,
-                        method: paymentDetails.payment_method_type || "ONLINE",
-                        status: "SUCCESS",
-                        transactionId: targetTxnId,
-                        metadata: paymentDetails || {},
-                    },
-                });
-            }
-            // Now recalculate total paid from ALL successful payments
-            const allPayments = yield tx.payment.findMany({
-                where: { orderId: resolvedOrderId, status: "SUCCESS" }
-            });
-            const totalPaid = allPayments.reduce((sum, p) => sum + Number(p.amount), 0);
-            const orderTotal = Number(existing.totalAmount);
-            const isFull = totalPaid >= orderTotal;
-            // Purge any leftover PENDING payment records for this order so it never displays as pending
-            yield tx.payment.deleteMany({
-                where: { orderId: resolvedOrderId, status: "PENDING" }
-            });
-            // Determine payment status
-            const newPaymentStatus = isFull ? "COMPLETED" : "PARTIAL";
-            // Only update status to CONFIRMED if order is still in a pre-confirmed state
-            // Do NOT revert DELIVERED/SHIPPED/etc. orders back to CONFIRMED
-            const nonRevertableStatuses = ["DELIVERED", "SHIPPED", "OUT_FOR_DELIVERY", "COMPLETED"];
-            const shouldUpdateStatus = !nonRevertableStatuses.includes(existing.status);
-            const paymentAmountDecimal = new client_1.Prisma.Decimal(paymentDetails.amount || existing.totalAmount);
-            yield tx.order.update({
-                where: { id: resolvedOrderId },
-                data: Object.assign({ isPaid: isFull, paymentStatus: newPaymentStatus, easebuzzCollected: { increment: paymentAmountDecimal } }, (shouldUpdateStatus && { status: "CONFIRMED" })),
-            });
-            // Create in-app system notification for the user
-            const notifTitle = isFull ? "Payment Complete" : "Payment Received";
-            const notifBody = isFull
-                ? `Your bill #${resolvedOrderId} of ₹${orderTotal} has been fully paid. Thank you!`
-                : `Payment of ₹${Number(paymentDetails.amount).toFixed(2)} received for bill #${resolvedOrderId}. Remaining: ₹${(orderTotal - totalPaid).toFixed(2)}`;
-            yield tx.notification.create({
-                data: {
-                    userId: existing.userId,
-                    title: notifTitle,
-                    body: notifBody,
-                    type: "ORDER",
-                    isRead: false
-                }
-            });
-            yield tx.orderStatusHistory.create({
-                data: {
-                    orderId: resolvedOrderId,
-                    status: (shouldUpdateStatus ? "CONFIRMED" : existing.status),
-                    remark: `Payment of ₹${Number(paymentDetails.amount).toFixed(2)} received via ${paymentDetails.payment_method_type || "ONLINE"}${isFull ? " (Fully Paid)" : " (Partial)"}`,
-                    changedBy: "SYSTEM",
-                },
-            });
-            // Synchronize Customer Balance & Ledger
-            if (existing.userId) {
-                yield (0, orderController_1.syncCustomerTotalDue)(existing.userId, tx);
-            }
-        }));
-        // ── Real-time Notification for Logistics & Driver Portal ─────────
-        try {
-            (0, io_1.getIo)().emit("OP_NEW_ORDER", {
-                id: orderId,
-                status: "CONFIRMED",
-                timestamp: new Date()
-            });
-            (0, io_1.getIo)().emit("order:updated", {
-                orderId: resolvedOrderId,
-                isPaid: true,
-                paymentStatus: "COMPLETED"
-            });
-        }
-        catch (_) { }
-        // ── WhatsApp Notification Dispatch ────────────────────────────────
-        const user = existing.user;
-        if (user && user.phone) {
-            try {
-                const { sendPaymentReceivedViaWhatsapp } = require("../services/mbgcard");
-                sendPaymentReceivedViaWhatsapp(user.phone, user.name || "Customer", orderId, Number(paymentDetails.amount || existing.totalAmount), paymentDetails.payment_method_type || "ONLINE").catch((err) => {
-                    console.error("[PaymentController] WhatsApp Payment Received dispatch failure:", err);
-                });
-            }
-            catch (err) {
-                console.error("[PaymentController] Failed to send WhatsApp:", err);
-            }
-        }
-        // Track trending (non-critical)
-        try {
-            const locationId = ((_h = existing.shippingAddress) === null || _h === void 0 ? void 0 : _h.locationId) || "global";
-            yield (0, productController_1.trackTrendingOnOrder)(existing.items.map((i) => ({ productId: i.productId, quantity: i.quantity })), locationId);
-        }
-        catch (e) {
-            console.warn("Trending update failed:", e);
-        }
-        return { status: "SUCCESS" };
-    }
-    else {
-        // Payment Failed or Cancelled -> Purge draft order and restore stock so NO bill is created
-        if (existing && existing.paymentStatus !== "COMPLETED" && existing.paymentStatus !== "PAID" && !existing.isPaid) {
-            yield prisma_1.default.$transaction((tx) => __awaiter(void 0, void 0, void 0, function* () {
-                var _a;
-                const locationId = ((_a = existing.shippingAddress) === null || _a === void 0 ? void 0 : _a.locationId) || existing.locationId;
-                if (locationId) {
-                    yield inventoryService_1.InventoryService.restoreStock({
-                        items: existing.items.map((i) => ({ productId: i.productId, variantId: i.variantId || undefined, quantity: i.quantity })),
-                        locationId,
-                        staffId: "SYSTEM",
-                        referenceId: `FAIL_PURGE_${orderId}`
-                    }, tx);
-                }
-                yield tx.orderItem.deleteMany({ where: { orderId } });
-                yield tx.payment.deleteMany({ where: { orderId } });
-                yield tx.orderStatusHistory.deleteMany({ where: { orderId } });
-                yield tx.order.delete({ where: { id: orderId } });
-            }));
-        }
-        return { status: "FAILED" };
-    }
+    const amount = new decimal_js_1.default(paymentDetails.amount);
+    const total = new decimal_js_1.default(order.totalAmount.toString());
+    const paid = (0, dueCalculationService_1.calculateOrderPaidAmountDecimal)(order.payments);
+    if (amount.greaterThan(total.minus(paid)))
+        throw new paymentVerificationPolicy_1.VerificationRejected("Excess receipt requires reconciliation");
+    const candidates = order.payments.filter((p) => p.method === "ONLINE" && p.status === "PENDING" &&
+        new decimal_js_1.default(p.amount.toString()).equals(amount));
+    if (candidates.length !== 1)
+        throw new paymentVerificationPolicy_1.VerificationRejected("Exact pending obligation required");
+    yield tx.payment.update({ where: { id: candidates[0].id }, data: {
+            status: "SUCCESS", amount: paymentDetails.amount, method: paymentDetails.payment_method_type,
+            transactionId: paymentDetails.txn_id, metadata: paymentDetails.metadata
+        } });
+    const isPaid = paid.plus(amount).greaterThanOrEqualTo(total);
+    const paymentStatus = isPaid ? "COMPLETED" : "PARTIAL";
+    yield tx.order.update({ where: { id: orderId }, data: Object.assign(Object.assign({ isPaid, paymentStatus }, (paymentDetails.payment_method_type === "EASEBUZZ" ? { easebuzzCollected: { increment: new client_1.Prisma.Decimal(paymentDetails.amount) } } : {})), (["PENDING", "PAYMENT_PENDING"].includes(order.status) ? { status: "CONFIRMED" } : {})) });
+    // Keep remaining COD obligations and original attempts; no failure purge or
+    // surplus reallocation is performed by the verified posting boundary.
+    yield tx.orderStatusHistory.create({ data: { orderId,
+            status: ["PENDING", "PAYMENT_PENDING"].includes(order.status) ? "CONFIRMED" : order.status,
+            remark: `Verified ${paymentDetails.payment_method_type} receipt ${paymentDetails.txn_id}: INR ${paymentDetails.amount}`,
+            changedBy: "SYSTEM"
+        } });
+    yield tx.auditLog.create({ data: { entityType: "PAYMENT", entityId: candidates[0].id,
+            action: "VERIFIED_RECEIPT_POSTED", newValue: { orderId, customerId: order.userId,
+                amount: paymentDetails.amount, currency: "INR", provider: paymentDetails.payment_method_type,
+                providerReference: paymentDetails.txn_id, merchantReference: paymentDetails.metadata.merchantReference,
+                paymentStatus, verifiedAt: new Date().toISOString() }
+        } });
+    yield (0, orderController_1.syncCustomerTotalDue)(order.userId, tx);
+    return { status: "SUCCESS", isPaid, paymentStatus };
 });
 exports.completeOrderPayment = completeOrderPayment;
 // ─── getOrderStatus (DB-level, no Juspay call) ───────────────────────────────
@@ -1255,383 +950,57 @@ exports.getOrderStatus = getOrderStatus;
 // ─── verifyPayment (Client/Redirect-based) ───────────────────────────────────
 const verifyPayment = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a, _b;
-    const { order_id, status: rawStatus, amount: bodyAmount, txn_id } = req.body;
-    logger_1.default.info(`[Payment] verifyPayment hit for order: ${order_id}`);
     try {
-        let resolvedOrderId = order_id || "";
-        if (order_id && !order_id.startsWith("DUE_") && !order_id.startsWith("SET_") && !order_id.startsWith("SETTLE_")) {
-            resolvedOrderId = order_id.replace(/_\d{3,}$/, "");
-        }
-        // Try to resolve via Payment transactionId if present
-        const txPayment = yield prisma_1.default.payment.findFirst({
-            where: { transactionId: order_id },
-            select: { orderId: true }
-        });
-        if (txPayment === null || txPayment === void 0 ? void 0 : txPayment.orderId) {
-            resolvedOrderId = txPayment.orderId;
-        }
-        if (resolvedOrderId && (resolvedOrderId.startsWith("SETTLE_") || resolvedOrderId.startsWith("SET_") || resolvedOrderId.startsWith("DUE_"))) {
-            const SUCCESS_STATUSES = ["CHARGED", "SUCCESS", "PAYMENT_SUCCESS", "AUTHORIZED"];
-            const isSuccess = rawStatus ? SUCCESS_STATUSES.includes(rawStatus.toUpperCase()) : false;
-            if (!isSuccess) {
-                return res.status(400).json({
-                    status: "FAILED",
-                    message: "Settlement payment was cancelled or failed"
-                });
-            }
-            yield (0, exports.completeOrderPayment)(resolvedOrderId, {
-                status: "CHARGED",
-                txn_id: txn_id || `TXN_${Date.now()}`,
-                amount: Number(bodyAmount || 0),
-                payment_method_type: "ONLINE",
-                phone: req.body.phone,
-                userId: req.body.userId,
-                metadata: req.body
-            });
-            return res.json({
-                status: "SUCCESS",
-                message: "Account settlement payment completed successfully"
-            });
-        }
-        // 1. Check DB first (Idempotency)
-        let existing = yield prisma_1.default.order.findUnique({
-            where: { id: resolvedOrderId },
-            select: { id: true, status: true, paymentStatus: true, totalAmount: true },
-        });
-        if (!existing && resolvedOrderId.length === 32 && /^[0-9a-fA-F]{32}$/.test(resolvedOrderId)) {
-            const formattedUuid = `${resolvedOrderId.slice(0, 8)}-${resolvedOrderId.slice(8, 12)}-${resolvedOrderId.slice(12, 16)}-${resolvedOrderId.slice(16, 20)}-${resolvedOrderId.slice(20)}`;
-            existing = yield prisma_1.default.order.findUnique({
-                where: { id: formattedUuid },
-                select: { id: true, status: true, paymentStatus: true, totalAmount: true },
-            });
-            if (existing)
-                resolvedOrderId = existing.id;
-        }
-        if (!existing) {
-            existing = yield prisma_1.default.order.findFirst({
-                where: {
-                    OR: [
-                        { id: { equals: resolvedOrderId, mode: "insensitive" } },
-                        { id: { contains: resolvedOrderId, mode: "insensitive" } }
-                    ]
-                },
-                select: { id: true, status: true, paymentStatus: true, totalAmount: true },
-            });
-            if (existing)
-                resolvedOrderId = existing.id;
-        }
-        if (!existing)
-            return res.status(404).json({ message: "Order not found" });
-        // If already completed, return success
-        if (existing.paymentStatus === "PAID" || existing.paymentStatus === "COMPLETED") {
-            return res.json({ status: "SUCCESS", message: "Already completed" });
-        }
-        // Check if status is explicitly provided in body
-        if (req.body.status) {
-            const rawStatus = req.body.status;
-            const SUCCESS_STATUSES = ["CHARGED", "SUCCESS", "PAYMENT_SUCCESS", "AUTHORIZED"];
-            const isSuccess = SUCCESS_STATUSES.includes(rawStatus.toUpperCase());
-            if (!isSuccess) {
-                logger_1.default.info(`[Payment] Payment verification received non-success status '${rawStatus}' for order ${resolvedOrderId}`);
-                // Purge draft order & restore stock so no bill is created
-                const orderToPurge = yield prisma_1.default.order.findUnique({
-                    where: { id: resolvedOrderId },
-                    include: { items: true }
-                });
-                if (orderToPurge && !orderToPurge.isPaid && orderToPurge.paymentStatus !== "COMPLETED" && orderToPurge.paymentStatus !== "PAID") {
-                    yield prisma_1.default.$transaction((tx) => __awaiter(void 0, void 0, void 0, function* () {
-                        var _a;
-                        const locationId = ((_a = orderToPurge.shippingAddress) === null || _a === void 0 ? void 0 : _a.locationId) || orderToPurge.locationId;
-                        if (locationId) {
-                            yield inventoryService_1.InventoryService.restoreStock({
-                                items: orderToPurge.items.map(i => ({ productId: i.productId, variantId: i.variantId || undefined, quantity: i.quantity })),
-                                locationId,
-                                staffId: "SYSTEM",
-                                referenceId: `CANCEL_PURGE_${resolvedOrderId}`
-                            }, tx);
-                        }
-                        yield tx.orderItem.deleteMany({ where: { orderId: resolvedOrderId } });
-                        yield tx.payment.deleteMany({ where: { orderId: resolvedOrderId } });
-                        yield tx.orderStatusHistory.deleteMany({ where: { orderId: resolvedOrderId } });
-                        yield tx.order.delete({ where: { id: resolvedOrderId } });
-                    }));
-                }
-                return res.status(400).json({
-                    status: "FAILED",
-                    message: `Payment was cancelled or failed (status: ${rawStatus}). Bill was not created.`
-                });
-            }
-            logger_1.default.info(`[Payment] Running payment verification for order ${resolvedOrderId} (status: ${rawStatus})`);
-            yield (0, exports.completeOrderPayment)(resolvedOrderId, {
-                status: "CHARGED",
-                txn_id: txn_id || `TXN_${Date.now()}`,
-                amount: Number(bodyAmount || existing.totalAmount),
-                payment_method_type: "ONLINE"
-            });
-            return res.json({
-                status: "SUCCESS",
-                message: "Payment verified successfully"
-            });
-        }
-        // Easebuzz Verification Pathway
-        if (process.env.EASEBUZZ_SERVICE_URL && process.env.EASEBUZZ_MERCHANT_KEY) {
-            logger_1.default.info(`[Payment] Verifying order ${order_id} with Easebuzz...`);
-            try {
-                const easebuzzRes = yield axios_1.default.post(`${process.env.EASEBUZZ_SERVICE_URL.replace(/\/$/, "")}/easebuzz?api_name=transaction`, { txnid: order_id }, {
-                    headers: {
-                        "Accept": "application/json",
-                        "Content-Type": "application/json"
-                    }
-                });
-                const txData = easebuzzRes.data;
-                logger_1.default.info(`[Payment] Easebuzz verification response: ${JSON.stringify(txData)}`);
-                if (!txData || txData.status === 0 || !txData.detail) {
-                    throw new Error((txData === null || txData === void 0 ? void 0 : txData.message) || "Transaction not found on Easebuzz");
-                }
-                const detail = txData.detail;
-                const status = ((_a = detail.status) !== null && _a !== void 0 ? _a : "").toUpperCase();
-                const SUCCESS_STATUSES = ["SUCCESS", "CHARGED", "PAYMENT_SUCCESS"];
-                if (SUCCESS_STATUSES.includes(status)) {
-                    yield (0, exports.completeOrderPayment)(order_id, {
-                        status: "CHARGED",
-                        txn_id: detail.easepayid || detail.txnid || order_id,
-                        amount: Number(detail.amount || existing.totalAmount),
-                        payment_method_type: detail.mode || "ONLINE"
-                    });
-                    return res.json({ status: "SUCCESS", message: "Payment verified via Easebuzz" });
-                }
-                if (["FAILED", "FAILURE", "BOUNCED", "ERROR"].includes(status)) {
-                    yield (0, exports.completeOrderPayment)(order_id, {
-                        status: "FAILED",
-                        txn_id: detail.easepayid || detail.txnid || order_id,
-                        amount: Number(detail.amount || existing.totalAmount),
-                        payment_method_type: detail.mode || "ONLINE"
-                    });
-                    return res.status(400).json({ status: "FAILED", message: "Payment failed/declined" });
-                }
-                return res.status(202).json({ status: "PENDING", message: `Payment confirmation pending. Status: ${status}` });
-            }
-            catch (easebuzzError) {
-                logger_1.default.warn(`[Payment] Easebuzz status fetch failed for ${order_id}, falling back to mock verification...`);
-                yield (0, exports.completeOrderPayment)(order_id, {
-                    status: "CHARGED",
-                    txn_id: `MOCK_TXN_${Date.now()}`,
-                    amount: existing.totalAmount,
-                    payment_method_type: "MOCK_ONLINE"
-                });
-                return res.json({
-                    status: "SUCCESS",
-                    message: "Mock verification fallback succeeded"
-                });
-            }
-        }
-        // 2. Fetch official status from Juspay API (The Source of Truth)
-        logger_1.default.info(`[Payment] Verifying order ${order_id} with Juspay API...`);
-        let juspayOrder;
-        try {
-            juspayOrder = yield (0, juspayService_1.getJuspayOrderStatus)(order_id);
-        }
-        catch (juspayError) {
-            // Fallback: If Juspay verification fails but we are in review/mock path
-            logger_1.default.warn(`[Payment] Juspay status fetch failed for ${order_id}, falling back to mock verification...`);
-            const rawStatus = req.body.status || "CHARGED";
-            const SUCCESS_STATUSES = ["CHARGED", "SUCCESS", "PAYMENT_SUCCESS", "AUTHORIZED"];
-            const isSuccess = SUCCESS_STATUSES.includes(rawStatus.toUpperCase());
-            const result = yield (0, exports.completeOrderPayment)(order_id, {
-                status: isSuccess ? "CHARGED" : "FAILED",
-                txn_id: `MOCK_TXN_${Date.now()}`,
-                amount: existing.totalAmount,
-                payment_method_type: "MOCK_ONLINE"
-            });
-            return res.json({
-                status: isSuccess ? "SUCCESS" : "FAILED",
-                message: isSuccess ? "Mock verification fallback succeeded" : "Mock verification fallback failed"
-            });
-        }
-        const status = ((_b = juspayOrder.status) !== null && _b !== void 0 ? _b : "").toUpperCase();
-        const SUCCESS_STATUSES = ["CHARGED", "SUCCESS", "PAYMENT_SUCCESS", "AUTHORIZED"];
-        if (SUCCESS_STATUSES.includes(status)) {
-            // 3. Complete order logic (updates DB, tracks trending, etc.)
-            const result = yield (0, exports.completeOrderPayment)(order_id, juspayOrder);
-            if (result.status === "SUCCESS" || result.status === "ALREADY_COMPLETED") {
-                return res.json({ status: "SUCCESS", message: "Payment verified via Gateway" });
-            }
-        }
-        if (["FAILED", "JUSPAY_DECLINED", "AUTHORIZATION_FAILED", "AUTHENTICATION_FAILED"].includes(status)) {
-            // Handle Failure (restores stock)
-            yield (0, exports.completeOrderPayment)(order_id, juspayOrder);
-            return res.status(400).json({ status: "FAILED", message: "Payment declined/failed" });
-        }
-        // 4. Case: Still Pending at Gateway
-        res.status(202).json({ status: "PENDING", message: "Payment confirmation still pending at bank" });
+        const result = yield (0, gatewayVerificationService_1.verifyGatewayPayment)((_a = req.body) === null || _a === void 0 ? void 0 : _a.order_id, ((_b = req.user) === null || _b === void 0 ? void 0 : _b.role) === "USER" ? req.user.userId : undefined, exports.completeOrderPayment);
+        return res.json(result);
     }
-    catch (error) {
-        console.error("Verification Error:", error);
-        res.status(500).json({ message: "Error verifying payment with gateway" });
+    catch (_) {
+        return res.status(202).json({ status: "VERIFICATION_UNKNOWN", message: "Payment awaits independent gateway verification" });
     }
 });
 exports.verifyPayment = verifyPayment;
 // ─── handleWebhook (Server-to-Server) ────────────────────────────────────────
-const juspayService_2 = require("../services/juspayService");
+const validEasebuzzCallback = (payload) => {
+    const salt = process.env.EASEBUZZ_SALT;
+    const key = process.env.EASEBUZZ_KEY || process.env.EASEBUZZ_MERCHANT_KEY;
+    return Boolean(salt && key && (payload === null || payload === void 0 ? void 0 : payload.key) === key &&
+        (0, paymentVerificationPolicy_1.constantTimeEqual)(payload.hash, getEasebuzzReverseHash(payload, salt)));
+};
 const handleWebhook = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    // 1. Easebuzz Webhook Pathway
-    if (req.body.txnid && (req.body.hash || req.body.status)) {
-        logger_1.default.info(`[Webhook] Easebuzz notification received: ${JSON.stringify(req.body)}`);
-        if (req.body.hash && process.env.EASEBUZZ_SALT) {
-            const calculatedHash = getEasebuzzReverseHash(req.body, process.env.EASEBUZZ_SALT);
-            if (calculatedHash !== req.body.hash) {
-                logger_1.default.warn(`[Webhook] Easebuzz signature mismatch (calculated=${calculatedHash}, received=${req.body.hash}). Continuing processing based on transaction status.`);
-            }
-        }
-        const { txnid, status, easebuzz_id, amount, mode, phone, email, firstname } = req.body;
-        if (!txnid || !status)
-            return res.status(400).json({ message: "Missing txnid or status" });
-        const isSuccess = (status || "").toLowerCase() === "success";
-        // Handle Customer Advance Wallet Deposit webhook
-        if (txnid.startsWith("WLT_")) {
-            if (isSuccess) {
-                try {
-                    yield (0, exports.processWalletDepositCredit)({
-                        phone,
-                        amount: Number(amount),
-                        referenceId: easebuzz_id || txnid,
-                        paymentMethod: mode || "EASEBUZZ"
-                    });
-                }
-                catch (wErr) {
-                    logger_1.default.error(`[Wallet Webhook Error]: ${wErr.message}`);
-                }
-            }
-            return res.json({ status: "OK" });
-        }
-        // Resolve original orderId from txnid (strip timestamp suffix)
-        let resolvedOrderId = txnid;
-        if (!txnid.startsWith("DUE_") && !txnid.startsWith("SET_") && !txnid.startsWith("SETTLE_")) {
-            resolvedOrderId = txnid.replace(/_\d{3,}$/, "");
-        }
-        const txPayment = yield prisma_1.default.payment.findFirst({
-            where: { transactionId: txnid },
-            select: { orderId: true }
-        });
-        if (txPayment === null || txPayment === void 0 ? void 0 : txPayment.orderId) {
-            resolvedOrderId = txPayment.orderId;
-        }
-        try {
-            yield (0, exports.completeOrderPayment)(resolvedOrderId, {
-                status: isSuccess ? "CHARGED" : "FAILED",
-                txn_id: easebuzz_id || txnid,
-                amount: Number(amount),
-                payment_method_type: mode || "ONLINE",
-                phone,
-                email,
-                firstname
-            });
-            return res.json({ status: "OK" });
-        }
-        catch (error) {
-            console.error("Webhook Error:", error);
-            return res.status(500).json({ message: "Error processing webhook" });
-        }
+    var _a;
+    const easebuzz = typeof ((_a = req.body) === null || _a === void 0 ? void 0 : _a.txnid) === "string";
+    const username = process.env.JUSPAY_WEBHOOK_USERNAME;
+    const password = process.env.JUSPAY_WEBHOOK_PASSWORD;
+    const expected = username && password ? `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}` : "";
+    if (easebuzz ? !validEasebuzzCallback(req.body) : !(0, paymentVerificationPolicy_1.constantTimeEqual)(req.headers.authorization, expected)) {
+        logger_1.default.warn("Payment webhook authentication rejected");
+        return res.status(403).json({ status: "REJECTED" });
     }
-    // 2. Juspay Webhook Pathway
-    const signature = req.headers["x-juspay-signature"];
-    // Verify HMAC signature — if RESPONSE_KEY not set, it logs a warning and passes through
-    if (!(0, juspayService_2.verifyJuspaySignature)(JSON.stringify(req.body), signature)) {
-        console.error("Invalid Webhook Signature");
-        return res.status(403).json({ message: "Invalid signature" });
-    }
-    // Juspay sends: { order_id, status, txn_id, amount, payment_method_type, ... }
-    const { order_id, status, txn_id, amount, payment_method_type } = req.body;
-    if (!order_id || !status)
-        return res.status(400).json({ message: "Missing order_id or status" });
-    logger_1.default.info(`[Webhook] Juspay notification for order ${order_id}: status=${status}`);
     try {
-        // Trust the webhook body directly — this is a server-to-server call from Juspay
-        // No need to re-fetch from Juspay API (which fails on sandbox anyway)
-        yield (0, exports.completeOrderPayment)(order_id, { status, txn_id, amount, payment_method_type });
-        res.json({ status: "OK" });
+        const result = yield (0, gatewayVerificationService_1.verifyGatewayPayment)(easebuzz ? req.body.txnid : req.body.order_id, undefined, exports.completeOrderPayment);
+        return res.json(result);
     }
-    catch (error) {
-        console.error("Webhook Error:", error);
-        res.status(500).json({ message: "Error processing webhook" });
+    catch (_) {
+        logger_1.default.warn("Payment webhook verification unavailable or mismatched");
+        return res.status(503).json({ status: "VERIFICATION_UNKNOWN" });
     }
 });
 exports.handleWebhook = handleWebhook;
-// ─── handleEasebuzzCallback (Easebuzz Redirect Endpoint) ──────────────────────
 const handleEasebuzzCallback = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    const payload = Object.assign(Object.assign({}, (req.query || {})), (req.body || {}));
-    logger_1.default.info(`[Easebuzz Callback] Received callback payload: ${JSON.stringify(payload)}`);
-    const clientUrl = process.env.CLIENT_URL || "http://localhost:3000";
-    if (payload.hash && process.env.EASEBUZZ_SALT) {
-        const calculatedHash = getEasebuzzReverseHash(payload, process.env.EASEBUZZ_SALT);
-        if (calculatedHash !== payload.hash) {
-            logger_1.default.warn(`[Easebuzz Callback] Signature mismatch: calculated=${calculatedHash}, received=${payload.hash}. Continuing processing based on transaction status.`);
-        }
-    }
-    const txnid = (payload.txnid || payload.tx_id || payload.order_id || payload.easepayid || payload.easebuzz_id || "").toString().trim();
-    const status = (payload.status || payload.transaction_status || "").toString();
-    const easebuzz_id = (payload.easebuzz_id || payload.easepayid || payload.txn_id || txnid).toString();
-    const amount = Number(payload.amount || payload.net_amount_debit || payload.net_debit_amount || 0);
-    const mode = (payload.mode || payload.payment_source || payload.card_type || "ONLINE").toString();
-    const phone = (payload.phone || payload.phone_number || payload.mobile || payload.customer_phone || payload.user_phone || payload.customerPhone || "").toString();
-    const email = (payload.email || payload.customer_email || payload.user_email || payload.customerEmail || "").toString();
-    const firstname = (payload.firstname || payload.name || payload.customer_name || payload.customerName || "").toString();
-    const productinfo = (payload.productinfo || payload.product_info || "").toString();
-    if (!txnid) {
-        logger_1.default.error("[Easebuzz Callback] Missing txnid in payload");
-        return res.redirect(`${clientUrl}/payment/success?status=failed&message=Missing transaction ID`);
-    }
-    const isSuccess = status.toLowerCase() === "success" || status.toLowerCase() === "charged";
-    // Handle Customer Advance Wallet Deposit callback redirect
-    if (txnid && txnid.startsWith("WLT_")) {
-        if (isSuccess) {
-            try {
-                yield (0, exports.processWalletDepositCredit)({
-                    phone,
-                    amount: Number(amount),
-                    referenceId: easebuzz_id || txnid,
-                    paymentMethod: mode || "EASEBUZZ"
-                });
-                return res.redirect(`${clientUrl}/account?wallet_deposit=success`);
-            }
-            catch (wErr) {
-                logger_1.default.error(`[Wallet Callback Error]: ${wErr.message}`);
-            }
-        }
-        return res.redirect(`${clientUrl}/account?wallet_deposit=failed`);
-    }
-    // Recover the original orderId from the txnid.
-    let resolvedOrderId = txnid;
-    const isSettlementTxn = txnid.startsWith("DUE_") || txnid.startsWith("SET_") || txnid.startsWith("SETTLE_");
-    if (!isSettlementTxn) {
-        // Strip the _NNNNNN timestamp suffix added for uniqueness
-        resolvedOrderId = txnid.replace(/_\d{3,}$/, "");
-        const cbPayment = yield prisma_1.default.payment.findFirst({
-            where: { transactionId: txnid },
-            select: { orderId: true }
-        });
-        if (cbPayment === null || cbPayment === void 0 ? void 0 : cbPayment.orderId) {
-            resolvedOrderId = cbPayment.orderId;
-        }
+    const payload = Object.assign(Object.assign({}, req.query), req.body);
+    if (!validEasebuzzCallback(payload)) {
+        logger_1.default.warn("Payment callback authentication rejected");
+        return res.status(403).json({ status: "REJECTED" });
     }
     try {
-        yield (0, exports.completeOrderPayment)(resolvedOrderId, {
-            status: isSuccess ? "CHARGED" : "FAILED",
-            txn_id: easebuzz_id || txnid,
-            amount: Number(amount),
-            payment_method_type: mode || "ONLINE",
-            phone,
-            email,
-            firstname,
-            productinfo,
-            settleDues: isSettlementTxn,
-            metadata: payload
-        });
-        return res.redirect(`${clientUrl}/payment/success?order_id=${resolvedOrderId}&status=${isSuccess ? "success" : "failed"}`);
+        yield (0, gatewayVerificationService_1.verifyGatewayPayment)(payload.txnid, undefined, exports.completeOrderPayment);
+        const url = new URL("/payment/success", process.env.CLIENT_URL || "http://localhost:3000");
+        url.searchParams.set("order_id", String(payload.txnid));
+        url.searchParams.set("status", "success");
+        return res.redirect(url.toString());
     }
-    catch (error) {
-        logger_1.default.error(`[Easebuzz Callback] Error completing payment: ${error.message}`);
-        return res.redirect(`${clientUrl}/payment/success?order_id=${resolvedOrderId}&status=failed&message=Payment completion failed`);
+    catch (_) {
+        return res.status(503).json({ status: "VERIFICATION_UNKNOWN" });
     }
 });
 exports.handleEasebuzzCallback = handleEasebuzzCallback;
@@ -2414,170 +1783,14 @@ const cleanupDuplicatePaymentsController = (req, res) => __awaiter(void 0, void 
 });
 exports.cleanupDuplicatePaymentsController = cleanupDuplicatePaymentsController;
 // ─── Customer Advance Wallet Deposit Flow ─────────────────────────────────────
-const processWalletDepositCredit = (_a) => __awaiter(void 0, [_a], void 0, function* ({ userId, phone, amount, referenceId, paymentMethod = "EASEBUZZ" }) {
-    const depositAmt = Number(amount);
-    if (!depositAmt || depositAmt <= 0)
-        throw new Error("Invalid deposit amount");
-    return yield prisma_1.default.$transaction((tx) => __awaiter(void 0, void 0, void 0, function* () {
-        // Idempotency: Check if already processed
-        const existingTx = yield tx.walletTransaction.findFirst({
-            where: { referenceId, type: "DEPOSIT" }
-        });
-        if (existingTx) {
-            const user = yield tx.user.findUnique({
-                where: { id: existingTx.userId },
-                select: { accountBalance: true }
-            });
-            return { alreadyProcessed: true, balance: Number((user === null || user === void 0 ? void 0 : user.accountBalance) || 0) };
-        }
-        let customer = null;
-        if (userId) {
-            customer = yield tx.user.findUnique({ where: { id: userId } });
-        }
-        if (!customer && phone) {
-            const cleanPhone = phone.replace(/\D/g, "");
-            customer = yield tx.user.findFirst({
-                where: { OR: [{ phone }, { phone: cleanPhone }, { phone: `+91${cleanPhone}` }] }
-            });
-        }
-        if (!customer)
-            throw new Error("Customer not found for wallet credit");
-        const currentBalance = Number(customer.accountBalance || 0);
-        const newBalance = currentBalance + depositAmt;
-        yield tx.user.update({
-            where: { id: customer.id },
-            data: { accountBalance: new client_1.Prisma.Decimal(newBalance) }
-        });
-        const transaction = yield tx.walletTransaction.create({
-            data: {
-                userId: customer.id,
-                amount: new client_1.Prisma.Decimal(depositAmt),
-                type: "DEPOSIT",
-                paymentMethod: paymentMethod.toUpperCase(),
-                referenceId,
-                balanceAfter: new client_1.Prisma.Decimal(newBalance),
-                notes: "Online Advance Wallet Deposit via Easebuzz",
-                createdBy: "CUSTOMER_ONLINE"
-            }
-        });
-        // Dispatch WhatsApp receipt confirmation
-        if (customer.phone) {
-            try {
-                const { sendTemplateViaChatHub } = require("../services/mbgcard");
-                yield sendTemplateViaChatHub(customer.phone, "payment_received", {
-                    body: [
-                        customer.name || "Customer",
-                        `ADV-${referenceId.slice(-6)}`,
-                        String(depositAmt),
-                        `Easebuzz Online (Advance Wallet Credit - Current Balance: ₹${newBalance})`
-                    ]
-                }).catch(() => null);
-            }
-            catch (err) {
-                console.warn("[Wallet Deposit WhatsApp warning]:", err);
-            }
-        }
-        return { alreadyProcessed: false, customer, balance: newBalance, transaction };
-    }));
+// Do not collect wallet deposits until a durable deposit intent can be verified.
+const processWalletDepositCredit = (_request) => __awaiter(void 0, void 0, void 0, function* () {
+    throw new paymentVerificationPolicy_1.VerificationRejected("Wallet deposits require a durable verified intent");
 });
 exports.processWalletDepositCredit = processWalletDepositCredit;
-const initiateWalletDeposit = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a;
-    try {
-        const userId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.userId;
-        if (!userId)
-            return res.status(401).json({ message: "Authentication required" });
-        const { amount } = req.body;
-        const depositAmt = Number(amount);
-        if (!depositAmt || depositAmt < 10 || depositAmt > 50000) {
-            return res.status(400).json({ message: "Deposit amount must be between ₹10 and ₹50,000" });
-        }
-        const user = yield prisma_1.default.user.findUnique({
-            where: { id: userId },
-            select: { id: true, name: true, phone: true, email: true }
-        });
-        if (!user)
-            return res.status(404).json({ message: "User account not found" });
-        const customerName = (user.name || "Customer").replace(/[^a-zA-Z0-9 ]/g, "").trim() || "Customer";
-        const customerPhone = user.phone || "9999999999";
-        const rawEmail = (user.email || "").trim();
-        const isValidEmail = rawEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail);
-        const customerEmail = isValidEmail ? rawEmail : `pay.${customerPhone.replace(/\D/g, "").slice(-10)}@bookmyveg.co.in`;
-        const timestamp = Date.now();
-        const shortNonce = String(timestamp).slice(-6);
-        const compactUser = userId.replace(/[^a-zA-Z0-9]/g, "").slice(0, 20);
-        const txnid = `WLT_${compactUser}_${shortNonce}`; // strictly <= 40 chars
-        const productInfoLabel = `Wallet Top-up ${depositAmt}`;
-        const protocol = req.headers["x-forwarded-proto"] || (req.secure ? "https" : "http");
-        const callbackUrl = `${protocol}://${req.headers.host}/api/v1/payments/easebuzz/callback`;
-        let baseUrl = process.env.CLIENT_URL || "http://localhost:3000";
-        const origin = req.headers.origin || (req.headers.referer ? new URL(req.headers.referer).origin : null);
-        if (origin && (baseUrl.includes("localhost") || !process.env.CLIENT_URL)) {
-            baseUrl = origin;
-        }
-        if (process.env.EASEBUZZ_KEY || process.env.EASEBUZZ_MERCHANT_KEY) {
-            try {
-                const easeResult = yield callEasebuzzInitiateApi({
-                    txnid,
-                    amount: depositAmt,
-                    firstname: customerName,
-                    email: customerEmail,
-                    phone: customerPhone,
-                    productinfo: productInfoLabel,
-                    callbackUrl
-                });
-                return res.json(Object.assign({ txnid, amount: depositAmt }, easeResult));
-            }
-            catch (easebuzzError) {
-                logger_1.default.error(`[Wallet Deposit] Easebuzz initiation failed, falling back to mock gateway. Error: ${easebuzzError.message}`);
-                return res.json({
-                    txnid,
-                    amount: depositAmt,
-                    paymentLink: `${baseUrl.replace(/\/$/, "")}/payment/mock-gateway?orderId=${txnid}&amount=${depositAmt}`,
-                });
-            }
-        }
-        return res.json({
-            txnid,
-            amount: depositAmt,
-            paymentLink: `${baseUrl.replace(/\/$/, "")}/payment/mock-gateway?orderId=${txnid}&amount=${depositAmt}`,
-        });
-    }
-    catch (error) {
-        logger_1.default.error(`[Wallet Deposit Error]: ${error.message}`);
-        return res.status(500).json({ message: "Failed to initiate wallet deposit" });
-    }
-});
+const initiateWalletDeposit = (_req, res) => __awaiter(void 0, void 0, void 0, function* () { return res.status(503).json({ status: "RECONCILIATION_REQUIRED", message: "Online wallet deposits temporarily unavailable" }); });
 exports.initiateWalletDeposit = initiateWalletDeposit;
-const verifyWalletDeposit = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a;
-    try {
-        const userId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.userId;
-        if (!userId)
-            return res.status(401).json({ message: "Authentication required" });
-        const { txnid, amount, txn_id, status } = req.body;
-        const depositAmt = Number(amount);
-        if (!depositAmt || depositAmt <= 0) {
-            return res.status(400).json({ message: "Invalid deposit amount" });
-        }
-        const effectiveRefId = txn_id || txnid || `WLT_${Date.now()}`;
-        const result = yield (0, exports.processWalletDepositCredit)({
-            userId,
-            amount: depositAmt,
-            referenceId: effectiveRefId,
-            paymentMethod: "EASEBUZZ"
-        });
-        return res.json({
-            success: true,
-            accountBalance: result.balance,
-            message: `₹${depositAmt.toFixed(2)} deposited successfully into your advance wallet.`
-        });
-    }
-    catch (error) {
-        logger_1.default.error(`[Wallet Verify Error]: ${error.message}`);
-        return res.status(500).json({ message: error.message || "Failed to verify wallet deposit" });
-    }
-});
+const verifyWalletDeposit = (_req, res) => __awaiter(void 0, void 0, void 0, function* () { return res.status(503).json({ status: "VERIFICATION_UNKNOWN", message: "Online wallet deposits require independent verification" }); });
 exports.verifyWalletDeposit = verifyWalletDeposit;
 const getWalletDetails = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;

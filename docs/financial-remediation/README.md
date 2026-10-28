@@ -42,3 +42,7 @@ Keep separate approvals for source implementation, additive schema migration, pr
 ## Local validation
 
 Parse every JSON file using the Python standard library and check referenced repository paths. Review the Git diff to ensure only this pack is staged. No application imports, service startup, migrations, database queries or notifications are needed to validate documentation. Record the local pack commit via `git log -- docs/financial-remediation`; no remote push is needed.
+
+## Authorized local implementation exception
+
+On 28 October 2026 the requesting user explicitly authorized local code, isolated tests and a push to a separate codex/ branch despite pending readiness. See `verification-containment.md` for this first code batch and its limitations. This exception does not approve production, real transactions, schema execution, historical corrections or runtime access. All operational evidence and independent approvals remain pending.

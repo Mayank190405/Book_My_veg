@@ -177,5 +177,25 @@
     "G1-G4 evidence and G5 frozen-baseline approval required before financial implementation",
     "M1/P1/H1/I1 require separate explicit human decisions for their operations",
     "Changed baseline or evidence invalidates affected approvals; preserve history"
-  ]
+  ],
+  "local_code_exception": {
+    "source": "Requesting user via explicit chat reply on 28 October 2026",
+    "decision": "AUTHORIZED_LOCAL_CODE_TEST_BRANCH_PUSH",
+    "scope": "Local financial implementation and isolated tests on codex/financial-verification-containment, then push that separate branch despite pending readiness",
+    "permitted_operations": [
+      "Local source changes",
+      "Isolated tests",
+      "Local code commit",
+      "Push the separate codex branch for review"
+    ],
+    "excluded_operations": [
+      "Production deployment",
+      "Push to main",
+      "Executing schema changes",
+      "Live financial transactions",
+      "Historical corrections",
+      "Production runtime access without approved procedure"
+    ],
+    "independent_readiness_approval": false
+  }
 }

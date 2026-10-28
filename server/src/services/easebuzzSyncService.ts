@@ -1,4 +1,3 @@
-import cron from "node-cron";
 import axios from "axios";
 import crypto from "crypto";
 import logger from "../utils/logger";
@@ -119,6 +118,8 @@ export const syncEasebuzzTransactions = async (
     } else {
         customStartDate = optionsOrStartDate;
     }
+
+    if (!dryRun) throw new Error("Live synchronization disabled pending canonical receipt migration; use dryRun: true");
 
     const key = process.env.EASEBUZZ_KEY || process.env.EASEBUZZ_MERCHANT_KEY;
     const salt = process.env.EASEBUZZ_SALT;
@@ -475,18 +476,5 @@ export const syncEasebuzzTransactions = async (
 };
 
 export const startEasebuzzSyncCron = () => {
-    // Schedule cron every 6 hours: 00:00, 06:00, 12:00, 18:00
-    cron.schedule("0 */6 * * *", async () => {
-        logger.info("[Cron] Running 6-hour Easebuzz v2.1 transaction sync job...");
-        await syncEasebuzzTransactions(undefined, undefined, true);
-    });
-
-    logger.info("⏰ Easebuzz Transaction Sync Cron initialized (Primary: Easebuzz v2.1 API)");
-
-    // Initial sync 30 seconds after server startup
-    setTimeout(() => {
-        syncEasebuzzTransactions(undefined, undefined, true).catch(err => {
-            logger.error(`[Easebuzz Initial Sync Error] ${err.message}`);
-        });
-    }, 30000);
+    logger.warn("Live Easebuzz synchronization disabled pending verified intent migration");
 };

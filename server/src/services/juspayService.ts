@@ -1,11 +1,9 @@
 import axios from "axios";
-import crypto from "crypto";
 
 // Read from env — all values now come from .env
 const JUSPAY_BASE_URL = process.env.JUSPAY_BASE_URL || "https://smartgateway.hdfcuat.bank.in";
 const MERCHANT_ID = process.env.JUSPAY_MERCHANT_ID || "SG4270";
 const CLIENT_ID = process.env.JUSPAY_CLIENT_ID || "hdfcmaster";
-const RESPONSE_KEY = process.env.JUSPAY_RESPONSE_KEY || "";
 
 // Juspay Basic Auth = Base64("API_KEY:") — note the trailing colon
 const rawApiKey = process.env.JUSPAY_API_KEY || "";
@@ -13,6 +11,8 @@ const AUTH_HEADER = `Basic ${Buffer.from(`${rawApiKey}:`).toString("base64")}`;
 
 const juspayApi = axios.create({
     baseURL: JUSPAY_BASE_URL,
+    timeout: 8000,
+    maxRedirects: 0,
     headers: {
         "Authorization": AUTH_HEADER,
         "x-merchantid": MERCHANT_ID,
@@ -54,7 +54,6 @@ export const createJuspaySession = async (params: CreateSessionParams) => {
         throw new Error("Failed to create payment session");
     }
 };
-
 export const getJuspayOrderStatus = async (orderId: string) => {
     try {
         const response = await juspayApi.get(`/orders/${orderId}`);
@@ -82,22 +81,4 @@ export const refundJuspayOrder = async (orderId: string, amount: number, uniqueR
         console.error("Juspay Refund Error:", error.response?.data || error.message);
         throw new Error("Failed to process refund");
     }
-};
-
-/**
- * Verify Juspay response signature using RESPONSE_KEY
- * Juspay signs the response body using HMAC-SHA256
- * @param responseBody - Raw response body string from Juspay
- * @param signature - Signature header from Juspay response
- */
-export const verifyJuspaySignature = (responseBody: string, signature: string): boolean => {
-    if (!RESPONSE_KEY) {
-        console.warn("JUSPAY_RESPONSE_KEY not set — skipping signature verification");
-        return true;
-    }
-    const expectedSig = crypto
-        .createHmac("sha256", RESPONSE_KEY)
-        .update(responseBody)
-        .digest("base64");
-    return expectedSig === signature;
 };

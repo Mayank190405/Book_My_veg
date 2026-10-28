@@ -36,7 +36,6 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.startEasebuzzSyncCron = exports.syncEasebuzzTransactions = exports.verifySingleEasebuzzTx = void 0;
-const node_cron_1 = __importDefault(require("node-cron"));
 const axios_1 = __importDefault(require("axios"));
 const crypto_1 = __importDefault(require("crypto"));
 const logger_1 = __importDefault(require("../utils/logger"));
@@ -130,6 +129,8 @@ const syncEasebuzzTransactions = (optionsOrStartDate_1, customEndDate_1, ...args
     else {
         customStartDate = optionsOrStartDate;
     }
+    if (!dryRun)
+        throw new Error("Live synchronization disabled pending canonical receipt migration; use dryRun: true");
     const key = process.env.EASEBUZZ_KEY || process.env.EASEBUZZ_MERCHANT_KEY;
     const salt = process.env.EASEBUZZ_SALT;
     const env = process.env.EASEBUZZ_ENV || process.env.ENV || "test";
@@ -440,17 +441,6 @@ const syncEasebuzzTransactions = (optionsOrStartDate_1, customEndDate_1, ...args
 });
 exports.syncEasebuzzTransactions = syncEasebuzzTransactions;
 const startEasebuzzSyncCron = () => {
-    // Schedule cron every 6 hours: 00:00, 06:00, 12:00, 18:00
-    node_cron_1.default.schedule("0 */6 * * *", () => __awaiter(void 0, void 0, void 0, function* () {
-        logger_1.default.info("[Cron] Running 6-hour Easebuzz v2.1 transaction sync job...");
-        yield (0, exports.syncEasebuzzTransactions)(undefined, undefined, true);
-    }));
-    logger_1.default.info("⏰ Easebuzz Transaction Sync Cron initialized (Primary: Easebuzz v2.1 API)");
-    // Initial sync 30 seconds after server startup
-    setTimeout(() => {
-        (0, exports.syncEasebuzzTransactions)(undefined, undefined, true).catch(err => {
-            logger_1.default.error(`[Easebuzz Initial Sync Error] ${err.message}`);
-        });
-    }, 30000);
+    logger_1.default.warn("Live Easebuzz synchronization disabled pending verified intent migration");
 };
 exports.startEasebuzzSyncCron = startEasebuzzSyncCron;

@@ -6,6 +6,7 @@
   "scripts": {
     "test": "tsx src/tests/dueCalculation.test.ts",
     "test:scan": "tsx src/tests/test_scan.ts",
+    "test:payment-security": "tsx --test src/tests/paymentVerification.test.ts",
     "verify:easebuzz": "tsx src/scripts/verifyEasebuzzPastRecords.ts",
     "reconcile:ledger": "tsx src/scripts/reconcileFinancialLedger.ts",
     "dev": "tsx watch src/index.ts",
