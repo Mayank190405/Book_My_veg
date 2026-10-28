@@ -1,0 +1,80 @@
+{
+  "format_version": 1,
+  "prepared_at": "2026-10-28T17:25:34+05:30",
+  "status": "UNVERIFIED",
+  "evidence": [],
+  "reviewer": null,
+  "environment": "production",
+  "database_engine": null,
+  "database_version": null,
+  "applied_migration_ids": null,
+  "actual_constraints": null,
+  "actual_indexes": null,
+  "actual_triggers": null,
+  "actual_schema_evidence": null,
+  "schema_drift_report": {
+    "status": "NOT_PERFORMED",
+    "evidence": null,
+    "differences": null
+  },
+  "approved_migration_baseline": null,
+  "legacy_duplicate_inventory_evidence": null,
+  "repository_observations": {
+    "engine_candidate": "PostgreSQL; Compose image postgres:15-alpine does not establish running engine/version",
+    "schema_path": "server/prisma/schema.prisma",
+    "schema_sha256": "bfaea2d95ac7a70bdcc8aef235d78677844cd1426bef3f32cff8a1a9014ce10b",
+    "migration_files": [
+      {
+        "path": "server/prisma/migrations/20260218141129_init_schema/migration.sql",
+        "sha256": "2418248506022fdb2e1bdf0cc5815b811e1970eb99d5abfe856b11b42787c7d1"
+      },
+      {
+        "path": "server/prisma/migrations/20260219081332_add_order_statuses/migration.sql",
+        "sha256": "02807d3aab922bdacc90f1b4313b91ca3169073a5a6c8a6944f7bc2e0fa0cda5"
+      },
+      {
+        "path": "server/prisma/migrations/20260219084945_add_reviews_and_search/migration.sql",
+        "sha256": "f3b65a8d16ce73606d78e729879b3df8d21ebad2bc4db6d3af89a3c4606d1a48"
+      },
+      {
+        "path": "server/prisma/migrations/20260219104843_add_coupons_and_delivery_slots/migration.sql",
+        "sha256": "96eadeb8138f87b22eaa04429c0f58be131c814d3e6712911d9533b952c0f7e2"
+      },
+      {
+        "path": "server/prisma/migrations/20260222085951_erp_hardening_final/migration.sql",
+        "sha256": "4e642819a4ab81d92f503a1f453e297c754b41ddc04573951a2cd3188c2105fd"
+      },
+      {
+        "path": "server/prisma/migrations/20260222102457_feature_roadmap_phase1_to_4/migration.sql",
+        "sha256": "05b6bbcce293d4029b7807f4e461ca47b80b888ecb0f6294067a699c24c39bc7"
+      },
+      {
+        "path": "server/prisma/migrations/20260225000000_add_inventory_ledger_and_check/migration.sql",
+        "sha256": "bad39432a23290100b24164a1993594bf4a2994685b4977790843cb8ee3b9f41"
+      },
+      {
+        "path": "server/prisma/migrations/migration_lock.toml",
+        "sha256": "99836963713b4f5b269ad49af0ed3d7b0b2e336115c2f92dc9ac683d139d0900"
+      }
+    ],
+    "additional_schema_sources": [
+      "server/prisma/*.sql",
+      "server/prisma/apply_*.ts",
+      "server/src/index.ts startup DDL"
+    ],
+    "current_model_constraints": [
+      "Order.idempotencyKey nullable unique",
+      "Payment.transactionId not declared unique",
+      "WalletTransaction.referenceId not declared unique"
+    ],
+    "legacy_financial_tables_in_migrations": [
+      "CustomerKhata",
+      "KhataTransaction",
+      "JournalEntry",
+      "LedgerEntry"
+    ]
+  },
+  "collection_policy": "Approved read-only catalog/migration/aggregate inventory only; no schema synchronization or constraints applied",
+  "required_approver_role": "Database owner",
+  "approval_reference": null
+}

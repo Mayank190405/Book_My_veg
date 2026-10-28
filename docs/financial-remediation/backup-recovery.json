@@ -1,0 +1,52 @@
+{
+  "format_version": 1,
+  "prepared_at": "2026-10-28T17:25:34+05:30",
+  "status": "UNVERIFIED",
+  "evidence": [],
+  "reviewer": null,
+  "environment": "production",
+  "backup_timestamp": null,
+  "backup_identifier": null,
+  "coverage": null,
+  "exclusions": null,
+  "consistency_boundary": null,
+  "artifact_sha256": null,
+  "retention": null,
+  "encryption": null,
+  "key_reference": null,
+  "restore_test": {
+    "status": "NOT_PERFORMED",
+    "isolated_environment": null,
+    "started_at": null,
+    "completed_at": null,
+    "integrity_results": null,
+    "evidence": null
+  },
+  "recovery_time": {
+    "target": null,
+    "measured": null,
+    "unit": "seconds"
+  },
+  "recovery_point": {
+    "target": null,
+    "measured": null,
+    "unit": "seconds",
+    "recoverable_transaction_boundary": null,
+    "reference_time": null
+  },
+  "responsible_approver": null,
+  "procedure": "evidence-collection.md section 4",
+  "repository_observations": {
+    "script": "scripts/backup-db-to-s3.sh",
+    "candidate_coverage": "Single PostgreSQL database dump; no proof of roles/uploads/queues/provider evidence coverage",
+    "retention_behavior": "Script attempts remote pruning older than seven days; actual retention/object lock unverified",
+    "hazards": [
+      "pg_dump piped into gzip without pipefail",
+      "Temporary local dump cleanup",
+      "Remote object deletion/pruning",
+      "No encryption parameters or restore verification in script; storage policy unknown"
+    ],
+    "executed": false
+  },
+  "approval_reference": null
+}

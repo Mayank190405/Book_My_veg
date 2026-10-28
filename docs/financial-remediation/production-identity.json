@@ -1,0 +1,59 @@
+{
+  "format_version": 1,
+  "prepared_at": "2026-10-28T17:25:34+05:30",
+  "status": "UNVERIFIED",
+  "evidence": [],
+  "reviewer": null,
+  "environment": "production",
+  "deployment_platform": null,
+  "service_names": null,
+  "git_sha": null,
+  "build_id": null,
+  "container_image_digests": null,
+  "deployment_timestamp": null,
+  "release_owner": null,
+  "running_replica_identities": null,
+  "source_to_build_evidence": null,
+  "build_to_runtime_evidence": null,
+  "observations": [
+    {
+      "status": "REPOSITORY_OBSERVED",
+      "source": ".github/workflows/deploy-aws-prod.yml",
+      "platform": "AWS ECR / EC2 / Docker Compose",
+      "trigger": "push main",
+      "image_tags": "latest and Git SHA at build; deployed prod Compose uses latest",
+      "deployment_risk": "Workflow invokes schema db push with a data-loss acceptance option"
+    },
+    {
+      "status": "REPOSITORY_OBSERVED",
+      "source": ".github/workflows/deploy.yml",
+      "platform": "VPS / PM2",
+      "trigger": "push main",
+      "deployment_actions": "pull, build, migrate deploy, PM2 reload"
+    },
+    {
+      "status": "REPOSITORY_OBSERVED",
+      "source": "docker-compose.server.yml",
+      "candidate_services": [
+        "bmv-server",
+        "bmv-client",
+        "bmv-db",
+        "bmv-redis"
+      ],
+      "candidate_app_tag": "v704",
+      "note": "Tag is not running-image evidence"
+    },
+    {
+      "status": "REPOSITORY_OBSERVED",
+      "source": "ecosystem.config.js",
+      "candidate_services": [
+        "bmv-server",
+        "bmv-client"
+      ],
+      "server_entrypoint": "dist/index.js",
+      "conflict": "server/package.json starts dist/src/index.js"
+    }
+  ],
+  "required_approver_role": "Release owner",
+  "approval_reference": null
+}

@@ -1,0 +1,117 @@
+{
+  "format_version": 1,
+  "prepared_at": "2026-10-28T17:25:34+05:30",
+  "status": "UNVERIFIED",
+  "evidence": [],
+  "reviewer": null,
+  "environment": "staging",
+  "environment_identifier": null,
+  "separate_from_production_verified": false,
+  "controls": [
+    {
+      "control": "database",
+      "status": "UNVERIFIED",
+      "production_reference": null,
+      "staging_reference": null,
+      "isolation_test_result": null,
+      "evidence": [],
+      "owner": null
+    },
+    {
+      "control": "credentials",
+      "status": "UNVERIFIED",
+      "production_reference": null,
+      "staging_reference": null,
+      "isolation_test_result": null,
+      "evidence": [],
+      "owner": null
+    },
+    {
+      "control": "queues_and_redis",
+      "status": "UNVERIFIED",
+      "production_reference": null,
+      "staging_reference": null,
+      "isolation_test_result": null,
+      "evidence": [],
+      "owner": null
+    },
+    {
+      "control": "webhooks",
+      "status": "UNVERIFIED",
+      "production_reference": null,
+      "staging_reference": null,
+      "isolation_test_result": null,
+      "evidence": [],
+      "owner": null
+    },
+    {
+      "control": "payment_sandbox",
+      "status": "UNVERIFIED",
+      "production_reference": null,
+      "staging_reference": null,
+      "isolation_test_result": null,
+      "evidence": [],
+      "owner": null
+    },
+    {
+      "control": "messaging_test_routing",
+      "status": "UNVERIFIED",
+      "production_reference": null,
+      "staging_reference": null,
+      "isolation_test_result": null,
+      "evidence": [],
+      "owner": null
+    },
+    {
+      "control": "storage",
+      "status": "UNVERIFIED",
+      "production_reference": null,
+      "staging_reference": null,
+      "isolation_test_result": null,
+      "evidence": [],
+      "owner": null
+    },
+    {
+      "control": "search",
+      "status": "UNVERIFIED",
+      "production_reference": null,
+      "staging_reference": null,
+      "isolation_test_result": null,
+      "evidence": [],
+      "owner": null
+    },
+    {
+      "control": "outbound_integrations",
+      "status": "UNVERIFIED",
+      "production_reference": null,
+      "staging_reference": null,
+      "isolation_test_result": null,
+      "evidence": [],
+      "owner": null
+    },
+    {
+      "control": "test_customers",
+      "status": "UNVERIFIED",
+      "production_reference": null,
+      "staging_reference": null,
+      "isolation_test_result": null,
+      "evidence": [],
+      "owner": null
+    },
+    {
+      "control": "worker_and_startup_controls",
+      "status": "UNVERIFIED",
+      "production_reference": null,
+      "staging_reference": null,
+      "isolation_test_result": null,
+      "evidence": [],
+      "owner": null
+    }
+  ],
+  "automatic_due_reminders_required_state": "DISABLED",
+  "automatic_due_reminders_runtime_evidence": null,
+  "outbound_policy": "Deny production payment/messaging/data integrations; allow sandbox and test sink only",
+  "customer_data_policy": "Synthetic or approved masked data; no production secrets",
+  "required_approver_role": "Staging/platform owner",
+  "approval_reference": null
+}

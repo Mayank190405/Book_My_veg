@@ -1,0 +1,181 @@
+{
+  "format_version": 1,
+  "prepared_at": "2026-10-28T17:25:34+05:30",
+  "overall_readiness": "NOT_READY",
+  "pack_creation_authorization": {
+    "source": "User instruction in this conversation, 28 October 2026",
+    "scope": "Create a version-controlled Financial Remediation Readiness Pack and approval record",
+    "permitted_operations": [
+      "Inspect local repository",
+      "Create readiness documentation",
+      "Create local documentation-only Git commit"
+    ],
+    "deployment_authorized": false,
+    "historical_changes_authorized": false,
+    "note": "Task authorization is not certification of evidence or approval to implement financial changes"
+  },
+  "decisions": [
+    {
+      "id": "G1",
+      "decision": "PENDING",
+      "approver": null,
+      "required_approver_role": "Release/operations owner",
+      "scope": "Verify production identity and worker inventory",
+      "date": null,
+      "environment": null,
+      "baseline_reference": null,
+      "evidence_links": [],
+      "explicitly_permitted_operations": [],
+      "exclusions": [
+        "No automatic payment-due reminders enabled"
+      ],
+      "expires_at": null,
+      "supersedes": null
+    },
+    {
+      "id": "G2",
+      "decision": "PENDING",
+      "approver": null,
+      "required_approver_role": "Database owner",
+      "scope": "Approve actual database schema/drift and migration baseline",
+      "date": null,
+      "environment": null,
+      "baseline_reference": null,
+      "evidence_links": [],
+      "explicitly_permitted_operations": [],
+      "exclusions": [
+        "No automatic payment-due reminders enabled"
+      ],
+      "expires_at": null,
+      "supersedes": null
+    },
+    {
+      "id": "G3",
+      "decision": "PENDING",
+      "approver": null,
+      "required_approver_role": "Recovery owner",
+      "scope": "Accept backup and isolated restore/recovery evidence",
+      "date": null,
+      "environment": null,
+      "baseline_reference": null,
+      "evidence_links": [],
+      "explicitly_permitted_operations": [],
+      "exclusions": [
+        "No automatic payment-due reminders enabled"
+      ],
+      "expires_at": null,
+      "supersedes": null
+    },
+    {
+      "id": "G4",
+      "decision": "PENDING",
+      "approver": null,
+      "required_approver_role": "Staging/platform owner",
+      "scope": "Accept isolated staging and sandbox integration evidence",
+      "date": null,
+      "environment": null,
+      "baseline_reference": null,
+      "evidence_links": [],
+      "explicitly_permitted_operations": [],
+      "exclusions": [
+        "No automatic payment-due reminders enabled"
+      ],
+      "expires_at": null,
+      "supersedes": null
+    },
+    {
+      "id": "G5",
+      "decision": "PENDING",
+      "approver": null,
+      "required_approver_role": "Engineering gate owner",
+      "scope": "Approve frozen source baseline and financial source implementation",
+      "date": null,
+      "environment": null,
+      "baseline_reference": null,
+      "evidence_links": [],
+      "explicitly_permitted_operations": [],
+      "exclusions": [
+        "No automatic payment-due reminders enabled"
+      ],
+      "expires_at": null,
+      "supersedes": null
+    },
+    {
+      "id": "M1",
+      "decision": "PENDING",
+      "approver": null,
+      "required_approver_role": "Database/change approver",
+      "scope": "Apply explicitly reviewed additive schema migration",
+      "date": null,
+      "environment": null,
+      "baseline_reference": null,
+      "evidence_links": [],
+      "explicitly_permitted_operations": [],
+      "exclusions": [
+        "No automatic payment-due reminders enabled"
+      ],
+      "expires_at": null,
+      "supersedes": null
+    },
+    {
+      "id": "P1",
+      "decision": "PENDING",
+      "approver": null,
+      "required_approver_role": "Release owner",
+      "scope": "Deploy explicitly reviewed release to production",
+      "date": null,
+      "environment": null,
+      "baseline_reference": null,
+      "evidence_links": [],
+      "explicitly_permitted_operations": [],
+      "exclusions": [
+        "No automatic payment-due reminders enabled"
+      ],
+      "expires_at": null,
+      "supersedes": null
+    },
+    {
+      "id": "H1",
+      "decision": "PENDING",
+      "approver": null,
+      "required_approver_role": "Financial/data owner",
+      "scope": "Correct specific historical financial records",
+      "date": null,
+      "environment": null,
+      "baseline_reference": null,
+      "evidence_links": [],
+      "explicitly_permitted_operations": [],
+      "exclusions": [
+        "No automatic payment-due reminders enabled"
+      ],
+      "expires_at": null,
+      "supersedes": null
+    },
+    {
+      "id": "I1",
+      "decision": "PENDING",
+      "approver": null,
+      "required_approver_role": "Change owner",
+      "scope": "Perform an explicitly described irreversible operation",
+      "date": null,
+      "environment": null,
+      "baseline_reference": null,
+      "evidence_links": [],
+      "explicitly_permitted_operations": [],
+      "exclusions": [
+        "No automatic payment-due reminders enabled"
+      ],
+      "expires_at": null,
+      "supersedes": null
+    }
+  ],
+  "open_scope_items": [
+    "Escalation attachment ends mid-section 12; remainder not supplied"
+  ],
+  "decision_rules": [
+    "A null identity/date/evidence or empty permitted operation list cannot approve execution",
+    "G1-G4 evidence and G5 frozen-baseline approval required before financial implementation",
+    "M1/P1/H1/I1 require separate explicit human decisions for their operations",
+    "Changed baseline or evidence invalidates affected approvals; preserve history"
+  ]
+}
