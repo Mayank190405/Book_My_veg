@@ -123,7 +123,7 @@ exports.getVariantById = getVariantById;
 // ─── POST /api/v1/variants ──────────────────────────────────────────────────
 const createVariant = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const { productId, name, price, weight, weightUnit, isActive } = req.body;
+        const { productId, name, price, weight, weightUnit, isActive, locationId, initialStock, thresholdStock } = req.body;
         if (!productId || !name || price === undefined) {
             return res.status(400).json({ message: "productId, name, and price are required" });
         }
@@ -164,6 +164,22 @@ const createVariant = (req, res) => __awaiter(void 0, void 0, void 0, function* 
                         variantId: variant.id,
                         channel: ch,
                         price: numericPrice
+                    }
+                });
+            }
+            // If store locationId is specified, seed the store inventory record
+            if (locationId) {
+                const stockQty = initialStock !== undefined && initialStock !== null && initialStock !== "" ? Number(initialStock) : 0;
+                const thresh = thresholdStock !== undefined && thresholdStock !== null && thresholdStock !== "" ? Number(thresholdStock) : 5;
+                yield tx.inventory.create({
+                    data: {
+                        productId,
+                        variantId: variant.id,
+                        locationId,
+                        currentStock: stockQty,
+                        thresholdStock: thresh,
+                        isLowStock: stockQty <= thresh,
+                        lastRestocked: stockQty > 0 ? new Date() : null
                     }
                 });
             }

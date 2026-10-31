@@ -7,6 +7,7 @@ const router = (0, express_1.Router)();
 // Enforce mandatory authorization for all repository fulfillment nodes
 router.use(auth_1.authenticate);
 router.get("/store/:locationId", inventoryController_1.getStoreInventory);
+router.post("/set-stock", inventoryController_1.setStoreStock);
 router.patch("/:id", inventoryController_1.adjustStock);
 router.post("/adjust", inventoryController_1.createAdjustment);
 router.post("/sync", inventoryController_1.syncInventory);

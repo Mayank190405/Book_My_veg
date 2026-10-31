@@ -12,7 +12,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deleteNotification = exports.markAllRead = exports.markAsRead = exports.getNotifications = void 0;
+exports.clearAllNotifications = exports.deleteNotification = exports.markAllRead = exports.markAsRead = exports.getNotifications = void 0;
 const prisma_1 = __importDefault(require("../config/prisma"));
 const logger_1 = __importDefault(require("../utils/logger"));
 const getNotifications = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
@@ -95,3 +95,20 @@ const deleteNotification = (req, res) => __awaiter(void 0, void 0, void 0, funct
     }
 });
 exports.deleteNotification = deleteNotification;
+const clearAllNotifications = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
+    const userId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.userId;
+    if (!userId)
+        return res.status(401).json({ message: "Unauthorized" });
+    try {
+        yield prisma_1.default.notification.deleteMany({
+            where: { userId }
+        });
+        res.json({ message: "All notifications cleared" });
+    }
+    catch (error) {
+        logger_1.default.error("Error clearing notifications:", error);
+        res.status(500).json({ message: "Error clearing notifications" });
+    }
+});
+exports.clearAllNotifications = clearAllNotifications;

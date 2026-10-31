@@ -12,7 +12,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getInwardHistory = exports.getMortalityHistory = exports.recordMortality = exports.addInwardStock = exports.transferStock = exports.createAdjustment = exports.syncInventory = exports.adjustStock = exports.getStoreInventory = void 0;
+exports.setStoreStock = exports.getInwardHistory = exports.getMortalityHistory = exports.recordMortality = exports.addInwardStock = exports.transferStock = exports.createAdjustment = exports.syncInventory = exports.adjustStock = exports.getStoreInventory = void 0;
 const prisma_1 = __importDefault(require("../config/prisma"));
 const client_1 = require("@prisma/client");
 const consolidateStoreInventory = (locationId) => __awaiter(void 0, void 0, void 0, function* () {
@@ -613,3 +613,73 @@ const getInwardHistory = (req, res) => __awaiter(void 0, void 0, void 0, functio
     }
 });
 exports.getInwardHistory = getInwardHistory;
+const setStoreStock = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
+    const { productId, variantId, locationId, currentStock, thresholdStock } = req.body;
+    const authUser = req.user;
+    if (!productId || !locationId) {
+        return res.status(400).json({ message: "productId and locationId are required" });
+    }
+    if ((authUser === null || authUser === void 0 ? void 0 : authUser.role) === "STORE_ADMIN" && authUser.locationId !== locationId) {
+        return res.status(403).json({ message: "Access Denied: Cross-Hub stock manipulation restricted" });
+    }
+    try {
+        const targetVariantId = variantId || null;
+        const numStock = Number(currentStock !== null && currentStock !== void 0 ? currentStock : 0);
+        const numThreshold = thresholdStock !== undefined ? Number(thresholdStock) : 5;
+        const existing = yield prisma_1.default.inventory.findFirst({
+            where: {
+                productId,
+                locationId,
+                variantId: targetVariantId
+            }
+        });
+        let updated;
+        if (existing) {
+            updated = yield prisma_1.default.inventory.update({
+                where: { id: existing.id },
+                data: {
+                    currentStock: new client_1.Prisma.Decimal(numStock),
+                    thresholdStock: new client_1.Prisma.Decimal(numThreshold),
+                    isLowStock: numStock <= numThreshold,
+                    lastRestocked: numStock > Number(existing.currentStock) ? new Date() : existing.lastRestocked
+                }
+            });
+        }
+        else {
+            updated = yield prisma_1.default.inventory.create({
+                data: {
+                    productId,
+                    variantId: targetVariantId,
+                    locationId,
+                    currentStock: new client_1.Prisma.Decimal(numStock),
+                    thresholdStock: new client_1.Prisma.Decimal(numThreshold),
+                    isLowStock: numStock <= numThreshold,
+                    lastRestocked: numStock > 0 ? new Date() : null
+                }
+            });
+        }
+        // Record audit inventory log
+        try {
+            yield prisma_1.default.inventoryLog.create({
+                data: {
+                    productId,
+                    variantId: targetVariantId,
+                    locationId,
+                    type: "ADJUSTMENT",
+                    beforeQty: existing ? existing.currentStock : new client_1.Prisma.Decimal(0),
+                    afterQty: new client_1.Prisma.Decimal(numStock),
+                    delta: new client_1.Prisma.Decimal(numStock - (existing ? Number(existing.currentStock) : 0)),
+                    staffId: ((_a = authUser === null || authUser === void 0 ? void 0 : authUser.userId) === null || _a === void 0 ? void 0 : _a.startsWith("STORE_")) ? null : (authUser === null || authUser === void 0 ? void 0 : authUser.userId) || null,
+                }
+            });
+        }
+        catch (_) { }
+        return res.json({ success: true, message: "Store stock updated successfully", data: updated });
+    }
+    catch (error) {
+        console.error("setStoreStock error:", error);
+        return res.status(500).json({ message: "Failed to update store stock", error: error.message });
+    }
+});
+exports.setStoreStock = setStoreStock;

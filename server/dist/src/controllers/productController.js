@@ -30,7 +30,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.syncProductPricingHandler = exports.syncAllProductPricing = exports.uploadProductImage = exports.bulkImportProducts = exports.getProductsAdmin = exports.trackTrendingOnOrder = exports.toggleProductStatus = exports.getBuyAgain = exports.checkServiceability = exports.getSimilarProducts = exports.getFlashDeals = exports.getTrendingProducts = exports.deleteProduct = exports.updateProduct = exports.createProduct = exports.getProductById = exports.getProducts = void 0;
+exports.reorderProducts = exports.syncProductPricingHandler = exports.syncAllProductPricing = exports.uploadProductImage = exports.bulkImportProducts = exports.getProductsAdmin = exports.trackTrendingOnOrder = exports.toggleProductStatus = exports.getBuyAgain = exports.checkServiceability = exports.getSimilarProducts = exports.getFlashDeals = exports.getTrendingProducts = exports.deleteProduct = exports.updateProduct = exports.createProduct = exports.getProductById = exports.getProducts = void 0;
 const prisma_1 = __importDefault(require("../config/prisma"));
 const client_1 = require("@prisma/client");
 const redis_1 = __importDefault(require("../config/redis"));
@@ -670,6 +670,13 @@ const getProductsAdmin = (req, res) => __awaiter(void 0, void 0, void 0, functio
                 inventory: true
             }
         });
+        // Sort by specifications.sortOrder ascending if set
+        products.sort((a, b) => {
+            var _a, _b;
+            const orderA = typeof ((_a = a.specifications) === null || _a === void 0 ? void 0 : _a.sortOrder) === 'number' ? a.specifications.sortOrder : 99999;
+            const orderB = typeof ((_b = b.specifications) === null || _b === void 0 ? void 0 : _b.sortOrder) === 'number' ? b.specifications.sortOrder : 99999;
+            return orderA - orderB;
+        });
         res.json(products);
     }
     catch (error) {
@@ -1063,3 +1070,37 @@ const syncProductPricingHandler = (req, res) => __awaiter(void 0, void 0, void 0
     }
 });
 exports.syncProductPricingHandler = syncProductPricingHandler;
+const reorderProducts = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { items } = req.body; // Array of { id: string, sortOrder: number }
+        if (!Array.isArray(items)) {
+            return res.status(400).json({ message: "items must be an array of { id: string, sortOrder: number }" });
+        }
+        yield prisma_1.default.$transaction((tx) => __awaiter(void 0, void 0, void 0, function* () {
+            for (const item of items) {
+                if (!item.id)
+                    continue;
+                const prod = yield tx.product.findUnique({
+                    where: { id: item.id },
+                    select: { id: true, specifications: true }
+                });
+                if (prod) {
+                    const currentSpecs = prod.specifications || {};
+                    yield tx.product.update({
+                        where: { id: item.id },
+                        data: {
+                            specifications: Object.assign(Object.assign({}, currentSpecs), { sortOrder: Number(item.sortOrder) })
+                        }
+                    });
+                }
+            }
+        }));
+        yield (0, cacheUtils_1.invalidateProductCache)();
+        res.json({ success: true, message: "Product positions reordered successfully" });
+    }
+    catch (err) {
+        console.error("reorderProducts error:", err);
+        res.status(500).json({ message: "Failed to reorder products", error: err.message });
+    }
+});
+exports.reorderProducts = reorderProducts;

@@ -654,3 +654,77 @@ export const getInwardHistory = async (req: Request, res: Response) => {
         res.status(500).json({ error: error.message });
     }
 };
+
+export const setStoreStock = async (req: Request, res: Response) => {
+    const { productId, variantId, locationId, currentStock, thresholdStock } = req.body;
+    const authUser = (req as any).user;
+
+    if (!productId || !locationId) {
+        return res.status(400).json({ message: "productId and locationId are required" });
+    }
+
+    if (authUser?.role === "STORE_ADMIN" && authUser.locationId !== locationId) {
+        return res.status(403).json({ message: "Access Denied: Cross-Hub stock manipulation restricted" });
+    }
+
+    try {
+        const targetVariantId = variantId || null;
+        const numStock = Number(currentStock ?? 0);
+        const numThreshold = thresholdStock !== undefined ? Number(thresholdStock) : 5;
+
+        const existing = await prisma.inventory.findFirst({
+            where: {
+                productId,
+                locationId,
+                variantId: targetVariantId
+            }
+        });
+
+        let updated;
+        if (existing) {
+            updated = await prisma.inventory.update({
+                where: { id: existing.id },
+                data: {
+                    currentStock: new Prisma.Decimal(numStock),
+                    thresholdStock: new Prisma.Decimal(numThreshold),
+                    isLowStock: numStock <= numThreshold,
+                    lastRestocked: numStock > Number(existing.currentStock) ? new Date() : existing.lastRestocked
+                }
+            });
+        } else {
+            updated = await prisma.inventory.create({
+                data: {
+                    productId,
+                    variantId: targetVariantId,
+                    locationId,
+                    currentStock: new Prisma.Decimal(numStock),
+                    thresholdStock: new Prisma.Decimal(numThreshold),
+                    isLowStock: numStock <= numThreshold,
+                    lastRestocked: numStock > 0 ? new Date() : null
+                }
+            });
+        }
+
+        // Record audit inventory log
+        try {
+            await prisma.inventoryLog.create({
+                data: {
+                    productId,
+                    variantId: targetVariantId,
+                    locationId,
+                    type: "ADJUSTMENT",
+                    beforeQty: existing ? existing.currentStock : new Prisma.Decimal(0),
+                    afterQty: new Prisma.Decimal(numStock),
+                    delta: new Prisma.Decimal(numStock - (existing ? Number(existing.currentStock) : 0)),
+                    staffId: authUser?.userId?.startsWith("STORE_") ? null : authUser?.userId || null,
+                }
+            });
+        } catch (_) {}
+
+        return res.json({ success: true, message: "Store stock updated successfully", data: updated });
+    } catch (error: any) {
+        console.error("setStoreStock error:", error);
+        return res.status(500).json({ message: "Failed to update store stock", error: error.message });
+    }
+};
+

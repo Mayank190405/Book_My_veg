@@ -9,7 +9,8 @@ import {
     addInwardStock,
     getInwardHistory,
     recordMortality,
-    getMortalityHistory
+    getMortalityHistory,
+    setStoreStock,
 } from "../controllers/inventoryController";
 
 const router = Router();
@@ -18,7 +19,9 @@ const router = Router();
 router.use(authenticate);
 
 router.get("/store/:locationId", getStoreInventory);
+router.post("/set-stock", setStoreStock);
 router.patch("/:id", adjustStock);
+
 router.post("/adjust", createAdjustment);
 router.post("/sync", syncInventory);
 router.post("/transfer", transferStock);

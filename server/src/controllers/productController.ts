@@ -679,12 +679,20 @@ export const getProductsAdmin = async (req: Request, res: Response) => {
             }
         });
 
+        // Sort by specifications.sortOrder ascending if set
+        products.sort((a: any, b: any) => {
+            const orderA = typeof a.specifications?.sortOrder === 'number' ? a.specifications.sortOrder : 99999;
+            const orderB = typeof b.specifications?.sortOrder === 'number' ? b.specifications.sortOrder : 99999;
+            return orderA - orderB;
+        });
+
         res.json(products);
     } catch (error: any) {
         console.error("Admin catalog fetch failure:", error);
         res.status(500).json({ error: error.message });
     }
 };
+
 
 export const bulkImportProducts = async (req: Request, res: Response) => {
     if (!req.file) {
@@ -1079,3 +1087,41 @@ export const syncProductPricingHandler = async (req: Request, res: Response) => 
         res.status(500).json({ message: "Failed to synchronize product pricing.", error: err.message });
     }
 };
+
+export const reorderProducts = async (req: Request, res: Response) => {
+    try {
+        const { items } = req.body; // Array of { id: string, sortOrder: number }
+        if (!Array.isArray(items)) {
+            return res.status(400).json({ message: "items must be an array of { id: string, sortOrder: number }" });
+        }
+
+        await prisma.$transaction(async (tx: any) => {
+            for (const item of items) {
+                if (!item.id) continue;
+                const prod = await tx.product.findUnique({
+                    where: { id: item.id },
+                    select: { id: true, specifications: true }
+                });
+                if (prod) {
+                    const currentSpecs = (prod.specifications as any) || {};
+                    await tx.product.update({
+                        where: { id: item.id },
+                        data: {
+                            specifications: {
+                                ...currentSpecs,
+                                sortOrder: Number(item.sortOrder)
+                            }
+                        }
+                    });
+                }
+            }
+        });
+
+        await invalidateProductCache();
+        res.json({ success: true, message: "Product positions reordered successfully" });
+    } catch (err: any) {
+        console.error("reorderProducts error:", err);
+        res.status(500).json({ message: "Failed to reorder products", error: err.message });
+    }
+};
+

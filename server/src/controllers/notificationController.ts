@@ -83,3 +83,20 @@ export const deleteNotification = async (req: AuthenticatedRequest, res: Respons
         res.status(500).json({ message: "Error deleting notification" });
     }
 };
+
+export const clearAllNotifications = async (req: AuthenticatedRequest, res: Response) => {
+    const userId = req.user?.userId;
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+
+    try {
+        await prisma.notification.deleteMany({
+            where: { userId }
+        });
+        res.json({ message: "All notifications cleared" });
+    } catch (error) {
+        logger.error("Error clearing notifications:", error);
+        res.status(500).json({ message: "Error clearing notifications" });
+    }
+};
+
+

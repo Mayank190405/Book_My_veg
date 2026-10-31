@@ -130,7 +130,7 @@ export const getVariantById = async (req: Request, res: Response) => {
 // ─── POST /api/v1/variants ──────────────────────────────────────────────────
 export const createVariant = async (req: AuthenticatedRequest, res: Response) => {
     try {
-        const { productId, name, price, weight, weightUnit, isActive } = req.body;
+        const { productId, name, price, weight, weightUnit, isActive, locationId, initialStock, thresholdStock } = req.body;
 
         if (!productId || !name || price === undefined) {
             return res.status(400).json({ message: "productId, name, and price are required" });
@@ -182,8 +182,26 @@ export const createVariant = async (req: AuthenticatedRequest, res: Response) =>
                 });
             }
 
+            // If store locationId is specified, seed the store inventory record
+            if (locationId) {
+                const stockQty = initialStock !== undefined && initialStock !== null && initialStock !== "" ? Number(initialStock) : 0;
+                const thresh = thresholdStock !== undefined && thresholdStock !== null && thresholdStock !== "" ? Number(thresholdStock) : 5;
+                await tx.inventory.create({
+                    data: {
+                        productId,
+                        variantId: variant.id,
+                        locationId,
+                        currentStock: stockQty,
+                        thresholdStock: thresh,
+                        isLowStock: stockQty <= thresh,
+                        lastRestocked: stockQty > 0 ? new Date() : null
+                    }
+                });
+            }
+
             return variant;
         });
+
 
         logger.info(`[VariantController] Variant created: ${newVariant.id} (${newVariant.name}) for product ${productId}`);
 

@@ -21,7 +21,9 @@ import {
     bulkImportProducts,
     uploadProductImage,
     syncProductPricingHandler,
+    reorderProducts,
 } from "../controllers/productController";
+
 import { scanImageUpload } from "../middleware/imageScan";
 
 const router = Router();
@@ -75,7 +77,9 @@ router.get("/admin", authenticate, authorize(["ADMIN", "STORE_ADMIN"]), getProdu
 router.get("/:id", validate(uuidParamsSchema), getProductById);
 
 // ── Admin ───────────────────────────────────────────────────────────────────
+router.put("/reorder", authenticate, authorize(["ADMIN", "STORE_ADMIN"]), reorderProducts);
 router.post("/sync-pricing", authenticate, authorize(["ADMIN", "STORE_ADMIN"]), syncProductPricingHandler);
+
 router.post("/import", authenticate, authorize(["ADMIN", "STORE_ADMIN"]), handleUpload, bulkImportProducts);
 router.post("/upload-image", authenticate, authorize(["ADMIN", "STORE_ADMIN"]), scanImageUpload, uploadProductImage);
 router.post("/", authenticate, authorize(["ADMIN", "STORE_ADMIN"]), createProduct);
