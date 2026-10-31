@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { updateCartItem, syncCart as apiSyncCart, validateCoupon } from "@/services/cartService";
 import { toast } from "sonner";
+import { useUserStore } from "@/store/useUserStore";
 
 interface CartItem {
     productId: string;
@@ -62,11 +63,16 @@ export const useCartStore = create<CartState>()(
                     totalPrice: updatedItems.reduce((acc, i) => acc + (Number(i.price) || 0) * (Number(i.quantity) || 0), 0)
                 });
 
-                // Optimistic update, then sync
-                try {
-                    await updateCartItem(newItem.productId, existingItem ? existingItem.quantity + (newItem.quantity || 1) : (newItem.quantity || 1), newItem.variantId, newItem.metadata);
-                } catch (error) {
-                    console.error("Failed to sync cart item", error);
+                // Optimistic update, then sync with backend only if authenticated
+                const token = useUserStore.getState().token;
+                if (token) {
+                    try {
+                        await updateCartItem(newItem.productId, existingItem ? existingItem.quantity + (newItem.quantity || 1) : (newItem.quantity || 1), newItem.variantId, newItem.metadata);
+                    } catch (error: any) {
+                        if (error?.response?.status !== 401) {
+                            console.error("Failed to sync cart item", error);
+                        }
+                    }
                 }
             },
 
@@ -80,10 +86,15 @@ export const useCartStore = create<CartState>()(
                     totalPrice: updatedItems.reduce((acc, i) => acc + (Number(i.price) || 0) * (Number(i.quantity) || 0), 0)
                 });
 
-                try {
-                    await updateCartItem(productId, 0, variantId);
-                } catch (error) {
-                    console.error("Failed to remove cart item", error);
+                const token = useUserStore.getState().token;
+                if (token) {
+                    try {
+                        await updateCartItem(productId, 0, variantId);
+                    } catch (error: any) {
+                        if (error?.response?.status !== 401) {
+                            console.error("Failed to remove cart item", error);
+                        }
+                    }
                 }
             },
 
@@ -104,10 +115,15 @@ export const useCartStore = create<CartState>()(
                     totalPrice: updatedItems.reduce((acc, i) => acc + (Number(i.price) || 0) * (Number(i.quantity) || 0), 0)
                 });
 
-                try {
-                    await updateCartItem(productId, quantity, variantId, get().items.find(i => i.productId === productId && (i.variantId || undefined) === (variantId || undefined))?.metadata);
-                } catch (error) {
-                    console.error("Failed to update cart quantity", error);
+                const token = useUserStore.getState().token;
+                if (token) {
+                    try {
+                        await updateCartItem(productId, quantity, variantId, get().items.find(i => i.productId === productId && (i.variantId || undefined) === (variantId || undefined))?.metadata);
+                    } catch (error: any) {
+                        if (error?.response?.status !== 401) {
+                            console.error("Failed to update cart quantity", error);
+                        }
+                    }
                 }
             },
 
@@ -131,6 +147,9 @@ export const useCartStore = create<CartState>()(
             removeCoupon: () => set({ couponCode: null, discount: 0 }),
 
             syncWithBackend: async () => {
+                const token = useUserStore.getState().token;
+                if (!token) return;
+
                 const { items } = get();
                 try {
                     const serverCart = await apiSyncCart(items.map(i => ({
@@ -143,21 +162,23 @@ export const useCartStore = create<CartState>()(
                             productId: item.productId,
                             variantId: item.variantId,
                             name: item.variant 
-                                ? `${item.product.name} (${item.variant.name})` 
-                                : (item.product.weight ? `${item.product.name} (${item.product.weight} ${item.product.weightUnit || ''})` : item.product.name),
-                            price: item.variant ? (Number(item.variant.price) || 0) : (Number(item.product.basePrice) || 0),
-                            image: item.product.images[0],
-                            quantity: Number(item.quantity) || 0,
+                                ? `${item.product.name} (${item.variant.weight} ${item.variant.weightUnit})`
+                                : item.product.name,
+                            price: Number(item.variant?.price || item.product.basePrice),
+                            image: item.product.images?.[0] || "",
+                            quantity: item.quantity,
                             metadata: item.metadata
                         }));
                         set({
                             items: mergedItems,
-                            totalItems: mergedItems.reduce((acc: any, i: any) => acc + (Number(i.quantity) || 0), 0),
-                            totalPrice: mergedItems.reduce((acc: any, i: any) => acc + (Number(i.price) || 0) * (Number(i.quantity) || 0), 0)
+                            totalItems: mergedItems.reduce((acc: number, i: any) => acc + (Number(i.quantity) || 0), 0),
+                            totalPrice: mergedItems.reduce((acc: number, i: any) => acc + (Number(i.price) || 0) * (Number(i.quantity) || 0), 0)
                         });
                     }
-                } catch (error) {
-                    console.error("Sync failed", error);
+                } catch (error: any) {
+                    if (error?.response?.status !== 401) {
+                        console.error("Failed to sync cart with backend", error);
+                    }
                 }
             }
         }),

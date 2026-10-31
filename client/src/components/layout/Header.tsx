@@ -1,134 +1,64 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Search, Bell, User } from "lucide-react";
-import { cn } from "@/lib/utils";
-import LocationSelector from "@/components/features/LocationSelector";
-import SearchBar from "@/components/features/SearchBar";
-import { useUserStore } from "@/store/useUserStore";
-import { usePathname } from "next/navigation";
+import { Bell, Leaf, Search, ShoppingCart, UserRound } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { getNotifications } from "@/services/notificationService";
+import LocationSelector from "@/components/features/LocationSelector";
 import NotificationDrawer from "@/components/ui/NotificationDrawer";
+import { useUserStore } from "@/store/useUserStore";
+import { useCartStore } from "@/store/useCartStore";
+import { getNotifications } from "@/services/notificationService";
 
 export default function Header() {
-    const [scrolled, setScrolled] = useState(false);
-    const [isSearchOpen, setIsSearchOpen] = useState(false);
     const [notificationsOpen, setNotificationsOpen] = useState(false);
-    const pathname = usePathname();
+    const [localUnread, setLocalUnread] = useState(0);
     const { user, _hasHydrated } = useUserStore();
-
+    const totalItems = useCartStore(state => state.totalItems);
+    const signedIn = _hasHydrated && !!user && user.name !== "Guest" && user.role !== "GUEST";
     const { data: notifications } = useQuery({
-        queryKey: ["notifications"],
-        queryFn: getNotifications,
-        enabled: _hasHydrated && !!user,
-        refetchInterval: 30000,
+        queryKey: ["notifications"], queryFn: getNotifications,
+        enabled: signedIn, refetchInterval: 30000,
     });
-
-    const unreadCount = notifications ? notifications.filter(n => !n.isRead).length : 0;
-
     useEffect(() => {
-        let scrollContainer: HTMLElement | null = null;
-        let handleScroll: (() => void) | null = null;
-
-        const timer = setTimeout(() => {
-            scrollContainer = document.getElementById("main-scroll-container");
-            if (!scrollContainer) return;
-
-            handleScroll = () => {
-                setScrolled(scrollContainer!.scrollTop > 40);
-            };
-
-            scrollContainer.addEventListener("scroll", handleScroll, { passive: true });
-            handleScroll();
-        }, 100);
-
-        return () => {
-            clearTimeout(timer);
-            if (scrollContainer && handleScroll) {
-                scrollContainer.removeEventListener("scroll", handleScroll);
-            }
-        };
-    }, [pathname]);
-
-    // Hide on specific pages where we have custom headers
-    if (
-        pathname.startsWith("/admin") ||
-        pathname === "/search" ||
-        pathname.startsWith("/products/") ||
-        pathname === "/privacy" ||
-        pathname === "/terms" ||
-        pathname === "/exchange-policy" ||
-        pathname === "/payment-flow" ||
-        pathname.startsWith("/pages/")
-    ) return null;
-
-    const isHome = pathname === "/";
-    const showSearchByDefault = isHome;
-
+        try {
+            const cached = JSON.parse(localStorage.getItem("bookmyveg_local_notifications") || "[]");
+            setLocalUnread(Array.isArray(cached) ? cached.filter((item: { isRead?: boolean }) => !item.isRead).length : 0);
+        } catch { setLocalUnread(0); }
+    }, [notificationsOpen]);
+    const unread = signedIn ? notifications?.filter(item => !item.isRead).length || 0 : localUnread;
     return (
-        <header
-            className={cn(
-                "fixed top-0 left-0 right-0 z-50 transition-all duration-300 px-6 flex flex-col justify-center",
-                (scrolled && isHome)
-                    ? "bg-white dark:bg-[#061512] border-b border-slate-200/50 dark:border-white/5 shadow-md pt-3 pb-3 gap-0"
-                    : isHome
-                        ? "bg-white dark:bg-[#061512] pt-6 pb-6 gap-3 border-b border-slate-150/50 dark:border-white/5 shadow-sm"
-                        : "bg-white dark:bg-[#061512] border-b border-slate-150/50 dark:border-white/5 shadow-sm pt-4 pb-4 gap-0"
-            )}
-        >
-            {/* Top Bar Wrapper */}
-            <div className={cn(
-                "flex justify-between items-center transition-all duration-300 ease-in-out overflow-hidden",
-                (scrolled && isHome) ? "h-0 opacity-0 pointer-events-none mb-0" : "h-14 opacity-100 mb-1"
-            )}>
-                <LocationSelector isCompact={false} />
-
-                <div className="flex items-center gap-2">
-                    <button
-                        className="w-10 h-10 rounded-full bg-[#f4fbf7] hover:bg-emerald-50 border border-emerald-500/10 text-[#0b5c3e] dark:bg-emerald-950/20 dark:border-emerald-500/15 dark:text-emerald-400 flex items-center justify-center transition-all shadow-sm active:scale-90"
-                        onClick={() => setIsSearchOpen(true)}
-                    >
-                        <Search className="h-4 w-4 stroke-[2.5]" />
-                    </button>
-
-                    <button
-                        onClick={() => setNotificationsOpen(true)}
-                        className="w-10 h-10 rounded-full bg-[#f4fbf7] hover:bg-emerald-50 border border-emerald-500/10 text-[#0b5c3e] dark:bg-emerald-950/20 dark:border-emerald-500/15 dark:text-emerald-400 flex items-center justify-center transition-all shadow-sm active:scale-90 relative cursor-pointer"
-                    >
-                        <Bell className="h-4 w-4 stroke-[2.5]" />
-                        {unreadCount > 0 && (
-                            <span className="absolute top-2.5 right-2.5 w-2.5 h-2.5 bg-emerald-600 border border-white dark:border-[#061512] rounded-full shadow-sm animate-pulse" />
-                        )}
-                    </button>
-
-                    <Link
-                        href={!_hasHydrated ? "/login" : (user && user.name !== "Guest" ? "/account" : "/login")}
-                        className="w-10 h-10 rounded-full bg-[#f4fbf7] hover:bg-emerald-50 border border-emerald-500/10 text-[#0b5c3e] dark:bg-emerald-950/20 dark:border-emerald-500/15 dark:text-emerald-400 flex items-center justify-center transition-all shadow-sm active:scale-90"
-                    >
-                        <User className="h-4 w-4 stroke-[2.5]" />
+        <header className="bmv-header fixed inset-x-0 top-0 z-50 border-b border-[#e5ebe7] bg-white">
+            <div className="mx-auto max-w-[1280px] px-4 py-3 sm:px-6">
+                <div className="flex items-center justify-between gap-3">
+                    <Link href="/" className="flex min-h-11 items-center gap-2 text-lg font-bold tracking-tight text-[#087f5b] sm:text-xl">
+                        <Leaf className="h-6 w-6" aria-hidden="true" /> Book My Veg
                     </Link>
-                </div>
-            </div>
-
-            {/* Search Bar - Full-width focused mode when scrolled or shown by default */}
-            {!["/cart", "/account", "/orders"].includes(pathname) && (
-                <div className={cn(
-                    "flex items-center transition-all duration-300 ease-in-out",
-                    ((scrolled && isHome) || showSearchByDefault)
-                        ? "opacity-100 scale-100 h-14"
-                        : "h-0 opacity-0 pointer-events-none scale-90 overflow-hidden"
-                )}>
-                    <div className="flex-1">
-                        <SearchBar focused={isSearchOpen} onFocusChange={setIsSearchOpen} />
+                    <div className="flex items-center gap-1 sm:gap-3">
+                        <button type="button" aria-label={`Notifications${unread ? `, ${unread} unread` : ""}`} onClick={() => setNotificationsOpen(true)} className="relative flex h-11 w-11 items-center justify-center rounded-full text-slate-600 hover:bg-slate-50">
+                            <Bell className="h-5 w-5" />
+                            {unread > 0 && <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#c92a2a] px-1 text-[10px] font-bold text-white">{unread > 9 ? "9+" : unread}</span>}
+                        </button>
+                        <Link href="/cart" aria-label={`Cart, ${totalItems} items`} className="relative flex h-11 w-11 items-center justify-center rounded-full text-slate-600 hover:bg-slate-50">
+                            <ShoppingCart className="h-5 w-5" />
+                            {totalItems > 0 && <span className="absolute right-0 top-0 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#087f5b] px-1 text-[10px] font-bold text-white">{totalItems}</span>}
+                        </Link>
+                        <Link href={signedIn ? "/account" : "/login"} aria-label={signedIn ? "My account" : "Log in"} className="flex h-11 w-11 items-center justify-center rounded-full bg-[#e8f7ef] font-semibold text-[#087f5b]">
+                            {signedIn ? user?.name?.charAt(0).toUpperCase() || <UserRound className="h-5 w-5" /> : <UserRound className="h-5 w-5" />}
+                        </Link>
                     </div>
                 </div>
-            )}
-
-            {notificationsOpen && (
-                <NotificationDrawer open={notificationsOpen} onClose={() => setNotificationsOpen(false)} />
-            )}
+                <div className="mt-1 flex min-w-0 items-center gap-6">
+                    <div className="min-w-0 flex-1"><LocationSelector isCompact variant="default" /></div>
+                    <nav aria-label="Main navigation" className="hidden items-center gap-6 text-sm font-medium text-slate-600 lg:flex">
+                        <Link href="/categories">Categories</Link><Link href="/orders">My orders</Link><Link href="/contact">Help & support</Link>
+                    </nav>
+                </div>
+                <Link href="/search" className="mt-3 flex h-11 items-center gap-3 rounded-xl border border-[#e5ebe7] bg-[#f5f7f6] px-3 text-sm text-[#64736b]">
+                    <Search className="h-4 w-4 shrink-0" aria-hidden="true" /><span className="truncate">Search vegetables, fruits and more</span>
+                </Link>
+            </div>
+            <NotificationDrawer open={notificationsOpen} onClose={() => setNotificationsOpen(false)} />
         </header>
     );
 }

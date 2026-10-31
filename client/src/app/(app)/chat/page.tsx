@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
     ChevronLeft, Send, ShieldCheck, Zap, Paperclip, X,
-    Package, Image as ImageIcon, Video, CheckCheck, Clock,
+    Package, Image as ImageIcon, Video, Clock,
     PhoneOff, AlertCircle, Camera
 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -330,9 +330,9 @@ export default function ChatPage() {
 
     // ────────────────────────────────────────────────────────────────────────
     return (
-        <div className="min-h-screen bg-background flex flex-col">
+        <div className="min-h-screen bg-[#f8faf8] flex flex-col">
             {/* Header */}
-            <header className="px-6 py-5 flex items-center gap-4 bg-background/95 backdrop-blur-3xl border-b border-border sticky top-0 z-50">
+            <header className="px-4 py-4 flex items-center gap-4 bg-white border-b border-border sticky top-0 z-50">
                 <button
                     onClick={() => router.back()}
                     className="w-11 h-11 flex items-center justify-center bg-card rounded-2xl border border-border shadow-sm active:scale-90 transition-all"
@@ -341,8 +341,8 @@ export default function ChatPage() {
                 </button>
 
                 <div className="flex-1">
-                    <h1 className="text-lg font-black text-foreground uppercase tracking-widest italic leading-none">
-                        Concierge
+                    <h1 className="text-lg font-semibold text-foreground  tracking-normal  leading-none">
+                        Customer support
                     </h1>
                     <div className="flex items-center gap-2 mt-1.5">
                         <span className={cn(
@@ -350,10 +350,10 @@ export default function ChatPage() {
                             sessionEnded ? "bg-red-500" : "bg-emerald-500 animate-pulse"
                         )} />
                         <p className={cn(
-                            "text-[9px] font-black uppercase tracking-[0.2em]",
+                            "text-xs font-semibold  tracking-normal",
                             sessionEnded ? "text-red-500" : "text-emerald-600"
                         )}>
-                            {sessionEnded ? "SESSION ENDED" : "EXECUTIVE ONLINE"}
+                            {sessionEnded ? "SESSION ENDED" : "Support conversation"}
                         </p>
                     </div>
                 </div>
@@ -374,28 +374,28 @@ export default function ChatPage() {
             </header>
 
             {/* Watermark */}
-            <div className="flex flex-col items-center justify-center pt-8 pb-2 opacity-20 text-center space-y-2">
+            <div className="flex flex-col items-center justify-center pt-6 pb-2 text-[#64736b] text-center space-y-2">
                 <div className="w-14 h-14 bg-card rounded-[1.75rem] border border-border flex items-center justify-center">
                     <ShieldCheck className="h-7 w-7 text-primary" />
                 </div>
-                <p className="text-[8px] font-black uppercase tracking-[0.3em] max-w-[180px]">
-                    End-to-End Secure · Media Stays on Device
+                <p className="text-xs font-semibold  tracking-normal max-w-[180px]">
+                    Questions about your order? Send us a message.
                 </p>
             </div>
 
             {/* Session ended state */}
             {sessionEnded && (
                 <div className="flex-1 flex flex-col items-center justify-center gap-4 text-center px-8">
-                    <div className="w-16 h-16 bg-red-50 rounded-3xl flex items-center justify-center">
+                    <div className="w-16 h-16 bg-red-50 rounded-2xl flex items-center justify-center">
                         <PhoneOff className="h-8 w-8 text-red-400" />
                     </div>
                     <div>
-                        <p className="font-black text-foreground uppercase tracking-widest text-sm">Chat Ended</p>
+                        <p className="font-semibold text-foreground  tracking-normal text-sm">Chat Ended</p>
                         <p className="text-xs text-foreground/40 mt-1 font-medium">All media has been cleared from your device.</p>
                     </div>
                     <button
                         onClick={() => { setSessionEnded(false); window.location.reload(); }}
-                        className="px-8 py-3 bg-primary text-primary-foreground rounded-2xl text-xs font-black uppercase tracking-widest"
+                        className="px-8 py-3 bg-primary text-primary-foreground rounded-2xl text-xs font-semibold  tracking-normal"
                     >
                         Start New Session
                     </button>
@@ -417,7 +417,7 @@ export default function ChatPage() {
                     {!loading && messages.length === 0 && (
                         <div className="flex flex-col items-center justify-center py-16 gap-3 opacity-40">
                             <Zap className="h-8 w-8 text-primary" />
-                            <p className="text-xs font-black uppercase tracking-widest text-center">
+                            <p className="text-xs font-semibold  tracking-normal text-center">
                                 Send a message to connect<br />with our executive
                             </p>
                         </div>
@@ -434,13 +434,13 @@ export default function ChatPage() {
                                 )}
                             >
                                 {/* Sender label */}
-                                <span className="text-[9px] font-black uppercase tracking-wider opacity-30 px-2">
+                                <span className="text-xs font-semibold  tracking-normal opacity-30 px-2">
                                     {msg.isAdmin ? "BookMyVeg Support" : (msg.senderName || "You")}
                                 </span>
 
                                 {/* Order badge */}
                                 {msg.orderId && (
-                                    <div className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/5 border border-primary/10 rounded-xl text-[9px] font-black uppercase tracking-widest text-primary/70">
+                                    <div className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/5 border border-primary/10 rounded-xl text-xs font-semibold  tracking-normal text-primary/70">
                                         <Package className="h-3 w-3" />
                                         Order #{msg.orderId.slice(-8).toUpperCase()}
                                     </div>
@@ -460,13 +460,13 @@ export default function ChatPage() {
 
                                 {/* Timestamp + status */}
                                 <div className="flex items-center gap-1 px-2">
-                                    <span className="text-[8px] font-bold text-foreground/20 uppercase tracking-widest">
+                                    <span className="text-xs font-bold text-[#64736b] tracking-normal">
                                         {new Date(msg.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                                     </span>
                                     {isMine && (
                                         msg.pending
                                             ? <Clock className="h-2.5 w-2.5 text-foreground/20" />
-                                            : <CheckCheck className="h-2.5 w-2.5 text-primary/40" />
+                                            : <span className="text-xs text-[#64736b]">Sent</span>
                                     )}
                                 </div>
                             </div>
@@ -494,7 +494,7 @@ export default function ChatPage() {
             {showOrderSelector && !sessionEnded && (
                 <div className="border-t border-border bg-background/98 backdrop-blur-xl px-5 py-4 space-y-3 max-h-60 overflow-y-auto">
                     <div className="flex items-center justify-between">
-                        <span className="text-[9px] font-black uppercase tracking-widest text-foreground/40">
+                        <span className="text-xs font-semibold  tracking-normal text-foreground/40">
                             Select Recent Order
                         </span>
                         <button onClick={() => setShowOrderSelector(false)}>
@@ -523,15 +523,15 @@ export default function ChatPage() {
                                 <Package className="h-4 w-4 text-primary" />
                             </div>
                             <div className="flex-1 min-w-0">
-                                <p className="text-xs font-black text-foreground truncate">
+                                <p className="text-xs font-semibold text-foreground truncate">
                                     #{order.id.slice(-8).toUpperCase()}
                                 </p>
-                                <p className="text-[9px] text-foreground/40 font-medium uppercase tracking-widest mt-0.5">
+                                <p className="text-xs text-foreground/40 font-medium  tracking-normal mt-0.5">
                                     {order.status} · ₹{order.totalAmount}
                                 </p>
                             </div>
                             <span className={cn(
-                                "text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded-lg",
+                                "text-xs font-semibold  tracking-normal px-2 py-1 rounded-lg",
                                 order.status === "DELIVERED" ? "bg-emerald-50 text-emerald-600" :
                                 order.status === "CANCELLED" ? "bg-red-50 text-red-500" :
                                 "bg-amber-50 text-amber-600"
@@ -566,8 +566,8 @@ export default function ChatPage() {
                         </button>
                     </div>
                     <div>
-                        <p className="text-xs font-black text-foreground">{attachment.type} attached</p>
-                        <p className="text-[9px] text-foreground/40 mt-0.5">Stored on your device only</p>
+                        <p className="text-xs font-semibold text-foreground">{attachment.type} attached</p>
+                        <p className="text-xs text-foreground/40 mt-0.5">Stored on your device only</p>
                     </div>
                 </div>
             )}
@@ -576,7 +576,7 @@ export default function ChatPage() {
             {selectedOrder && !sessionEnded && (
                 <div className="px-5 py-2 border-t border-border bg-primary/3 flex items-center gap-2">
                     <Package className="h-3.5 w-3.5 text-primary flex-shrink-0" />
-                    <span className="text-[9px] font-black text-primary/70 uppercase tracking-widest flex-1">
+                    <span className="text-xs font-semibold text-primary/70  tracking-normal flex-1">
                         Order #{selectedOrder.id.slice(-8).toUpperCase()} selected
                     </span>
                     <button onClick={() => setSelectedOrder(null)}>
@@ -603,7 +603,7 @@ export default function ChatPage() {
                             <button
                                 onClick={() => fileRef.current?.click()}
                                 className={cn(
-                                    "w-10 h-10 rounded-2xl border flex items-center justify-center transition-all active:scale-90",
+                                    "w-11 h-11 rounded-2xl border flex items-center justify-center transition-all active:scale-90",
                                     attachment
                                         ? "bg-primary/10 border-primary/20 text-primary"
                                         : "bg-card border-border text-foreground/40 hover:text-primary hover:border-primary/20"
@@ -615,7 +615,7 @@ export default function ChatPage() {
                             <button
                                 onClick={() => setShowOrderSelector(v => !v)}
                                 className={cn(
-                                    "w-10 h-10 rounded-2xl border flex items-center justify-center transition-all active:scale-90",
+                                    "w-11 h-11 rounded-2xl border flex items-center justify-center transition-all active:scale-90",
                                     showOrderSelector || selectedOrder
                                         ? "bg-primary/10 border-primary/20 text-primary"
                                         : "bg-card border-border text-foreground/40 hover:text-primary hover:border-primary/20"
@@ -630,6 +630,7 @@ export default function ChatPage() {
                         <div className="flex-1 relative">
                             <textarea
                                 rows={1}
+                                aria-label="Your message"
                                 value={input}
                                 onChange={(e) => { setInput(e.target.value); handleTyping(); }}
                                 onKeyDown={(e) => {
@@ -639,13 +640,14 @@ export default function ChatPage() {
                                     }
                                 }}
                                 placeholder="Type a message..."
-                                className="w-full bg-card border border-border rounded-3xl px-6 py-3.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all placeholder:text-foreground/25 resize-none leading-relaxed pr-14"
+                                className="w-full bg-card border border-border rounded-2xl px-6 py-3.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all placeholder:text-foreground/25 resize-none leading-relaxed pr-14"
                                 style={{ minHeight: "52px", maxHeight: "120px" }}
                             />
                             <button
                                 onClick={handleSend}
+                                aria-label="Send message"
                                 disabled={!input.trim() && !attachment}
-                                className="absolute right-3 bottom-3 w-9 h-9 bg-primary rounded-2xl flex items-center justify-center text-primary-foreground shadow-md shadow-primary/20 hover:scale-110 active:scale-95 transition-all disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:scale-100"
+                                className="absolute right-2 bottom-2 w-11 h-11 bg-primary rounded-2xl flex items-center justify-center text-primary-foreground shadow-md shadow-primary/20 hover:scale-110 active:scale-95 transition-all disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:scale-100"
                             >
                                 <Send className="h-4 w-4" />
                             </button>
@@ -655,15 +657,15 @@ export default function ChatPage() {
                     <div className="flex items-center justify-center gap-6 mt-3 opacity-20">
                         <div className="flex items-center gap-1.5">
                             <ImageIcon className="h-3 w-3" />
-                            <span className="text-[8px] font-black uppercase tracking-widest">Photo</span>
+                            <span className="text-xs font-semibold  tracking-normal">Photo</span>
                         </div>
                         <div className="flex items-center gap-1.5">
                             <Video className="h-3 w-3" />
-                            <span className="text-[8px] font-black uppercase tracking-widest">Video</span>
+                            <span className="text-xs font-semibold  tracking-normal">Video</span>
                         </div>
                         <div className="flex items-center gap-1.5">
                             <Package className="h-3 w-3" />
-                            <span className="text-[8px] font-black uppercase tracking-widest">Order</span>
+                            <span className="text-xs font-semibold  tracking-normal">Order</span>
                         </div>
                     </div>
                 </div>

@@ -13,6 +13,16 @@ type PageState = "verifying" | "success" | "failed" | "pending";
 
 const SUCCESS_STATUSES = new Set(["CHARGED", "SUCCESS", "PAYMENT_SUCCESS", "AUTHORIZED", "CAPTURE_INITIATED"]);
 
+    const PageWrapper = ({ children }: { children: React.ReactNode }) => (
+        <div className="flex flex-col items-center justify-center min-h-screen p-8 bg-background text-center animate-in fade-in duration-1000">
+            <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none opacity-20">
+                <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-primary/10 rounded-full blur-[120px]" />
+                <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-primary/5 rounded-full blur-[120px]" />
+            </div>
+            {children}
+        </div>
+    );
+
 function PaymentSuccessContent() {
     const searchParams = useSearchParams();
     const router = useRouter();
@@ -115,15 +125,6 @@ function PaymentSuccessContent() {
         };
     }, [idForVerification, searchParams, clearCart, pageState]);
 
-    const PageWrapper = ({ children }: { children: React.ReactNode }) => (
-        <div className="flex flex-col items-center justify-center min-h-screen p-8 bg-background text-center animate-in fade-in duration-1000">
-            <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none opacity-20">
-                <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-primary/10 rounded-full blur-[120px]" />
-                <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-primary/5 rounded-full blur-[120px]" />
-            </div>
-            {children}
-        </div>
-    );
 
     if (pageState === "verifying") {
         return (
@@ -136,12 +137,12 @@ function PaymentSuccessContent() {
                              <Loader2 className="h-20 w-20 text-primary animate-spin" strokeWidth={2.5} />
                         </div>
                     </div>
-                    <h1 className="text-3xl font-black text-foreground mb-4 tracking-[0.2em] uppercase italic leading-none">Securing Confirmation</h1>
+                    <h1 className="text-3xl font-black text-foreground mb-4 tracking-[0.2em] uppercase italic leading-none">Verifying your payment</h1>
                     <div className="flex items-center gap-3 py-2 px-6 bg-primary/5 border border-primary/20 rounded-2xl mb-6">
                         <ShieldCheck className="w-4 h-4 text-primary" />
-                        <span className="text-[10px] font-black text-primary uppercase tracking-widest">Encrypted Bank Verification</span>
+                        <span className="text-[10px] font-black text-primary uppercase tracking-widest">Checking payment status</span>
                     </div>
-                    <p className="text-foreground/20 text-sm max-w-sm leading-relaxed font-bold uppercase tracking-widest italic">
+                    <p className="text-[#64736b] text-sm max-w-sm leading-relaxed font-bold uppercase tracking-widest italic">
                         Processing your transaction through our premium secure tunnel. Please hold tight.
                     </p>
                 </div>
@@ -152,17 +153,17 @@ function PaymentSuccessContent() {
     if (pageState === "success") {
         return (
             <PageWrapper>
-                <div className="bg-card backdrop-blur-3xl rounded-[3.5rem] shadow-[0_40px_100px_-15px_rgba(0,0,0,0.05)] p-12 flex flex-col items-center max-w-md w-full border border-border animate-in zoom-in-95 duration-1000 relative overflow-hidden">
+                <div className="bg-card backdrop-blur-3xl rounded-2xl shadow-[0_40px_100px_-15px_rgba(0,0,0,0.05)] p-6 sm:p-8 flex flex-col items-center max-w-md w-full border border-border animate-in zoom-in-95 duration-1000 relative overflow-hidden">
                     <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-primary/60 via-primary to-primary/80 shadow-[0_0_20px_rgba(16,185,129,0.2)]"></div>
                     
                     <div className="relative mb-12">
                          <div className="absolute inset-0 bg-primary/20 rounded-full blur-3xl scale-110" />
-                         <div className="bg-primary rounded-[2.5rem] p-8 shadow-[0_20px_50px_rgba(16,185,129,0.2)] border border-primary/30 relative">
+                         <div className="bg-primary rounded-xl p-8 shadow-[0_20px_50px_rgba(16,185,129,0.2)] border border-primary/30 relative">
                             <CheckCircle className="h-20 w-20 text-primary-foreground fill-white/10" strokeWidth={3} />
                          </div>
                     </div>
 
-                    <h1 className="text-4xl font-black text-foreground mb-4 tracking-tight uppercase italic leading-none">Order Placed!</h1>
+                    <h1 className="text-3xl font-black text-foreground mb-4 tracking-tight uppercase italic leading-none">Order Placed!</h1>
                     
                     <div className="flex flex-col items-center gap-2 mb-8">
                         <div className="flex items-center gap-2 bg-primary/10 px-4 py-2 rounded-full border border-primary/20">
@@ -171,24 +172,24 @@ function PaymentSuccessContent() {
                         </div>
                         {orderDetails?.totalAmount && (
                             <div className="flex items-center gap-2">
-                                <span className="text-[10px] font-black text-foreground/40 uppercase tracking-widest">Amount Paid</span>
+                                <span className="text-[10px] font-black text-[#64736b] uppercase tracking-widest">Amount Paid</span>
                                 <span className="text-xl font-black text-foreground italic">₹{Number(orderDetails.totalAmount).toFixed(2)}</span>
                             </div>
                         )}
                     </div>
 
-                    <p className="text-foreground/40 mb-14 text-[13px] font-bold leading-relaxed px-6 uppercase tracking-wider italic">
-                        Your payment was successful. We've started preparing your premium produce! 🚀
+                    <p className="text-[#64736b] mb-14 text-[13px] font-bold leading-relaxed px-6 uppercase tracking-wider italic">
+                        Payment confirmation received. View your order for its latest status.
                     </p>
 
                     <div className="flex flex-col gap-5 w-full">
                         <Button 
-                            className="w-full bg-primary hover:bg-primary/90 text-primary-foreground rounded-[2.5rem] h-24 text-xl font-black shadow-2xl shadow-primary/20 transition-all active:scale-95 flex items-center justify-between px-10 group relative overflow-hidden"
+                            className="w-full bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl h-14 text-base font-black shadow-2xl shadow-primary/20 transition-all active:scale-95 flex items-center justify-between px-10 group relative overflow-hidden"
                             onClick={() => router.push("/orders")}
                         >
                             <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent group-hover:translate-x-full transition-transform duration-1000 -translate-x-full" />
                             <div className="flex flex-col items-start leading-none relative z-10">
-                                <span className="uppercase tracking-widest italic">Track Package</span>
+                                <span className="uppercase tracking-widest italic">View order</span>
                                 <span className="text-[9px] font-bold opacity-60 tracking-[0.2em] mt-1.5 leading-none">VIEW LIVE UPDATES</span>
                             </div>
                             <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center group-hover:translate-x-2 transition-all relative z-10">
@@ -212,23 +213,23 @@ function PaymentSuccessContent() {
     if (pageState === "failed") {
         return (
             <PageWrapper>
-                <div className="bg-white/5 backdrop-blur-3xl rounded-[3.5rem] shadow-2xl p-12 flex flex-col items-center max-w-md w-full border border-red-500/10 animate-in zoom-in-95 duration-700 relative overflow-hidden">
+                <div className="bg-white/5 backdrop-blur-3xl rounded-2xl shadow-2xl p-6 sm:p-8 flex flex-col items-center max-w-md w-full border border-red-500/10 animate-in zoom-in-95 duration-700 relative overflow-hidden">
                     <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-red-600 via-orange-500 to-red-600"></div>
                     
                     <div className="relative mb-12">
                          <div className="absolute inset-0 bg-red-500/10 rounded-full blur-3xl scale-110" />
-                         <div className="bg-red-500/10 rounded-[2.5rem] p-8 border border-red-500/20">
+                         <div className="bg-red-500/10 rounded-xl p-8 border border-red-500/20">
                             <XCircle className="h-20 w-20 text-red-500" strokeWidth={2.5} />
                          </div>
                     </div>
 
-                    <h1 className="text-4xl font-black text-white mb-4 tracking-tight uppercase italic ml-2">Payment Failed</h1>
+                    <h1 className="text-3xl font-black text-white mb-4 tracking-tight uppercase italic ml-2">Payment Failed</h1>
                     <p className="text-white/30 mb-14 text-sm font-bold leading-relaxed px-6 uppercase tracking-widest italic leading-snug">
                         The transaction was declined by the bank. Our secure tunnel remains open for retry.
                     </p>
 
                     <div className="flex flex-col gap-4 w-full px-2">
-                        <Button className="w-full bg-red-600 hover:bg-red-500 text-white rounded-[2.5rem] h-20 text-lg font-black shadow-2xl shadow-red-500/20 transition-all active:scale-95 uppercase tracking-widest italic"
+                        <Button className="w-full bg-red-600 hover:bg-red-500 text-white rounded-xl h-20 text-lg font-black shadow-2xl shadow-red-500/20 transition-all active:scale-95 uppercase tracking-widest italic"
                             onClick={() => router.push("/checkout")}>
                             RETRY PAYMENT
                         </Button>

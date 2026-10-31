@@ -204,3 +204,41 @@
 .animate-page-transition {
   animation: pageTransition 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
+/* Customer storefront: scoped to the customer route shell. */
+.customer-ui {
+  --background: #f8faf8;
+  --foreground: #17251e;
+  --primary: #087f5b;
+  --primary-foreground: #fff;
+  --secondary: #e8f7ef;
+  --secondary-foreground: #056647;
+  --muted-foreground: #64736b;
+  --border: #e5ebe7;
+  --ring: #087f5b;
+  color: #17251e;
+  background: #f8faf8;
+  font-family: var(--font-inter), sans-serif;
+}
+.customer-ui h1, .customer-ui h2, .customer-ui h3, .customer-ui h4 {
+  font-family: var(--font-inter), sans-serif;
+}
+.customer-ui .font-black { font-weight: 700; }
+.customer-ui .uppercase { text-transform: none; }
+.customer-ui .italic { font-style: normal; }
+.customer-ui .tracking-widest, .customer-ui .tracking-wider { letter-spacing: .01em; }
+.customer-ui button, .customer-ui a { -webkit-tap-highlight-color: transparent; }
+.customer-ui :focus-visible { outline: 2px solid #087f5b; outline-offset: 3px; }
+@media (prefers-reduced-motion: reduce) {
+  .customer-ui *, .customer-ui *::before, .customer-ui *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+.bmv-product-card { container-type: inline-size; }
+@container (max-width: 110px) {
+  .bmv-quantity { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
+  .bmv-quantity-value { grid-column: 1 / -1; grid-row: 1; padding-top: 5px; }
+  .bmv-quantity button { width: 100%; }
+}

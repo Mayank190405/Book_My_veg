@@ -72,7 +72,7 @@ export default function AttendancePage() {
             setLocations(res.data || []);
             if (isStoreAdmin && user?.locationId) {
                 setSelectedLocation(user.locationId);
-                setOnboardForm(prev => ({ ...prev, locationId: user.locationId }));
+                setOnboardForm(prev => ({ ...prev, locationId: user.locationId || "" }));
             } else if (res.data?.length > 0 && selectedLocation === "ALL") {
                 setSelectedLocation(res.data[0].id);
                 setOnboardForm(prev => ({ ...prev, locationId: res.data[0].id }));

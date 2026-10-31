@@ -6,14 +6,14 @@ import { useQuery } from "@tanstack/react-query";
 import { getProducts } from "@/services/productService";
 import { getCategories } from "@/services/categoryService";
 import ProductCard from "@/components/ui/ProductCard";
-import { Search, SlidersHorizontal, ArrowLeft, History, X, Sparkles, HelpCircle, ArrowUpDown, Flame, Droplet, Milk, ShoppingBag, Leaf, Mic } from "lucide-react";
+import { Search, SlidersHorizontal, ArrowLeft, History, X, Sparkles, HelpCircle, Flame, Droplet, Milk, ShoppingBag, Leaf } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUserStore } from "@/store/useUserStore";
 import { Suspense } from "react";
 
 const getCategoryIcon = (name: string, active: boolean) => {
     const n = name.toLowerCase();
-    const iconClass = cn("h-4 w-4 shrink-0 transition-colors", active ? "text-white" : "text-slate-400");
+    const iconClass = cn("h-4 w-4 shrink-0 transition-colors", active ? "text-[#056647]" : "text-slate-400");
     if (n.includes("oil") || n.includes("ghee")) return <Droplet className={iconClass} />;
     if (n.includes("dairy") || n.includes("milk")) return <Milk className={iconClass} />;
     if (n.includes("exo")) return <ShoppingBag className={iconClass} />;
@@ -21,7 +21,7 @@ const getCategoryIcon = (name: string, active: boolean) => {
     return <Sparkles className={iconClass} />;
 };
 
-const SUGGESTED_TAGS = ["Carrot 🥕", "Potato 🥔", "Tomato 🍅", "Onion 🧅", "Dairy 🥛", "Mango 🍎"];
+const SUGGESTED_TAGS = ["Carrot", "Potato", "Tomato", "Onion", "Dairy", "Mango"];
 
 function SearchContent() {
     const router = useRouter();
@@ -80,7 +80,7 @@ function SearchContent() {
         handleSearch(cleanTag);
     };
 
-    const { data: allProducts } = useQuery({
+    const { data: allProducts, isLoading: isLoadingProducts, isError: isProductsError, refetch: refetchProducts } = useQuery({
         queryKey: ["all-products"],
         queryFn: () => getProducts(undefined, 250),
         staleTime: 5 * 60 * 1000,
@@ -196,24 +196,24 @@ function SearchContent() {
     }
 
     return (
-        <div className="pb-36 bg-[#fafcfb] min-h-screen text-foreground transition-colors duration-300">
+        <div className="pb-28 bg-[#f8faf8] min-h-screen text-[#17251e]">
             
             {/* Header: Matching Mockup Image 2 */}
-            <div className="bg-[#fafcfb] px-6 pt-12 pb-4 space-y-6">
+            <div className="border-b border-[#e5ebe7] bg-white px-4 pt-5 pb-3 space-y-4 sm:px-6">
                 
                 {/* Search Input and Circular Back Button */}
-                <div className="max-w-2xl mx-auto flex items-center gap-4">
+                <div className="max-w-7xl mx-auto flex items-center gap-3">
                     <button
-                        onClick={() => router.back()}
-                        className="w-12 h-12 rounded-full bg-white border border-slate-100 flex items-center justify-center text-slate-500 hover:text-emerald-600 transition-all active:scale-90 shadow-sm shrink-0"
+                        aria-label="Go back" onClick={() => router.back()}
+                        className="w-11 h-11 rounded-xl bg-white flex items-center justify-center text-[#17251e] hover:bg-[#e8f7ef] shrink-0"
                     >
                         <ArrowLeft className="h-5 w-5" />
                     </button>
                     
                     <div className={cn(
-                        "flex-1 relative flex items-center bg-white rounded-full border px-5 h-14 transition-all duration-300 shadow-sm",
+                        "min-w-0 flex-1 relative flex items-center bg-[#f8faf8] rounded-xl border px-3 h-12 transition-colors",
                         isFocused 
-                            ? "border-emerald-500/40 shadow-md scale-[1.01]" 
+                            ? "border-[#087f5b] ring-1 ring-[#087f5b]" 
                             : "border-slate-200/80"
                     )}>
                         <Search className="h-5 w-5 mr-3 text-slate-400 shrink-0" />
@@ -223,33 +223,29 @@ function SearchContent() {
                             onKeyDown={handleKeyDown}
                             onFocus={() => setIsFocused(true)}
                             onBlur={() => setTimeout(() => setIsFocused(false), 200)}
-                            placeholder="Search fresh veggies..."
-                            className="bg-transparent border-none w-full text-slate-700 text-sm focus:outline-none flex-1 placeholder:text-slate-400 placeholder:normal-case"
+                            placeholder="Search vegetables, fruits and more"
+                            aria-label="Search products" className="bg-transparent border-none min-w-0 w-full text-slate-700 text-sm focus:outline-none flex-1 placeholder:text-slate-400 placeholder:normal-case"
                         />
                         {inputValue ? (
                             <button 
                                 onClick={() => setInputValue("")} 
-                                className="ml-2 hover:text-slate-700 text-slate-450 transition-colors shrink-0"
+                                aria-label="Clear search" className="ml-1 flex h-11 w-11 items-center justify-center text-[#64736b] shrink-0"
                             >
                                 <X className="h-4 w-4" />
                             </button>
-                        ) : (
-                            <button className="ml-2 text-slate-400 hover:text-emerald-650 transition-colors shrink-0">
-                                <Mic className="h-4.5 w-4.5" />
-                            </button>
-                        )}
+                        ) : null}
                     </div>
                 </div>
 
                 {/* Horizontal Category Chips with Green Line matching Mockup */}
-                <div className="flex overflow-x-auto gap-4 scrollbar-hide py-2 max-w-2xl mx-auto px-1">
+                <div className="flex overflow-x-auto gap-2 scrollbar-hide py-1 max-w-7xl mx-auto">
                     <div className="flex flex-col items-center shrink-0">
                         <button
                             onClick={() => setActiveCategoryId(null)}
                             className={cn(
-                                "flex items-center gap-2 text-xs font-bold uppercase tracking-wider px-5 py-3 rounded-full border transition-all duration-300 active:scale-95 shadow-sm",
+                                "flex min-h-11 items-center gap-2 text-xs font-medium px-4 py-2 rounded-full border transition-colors",
                                 !activeCategoryId
-                                    ? "bg-[#0B7A53] text-white border-[#0B7A53] shadow-md shadow-emerald-950/10 scale-102"
+                                    ? "bg-[#e8f7ef] text-[#056647] border-[#087f5b]"
                                     : "bg-white text-slate-500 border-slate-200/80 hover:bg-slate-50"
                             )}
                         >
@@ -266,9 +262,9 @@ function SearchContent() {
                                 <button
                                     onClick={() => setActiveCategoryId(active ? null : cat.id)}
                                     className={cn(
-                                        "flex items-center gap-2 text-xs font-bold uppercase tracking-wider px-5 py-3 rounded-full border transition-all duration-300 active:scale-95 shadow-sm",
+                                        "flex min-h-11 items-center gap-2 text-xs font-medium px-4 py-2 rounded-full border transition-colors",
                                         active
-                                            ? "bg-[#0B7A53] text-white border-[#0B7A53] shadow-md shadow-emerald-950/10 scale-102"
+                                            ? "bg-[#e8f7ef] text-[#056647] border-[#087f5b]"
                                             : "bg-white text-slate-500 border-slate-200/80 hover:bg-slate-50"
                                     )}
                                 >
@@ -285,19 +281,21 @@ function SearchContent() {
             </div>
 
             {/* Main Content Area */}
-            <div className="px-6 py-8 max-w-2xl mx-auto">
+            <div className="px-4 py-6 max-w-7xl mx-auto sm:px-6">
                 
+                {isProductsError && <div role="alert" className="mb-5 rounded-2xl border border-[#e5ebe7] bg-white p-5"><h2 className="text-base font-semibold">We couldn’t load the products</h2><button onClick={() => refetchProducts()} className="mt-3 min-h-11 rounded-lg bg-[#087f5b] px-4 text-sm font-semibold text-white">Try again</button></div>}
+                {isLoadingProducts && <div role="status" className="mb-5 rounded-2xl bg-white p-5 text-sm text-[#64736b]">Loading products…</div>}
                 {/* 1. Default Landing State (No search term) */}
                 {!hasQuery && (
-                    <div className="space-y-10 animate-in fade-in duration-500">
+                    <div className="space-y-7">
                         
                         {/* Recent Searches Block */}
                         {recent.length > 0 && (
                             <div className="space-y-4">
                                 <div className="flex items-center justify-between px-1">
-                                    <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] flex items-center gap-2">
+                                    <h3 className="text-base font-semibold text-[#17251e] flex items-center gap-2">
                                         <History className="h-4 w-4 text-slate-350" /> 
-                                        Recently Searched
+                                        Recent searches
                                     </h3>
                                     <button 
                                         onClick={clear} 
@@ -320,7 +318,7 @@ function SearchContent() {
                                                 {term}
                                             </button>
                                             <button
-                                                onClick={() => removeRecentSearch(term)}
+                                                aria-label={`Remove ${term} from recent searches`} onClick={() => removeRecentSearch(term)}
                                                 className="absolute right-2 text-slate-350 hover:text-red-500 p-0.5 rounded-md hover:bg-red-500/5 transition-colors"
                                             >
                                                 <X className="h-3 w-3" />
@@ -333,9 +331,9 @@ function SearchContent() {
 
                         {/* Popular Keywords / Suggested Tags */}
                         <div className="space-y-4">
-                            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] flex items-center gap-2 px-1">
+                            <h3 className="text-base font-semibold text-[#17251e] flex items-center gap-2 px-1">
                                 <Flame className="h-4 w-4 text-amber-500" />
-                                Trending Veggies
+                                Try searching for
                             </h3>
                             <div className="flex flex-wrap gap-2.5">
                                 {SUGGESTED_TAGS.map((tag) => (
@@ -354,8 +352,8 @@ function SearchContent() {
                         <div className="space-y-6 pt-2">
                             <div className="flex items-center justify-between px-1">
                                 <div className="flex items-center gap-3 flex-1">
-                                    <h3 className="text-[11px] font-black text-[#0B7A53] uppercase tracking-[0.2em] whitespace-nowrap">
-                                        Recommended For You
+                                    <h3 className="text-lg font-bold text-[#17251e]">
+                                        Explore products
                                     </h3>
                                     <div className="h-px bg-slate-100 flex-1" />
                                 </div>
@@ -367,7 +365,7 @@ function SearchContent() {
                                 </button>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-4">
+                            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6">
                                 {(allProducts?.data ?? []).slice(0, 4).map((p: any, idx: number) => (
                                     <div 
                                         key={p.id} 
@@ -397,12 +395,12 @@ function SearchContent() {
                     <div className="animate-in fade-in slide-in-from-bottom-6 duration-500">
                         
                         {/* Filter & Counter Row */}
-                        <div className="flex items-center justify-between mb-8 px-1">
+                        <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
                             <div>
-                                <h2 className="text-lg font-black text-slate-800 tracking-tight uppercase leading-none flex items-center gap-2">
+                                <h2 className="text-lg font-bold text-[#17251e] leading-tight flex items-center gap-2">
                                     <span>{results.length} Matches Found</span>
                                 </h2>
-                                <p className="text-[9px] font-black text-emerald-600 uppercase tracking-[0.2em] mt-2">
+                                <p className="text-xs font-medium text-[#64736b] mt-2">
                                     Searching for &ldquo;{debouncedSearchQuery || query}&rdquo;
                                 </p>
                             </div>
@@ -413,7 +411,7 @@ function SearchContent() {
                                 <select
                                     value={sort}
                                     onChange={(e) => setSort(e.target.value as typeof sort)}
-                                    className="pl-11 pr-10 h-12 bg-white border border-slate-200 rounded-2xl text-[9px] font-black uppercase tracking-widest appearance-none focus:outline-none cursor-pointer text-slate-655 hover:bg-[#f4f7f5] hover:border-emerald-500/20 transition-all shadow-sm focus:ring-2 focus:ring-emerald-500/25"
+                                    aria-label="Sort search results" className="pl-11 pr-8 h-11 bg-white border border-slate-200 rounded-2xl text-xs font-medium appearance-none focus:outline-none cursor-pointer text-slate-655 hover:bg-[#f4f7f5] hover:border-emerald-500/20 transition-all shadow-sm focus:ring-2 focus:ring-emerald-500/25"
                                 >
                                     <option value="default">Sort: Featured</option>
                                     <option value="price_asc">Price: Low to High</option>
@@ -423,14 +421,14 @@ function SearchContent() {
                         </div>
 
                         {/* Results Grid / Empty state */}
-                        {results.length === 0 ? (
+                        {!isLoadingProducts && !isProductsError && results.length === 0 ? (
                             <div className="flex flex-col items-center justify-center py-20 gap-6 animate-in zoom-in-95 duration-500">
                                 <div className="w-24 h-24 bg-white rounded-[2rem] flex items-center justify-center border border-slate-100 shadow-sm">
                                     <HelpCircle className="h-10 w-10 text-emerald-550/20" />
                                 </div>
                                 <div className="text-center space-y-2">
-                                    <p className="text-xl font-black text-slate-800 uppercase tracking-tight">No Matches Found</p>
-                                    <p className="text-[10px] text-center px-8 font-bold text-slate-400 uppercase tracking-[0.2em] leading-relaxed">
+                                    <p className="text-xl font-semibold text-[#17251e]">No Matches Found</p>
+                                    <p className="text-sm text-center px-4 text-[#64736b] leading-relaxed">
                                         We couldn&apos;t find anything for &ldquo;{debouncedSearchQuery || query}&rdquo;. <br/>Try simple terms like &ldquo;Potato&rdquo;, &ldquo;Onion&rdquo;, or &ldquo;Fresh&rdquo;.
                                     </p>
                                 </div>
@@ -441,7 +439,7 @@ function SearchContent() {
                                         Suggested searches
                                     </p>
                                     <div className="flex flex-wrap justify-center gap-2">
-                                        {["Potato 🥔", "Onion 🧅", "Tomato 🍅", "Dairy 🥛"].map(tag => (
+                                        {["Potato", "Onion", "Tomato", "Dairy"].map(tag => (
                                             <button
                                                 key={tag}
                                                 onClick={() => handleSuggestedClick(tag)}
@@ -454,7 +452,7 @@ function SearchContent() {
                                 </div>
                             </div>
                         ) : (
-                            <div className="grid grid-cols-2 gap-4">
+                            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6">
                                 {results.map((p: any, idx: number) => (
                                     <div 
                                         key={p.id}

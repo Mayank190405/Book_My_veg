@@ -4,6 +4,7 @@ import { useState, useMemo, useRef, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { getProducts } from "@/services/productService";
 import ProductCard from "@/components/ui/ProductCard";
+import ProductListItem from "@/components/ui/ProductListItem";
 import SearchInput from "@/components/ui/SearchInput";
 import EmptyState from "@/components/ui/EmptyState";
 import FilterDrawer, {
@@ -263,42 +264,23 @@ export default function ProductsPage() {
                             ))}
                         </div>
                     ) : (
-                        <div className="space-y-4 animate-fade-in">
-                            {displayed.map((product: any) => {
-                                const hasVariants = product.variants && product.variants.length > 0;
-                                const firstVariant = hasVariants ? product.variants[0] : null;
-                                const displayPrice = firstVariant ? Number(firstVariant.price) : Number(product.basePrice);
-                                const displayWeight = firstVariant 
-                                    ? `${firstVariant.weight} ${firstVariant.weightUnit}`
-                                    : (product.weight ? `${product.weight} ${product.weightUnit || ''}` : (product.weightUnit || "Standard Unit"));
-
-                                return (
-                                    <Link
-                                        key={product.id}
-                                        href={`/products/${product.id}`}
-                                        className="group flex items-center gap-6 bg-white/40 backdrop-blur-md rounded-[2.5rem] p-4 border border-white shadow-sm hover:shadow-xl hover:bg-white/60 transition-all duration-500"
-                                    >
-                                        <div className="relative w-24 h-24 rounded-[2rem] overflow-hidden bg-white/80 border border-black/5 shrink-0 shadow-sm group-hover:scale-105 transition-transform duration-700 p-2">
-                                            {product.images?.[0] ? (
-                                                <Image src={product.images[0]} alt={product.name} fill className="object-contain" />
-                                            ) : (
-                                                <div className="w-full h-full flex items-center justify-center text-emerald-900/10"><Package className="h-10 w-10" /></div>
-                                            )}
-                                        </div>
-                                        <div className="flex-1 min-w-0 space-y-1">
-                                            <h3 className="font-black text-emerald-950 text-base uppercase tracking-tight line-clamp-1">{product.name}</h3>
-                                            <p className="text-[10px] text-emerald-800/40 font-black uppercase tracking-widest">{displayWeight}</p>
-                                            <div className="flex items-center gap-3 pt-1">
-                                                <p className="font-black text-emerald-900 text-xl tracking-tighter tabular-nums">₹{displayPrice.toFixed(0)}</p>
-                                                <span className="text-[8px] font-black text-emerald-600 bg-emerald-500/10 px-2 py-1 rounded-lg uppercase tracking-widest border border-emerald-500/10">Best Price</span>
-                                            </div>
-                                        </div>
-                                        <div className="p-3 rounded-2xl bg-white border border-black/5 shadow-sm text-emerald-900 group-hover:bg-emerald-600 group-hover:text-white transition-all mr-2">
-                                            <ChevronRight className="h-5 w-5" strokeWidth={3} />
-                                        </div>
-                                    </Link>
-                                );
-                            })}
+                        <div className="space-y-3 animate-fade-in">
+                            {displayed.map((product: any) => (
+                                <ProductListItem
+                                    key={product.id}
+                                    id={product.id}
+                                    name={product.name}
+                                    images={product.images}
+                                    basePrice={Number(product.basePrice)}
+                                    weight={Number(product.weight)}
+                                    weightUnit={product.weightUnit}
+                                    category={product.category}
+                                    inventory={product.inventory}
+                                    pricing={product.pricing}
+                                    variants={product.variants}
+                                    tags={product.tags}
+                                />
+                            ))}
                         </div>
                     )}
 

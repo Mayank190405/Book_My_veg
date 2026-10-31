@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback, useRef, useEffect } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { getCategoryById, getCategories } from "@/services/categoryService";
@@ -12,7 +12,7 @@ import FilterDrawer, {
     DEFAULT_FILTERS,
     getActiveFilterCount,
 } from "@/components/ui/FilterDrawer";
-import { ArrowLeft, SlidersHorizontal, LayoutGrid, List, ChevronRight, Sparkles } from "lucide-react";
+import { ArrowLeft, SlidersHorizontal, LayoutGrid, Search, ShoppingCart } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
@@ -67,68 +67,19 @@ function applyFilters(products: any[], filters: ActiveFilters): any[] {
 
 function CategorySidebar({ categories, activeId }: { categories: any[]; activeId: string }) {
     return (
-        <aside className="w-20 shrink-0 bg-[#fbfdfc] border-r border-slate-100 overflow-y-auto scrollbar-hide flex flex-col pt-3 pb-36 z-10 sticky top-0 self-start h-full">
-            <div className="flex flex-col gap-3 flex-1 pb-4">
-                {categories.map((cat, idx: number) => {
+        <aside aria-label="Product categories" className="w-[72px] shrink-0 border-r border-[#e5ebe7] bg-white sm:w-24 lg:w-48">
+            <nav className="sticky top-0 flex max-h-[75vh] flex-col overflow-y-auto pb-6">
+                {categories.map((cat) => {
                     const isActive = cat.id === activeId;
-                    return (
-                        <Link
-                            key={cat.id}
-                            href={`/category/${cat.id}`}
-                            className={cn(
-                                "flex flex-col items-center gap-1.5 py-2 px-1 transition-all text-center relative animate-in slide-in-from-left-4 duration-500",
-                                isActive ? "bg-emerald-500/5" : "hover:bg-slate-50/50"
-                            )}
-                            style={{ animationDelay: `${idx * 40}ms` }}
-                        >
-                            {/* Active indicator bar on the right of the sidebar item */}
-                            {isActive && (
-                                <div className="absolute right-0 top-1/2 -translate-y-1/2 w-1.5 h-10 bg-emerald-600 rounded-l-full shadow-[0_0_15px_rgba(16,185,129,0.4)]" />
-                            )}
-
-                            {/* Circle Container */}
-                            <div className={cn(
-                                "w-12 h-12 rounded-full flex items-center justify-center shrink-0 border overflow-hidden transition-all duration-500 relative p-0.5",
-                                isActive
-                                    ? "bg-white border-emerald-500 scale-105 shadow-md shadow-emerald-500/5"
-                                    : "bg-slate-50 border-slate-100 hover:border-slate-200"
-                            )}>
-                                {cat.imageUrl ? (
-                                    <Image
-                                        src={cat.imageUrl}
-                                        alt={cat.name}
-                                        fill
-                                        className="object-cover rounded-full"
-                                        sizes="48px"
-                                    />
-                                ) : (
-                                    <span className="text-xl">📦</span>
-                                )}
-                            </div>
-                            
-                            <span className={cn(
-                                "text-[7.5px] font-black leading-tight px-1 transition-colors uppercase tracking-[0.05em] mt-1 max-w-[70px] line-clamp-1",
-                                isActive ? "text-emerald-700 font-extrabold" : "text-[#1c2e24]/40"
-                            )}>
-                                {cat.name.split(" ")[0]}
-                            </span>
-                        </Link>
-                    );
+                    return <Link key={cat.id} href={`/category/${cat.id}`} aria-current={isActive ? "page" : undefined} className={cn("relative flex min-h-20 flex-col items-center gap-2 border-l-[3px] px-1.5 py-3 text-center lg:flex-row lg:gap-3 lg:px-3 lg:text-left", isActive ? "border-[#087f5b] bg-[#e8f7ef] text-[#056647]" : "border-transparent text-[#64736b] hover:bg-[#f8faf8]")}>
+                        <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-full bg-[#f4f8f3]">
+                            {cat.imageUrl ? <Image src={cat.imageUrl} alt="" fill className="object-contain p-1" sizes="44px" /> : <LayoutGrid aria-hidden="true" className="absolute inset-0 m-auto h-5 w-5" />}
+                        </div>
+                        <span className="break-words text-[11px] font-medium leading-snug sm:text-xs lg:text-sm">{cat.name}</span>
+                    </Link>;
                 })}
-            </div>
-            
-            {/* View All Categories Button at Bottom of Sidebar */}
-            <Link
-                href="/categories"
-                className="flex flex-col items-center gap-1.5 py-4 px-1 text-center hover:bg-slate-50 border-t border-slate-100 bg-[#fbfdfc] mt-auto select-none active:scale-95 transition-all"
-            >
-                <div className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center border border-slate-100/50 text-[#1c2e24]">
-                    <LayoutGrid className="w-5 h-5 stroke-[2.5]" />
-                </div>
-                <span className="text-[7.5px] font-black text-slate-400 uppercase tracking-widest leading-tight max-w-[65px] text-center">
-                    View All
-                </span>
-            </Link>
+                <Link href="/categories" className="flex min-h-16 items-center justify-center gap-2 px-2 py-3 text-center text-[11px] font-semibold text-[#087f5b] lg:text-sm"><LayoutGrid className="h-4 w-4 shrink-0" aria-hidden="true" /><span>View all</span></Link>
+            </nav>
         </aside>
     );
 }
@@ -138,13 +89,12 @@ export default function CategoryDetailPage() {
     const router = useRouter();
     const [filters, setFilters] = useState<ActiveFilters>(DEFAULT_FILTERS);
     const [drawerOpen, setDrawerOpen] = useState(false);
-    const [view, setView] = useState<"grid" | "list">("grid");
     const [page, setPage] = useState(1);
     const loadMoreRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => setPage(1), [filters]);
 
-    const { data: category, isLoading } = useQuery({
+    const { data: category, isLoading, isError, refetch } = useQuery({
         queryKey: ["category", id],
         queryFn: () => getCategoryById(id),
     });
@@ -171,141 +121,29 @@ export default function CategoryDetailPage() {
     const filterCount = getActiveFilterCount(filters);
 
     return (
-        <div className="flex flex-col h-screen bg-background overflow-hidden">
-            {/* Header Area */}
-            <div className="z-30 bg-white border-b border-slate-100 pt-4 pb-4 px-5 select-none">
-                <div className="max-w-2xl mx-auto space-y-4">
-                    <div className="flex items-center gap-3.5">
-                        <button
-                            onClick={() => router.push("/categories")}
-                            className="w-10 h-10 rounded-full bg-slate-50 border border-slate-100 flex items-center justify-center text-[#1c2e24] hover:scale-105 active:scale-95 transition-all shrink-0"
-                        >
-                            <ArrowLeft className="h-5 w-5 stroke-[2.5]" />
-                        </button>
-                        <div className="flex-1 min-w-0">
-                            <h1 className="text-2xl font-black text-[#1c2e24] uppercase tracking-wider italic leading-none">
-                                {category?.name}
-                            </h1>
-                            <p className="text-[10px] font-bold text-slate-400 mt-1.5 leading-tight tracking-tight line-clamp-1">
-                                {category?.icon || `Pure, natural & premium quality products for a healthy you.`}
-                            </p>
-                        </div>
-                        <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-100/80 px-3 py-1.5 rounded-full shrink-0">
-                            <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1">
-                                📦 {filtered.length} Items
-                            </span>
-                        </div>
-                    </div>
-
-                    {/* Filter Bar */}
-                    <div className="flex items-center justify-between gap-3 pt-1">
-                        <button
-                            onClick={() => setDrawerOpen(true)}
-                            className={cn(
-                                "flex items-center gap-2 px-5 py-2.5 rounded-full border text-[9px] font-black uppercase tracking-widest transition-all active:scale-[0.98]",
-                                filterCount > 0
-                                    ? "bg-[#0b5c3e] text-white border-[#0b5c3e] shadow-md shadow-emerald-950/15"
-                                    : "bg-slate-50 text-slate-600 border-slate-200/80 hover:border-slate-300"
-                            )}
-                        >
-                            <SlidersHorizontal className="h-3.5 w-3.5" />
-                            Filters {filterCount > 0 && `(${filterCount})`}
-                        </button>
-                    </div>
+        <div className="mx-auto flex min-h-screen w-full max-w-[1440px] flex-col bg-[#f8faf8]">
+            <header className="border-b border-[#e5ebe7] bg-white px-3 py-4 sm:px-6">
+                <div className="flex items-center gap-3">
+                    <button aria-label="Back to categories" onClick={() => router.push("/categories")} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl hover:bg-[#f4f8f3]"><ArrowLeft className="h-5 w-5" /></button>
+                    <div className="min-w-0 flex-1"><h1 className="text-lg font-bold leading-tight text-[#17251e] sm:text-2xl">{category?.name || "Browse products"}</h1><p className="mt-1 text-xs text-[#64736b]">{isLoading ? "Loading products…" : `${filtered.length} products in this collection`}</p></div>
+                    <Link href="/search" aria-label="Search products" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl hover:bg-[#f4f8f3]"><Search className="h-5 w-5" /></Link>
+                    <Link href="/cart" aria-label="View cart" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#e8f7ef] text-[#087f5b]"><ShoppingCart className="h-5 w-5" /></Link>
                 </div>
-            </div>
-
-            {/* Content Area */}
-            <div className="flex flex-1 overflow-hidden">
-                {!isLoading && allCategories.length > 0 && (
-                    <CategorySidebar categories={allCategories} activeId={id} />
-                )}
-
-                <div className="flex-1 overflow-y-auto bg-background scrollbar-hide">
-                    {/* Visual Cover Banner Card */}
-                    {!isLoading && category && (
-                        <div className="relative mx-5 mt-7 h-36 select-none">
-                            {/* Card Background (Rounded and Clipped) */}
-                            <div className="absolute inset-0 bg-gradient-to-r from-[#032e1e] to-[#0b5c3e] rounded-[2rem] border border-emerald-500/10 shadow-lg overflow-hidden">
-                                {/* Graphic elements */}
-                                <div className="absolute inset-0 bg-radial-gradient from-transparent to-black/35 pointer-events-none" />
-                                
-                                {/* Content */}
-                                <div className="absolute inset-0 flex flex-col justify-between p-5 z-10">
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-[8px] font-black text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full uppercase tracking-widest">
-                                            Premium Selection
-                                        </span>
-                                    </div>
-                                    <div className="max-w-[90%]">
-                                        <h2 className="text-xl font-black text-white uppercase tracking-wider italic flex items-center gap-1.5 leading-none">
-                                            {category.name} <Sparkles className="h-4 w-4 text-emerald-400 fill-emerald-400/20 animate-pulse" />
-                                        </h2>
-                                        <p className="text-[9px] font-bold text-white/50 uppercase tracking-widest mt-1.5 leading-snug">
-                                            {category.icon || "Handpicked fresh organic products for your kitchen."}
-                                        </p>
-                                    </div>
-                                    
-                                    {/* Bottom Highlights row */}
-                                    <div className="flex items-center gap-4 text-[7px] font-black text-white/70 uppercase tracking-wider mt-1 border-t border-white/5 pt-1.5">
-                                        <span className="flex items-center gap-1">🌿 100% Organic</span>
-                                        <span className="flex items-center gap-1">🛡️ Lab Tested</span>
-                                        <span className="flex items-center gap-1">💧 Rich In Nutrients</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-                    
-                    <div className="p-5 pb-40">
-                        {isLoading ? (
-                            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                                {[...Array(8)].map((_, i) => (
-                                    <Skeleton key={i} className="h-64 rounded-3xl bg-secondary" />
-                                ))}
-                            </div>
-                        ) : displayed.length === 0 ? (
-                            <EmptyState
-                                title="Collection Empty"
-                                description="Adjust filters to find more organic produce."
-                                actionLabel="Reset Filters"
-                                onAction={() => setFilters(DEFAULT_FILTERS)}
-                            />
-                        ) : (
-                            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                                {displayed.map((product: any) => (
-                                    <ProductCard
-                                        key={product.id}
-                                        id={product.id}
-                                        name={product.name}
-                                        images={product.images}
-                                        basePrice={Number(product.basePrice)}
-                                        weight={Number(product.weight)}
-                                        weightUnit={product.weightUnit}
-                                        inventory={product.inventory}
-                                        pricing={product.pricing}
-                                        variants={product.variants}
-                                        compact
-                                    />
-                                ))}
-                            </div>
-                        )}
-
-                        {hasMore && (
-                            <div ref={loadMoreRef} className="flex justify-center py-12">
-                                <div className="w-10 h-10 border-4 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin" />
-                            </div>
-                        )}
+            </header>
+            <div className="flex flex-1">
+                {allCategories.length > 0 && <CategorySidebar categories={allCategories} activeId={id} />}
+                <section aria-label="Products" className="min-w-0 flex-1">
+                    <div className="sticky top-0 z-20 flex items-center gap-2 overflow-x-auto border-b border-[#e5ebe7] bg-white px-3 py-2 sm:px-5">
+                        <button onClick={() => setDrawerOpen(true)} className={cn("flex min-h-11 shrink-0 items-center gap-2 rounded-full border px-4 text-xs font-semibold", filterCount > 0 ? "border-[#087f5b] bg-[#e8f7ef] text-[#056647]" : "border-[#e5ebe7] bg-[#f8faf8] text-[#17251e]")}><SlidersHorizontal className="h-4 w-4" />Filters {filterCount > 0 && `(${filterCount})`}</button>
+                        {filterCount > 0 && <button onClick={() => setFilters(DEFAULT_FILTERS)} className="min-h-11 px-3 text-xs font-semibold text-[#087f5b]">Clear filters</button>}
                     </div>
-                </div>
+                    <div className="px-2 py-3 pb-36 sm:p-5 sm:pb-36">
+                        {isLoading ? <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 sm:gap-3">{Array.from({ length: 10 }, (_, i) => <Skeleton key={i} className="h-56 rounded-2xl bg-[#e5ebe7]" />)}</div> : isError ? <div role="alert" className="rounded-2xl border border-[#e5ebe7] bg-white p-5 text-center"><h2 className="text-base font-semibold">We couldn’t load this collection</h2><button onClick={() => refetch()} className="mt-4 min-h-11 rounded-lg bg-[#087f5b] px-5 text-sm font-semibold text-white">Try again</button></div> : displayed.length === 0 ? <EmptyState title="No products found" description="Try adjusting your filters or browse another category." actionLabel="Reset filters" onAction={() => setFilters(DEFAULT_FILTERS)} /> : <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 sm:gap-3">{displayed.map((product: any) => <ProductCard key={product.id} id={product.id} name={product.name} images={product.images} basePrice={Number(product.basePrice)} weight={Number(product.weight)} weightUnit={product.weightUnit} inventory={product.inventory} pricing={product.pricing} variants={product.variants} compact />)}</div>}
+                        {hasMore && <div ref={loadMoreRef} role="status" aria-label="Loading more products" className="flex justify-center py-8"><div className="h-7 w-7 animate-spin rounded-full border-2 border-[#e5ebe7] border-t-[#087f5b]" /></div>}
+                    </div>
+                </section>
             </div>
-
-            <FilterDrawer
-                open={drawerOpen}
-                onClose={() => setDrawerOpen(false)}
-                filters={filters}
-                onApply={setFilters}
-            />
+            <FilterDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} filters={filters} onApply={setFilters} />
         </div>
     );
 }

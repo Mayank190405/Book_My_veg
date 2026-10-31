@@ -35,25 +35,25 @@ export default function TrendingSection() {
 
     return (
         <div className="space-y-4 select-none">
-            {/* Header section with Location Pin icon and SEE ALL button */}
-            <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                    <MapPin className="h-5 w-5 text-[#0b5c3e] dark:text-emerald-400 fill-emerald-600/20" />
-                    <h2 className="text-[17px] font-black text-[#1c2e24] dark:text-emerald-100 tracking-wider uppercase">TRENDING NEAR YOU</h2>
-                </div>
+            {/* Header section matching Gromuse: "You might need" & "See more ->" */}
+            <div className="flex items-center justify-between pt-1">
+                <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
+                    You might need
+                </h2>
                 <Link
                     href="/products"
-                    className="text-[10px] font-black text-[#0b5c3e] dark:text-emerald-400 uppercase tracking-widest border border-emerald-600/35 dark:border-emerald-500/30 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 px-4 py-2 rounded-full transition-all active:scale-95 shadow-sm"
+                    className="text-xs font-black text-[#0b5c3e] hover:text-emerald-700 dark:text-emerald-400 flex items-center gap-1 transition-colors group"
                 >
-                    SEE ALL
+                    <span>See more</span>
+                    <span className="transform group-hover:translate-x-0.5 transition-transform">→</span>
                 </Link>
             </div>
 
-            <div className="flex overflow-x-auto gap-4 pb-4 scrollbar-hide snap-x">
+            <div className="flex overflow-x-auto gap-3.5 pb-2 scrollbar-hide snap-x">
                 {products.slice(0, 25).map((product: any, idx: number) => (
                     <div
                         key={product.id}
-                        className="w-[140px] flex-none snap-start animate-fade-in"
+                        className="w-[150px] sm:w-[165px] flex-none snap-start animate-fade-in"
                         style={{ animationDelay: `${idx * 50}ms` }}
                     >
                         <ProductCard

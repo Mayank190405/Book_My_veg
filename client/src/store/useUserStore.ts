@@ -10,6 +10,7 @@ interface User {
     role: string;
     image?: string;
     locationId?: string;
+    location?: { id?: string; name?: string; address?: string };
 }
 
 interface UserState {
@@ -24,6 +25,7 @@ interface UserState {
         address: string;
         pincode: string;
         coords?: { lat: number; lng: number };
+        secondary?: string;
     } | null;
     activeStore: {
         id: string;

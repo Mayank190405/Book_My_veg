@@ -1,112 +1,35 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import { useQueryClient } from "@tanstack/react-query";
-import { cn } from "@/lib/utils";
-import BannerCarousel from "@/components/widgets/BannerCarousel";
-import CategoryCircles from "@/components/widgets/CategoryCircles";
-import TrendingCategories from "@/components/widgets/TrendingCategories";
-import TrendingSection from "@/components/widgets/TrendingSection";
-import PromoStrip from "@/components/widgets/PromoStrip";
-import BuyAgain from "@/components/widgets/BuyAgain";
+import Image from "next/image";
+import Link from "next/link";
+import { ArrowRight, Leaf, MessageCircle, ShoppingBag } from "lucide-react";
+import RecommendationSection from "@/components/widgets/RecommendationSection";
+import EditorialCategoryGrid from "@/components/widgets/EditorialCategoryGrid";
 import AllProductsSection from "@/components/widgets/AllProductsSection";
 
 export default function Home() {
-    const queryClient = useQueryClient();
-    const [refreshing, setRefreshing] = useState(false);
-    const [pullDistance, setPullDistance] = useState(0);
-
-    const pullDistanceRef = useRef(0);
-
-    useEffect(() => {
-        const container = document.getElementById("main-scroll-container");
-        if (!container) return;
-
-        let startY = 0;
-        let isPulling = false;
-
-        const handleTouchStart = (e: TouchEvent) => {
-            if (container.scrollTop === 0) {
-                startY = e.touches[0].clientY;
-                isPulling = true;
-            }
-        };
-
-        const handleTouchMove = (e: TouchEvent) => {
-            if (!isPulling) return;
-            const currentY = e.touches[0].clientY;
-            const diff = currentY - startY;
-            if (diff > 0) {
-                const dist = Math.min(80, diff * 0.4);
-                pullDistanceRef.current = dist;
-                setPullDistance(dist);
-                if (diff > 10) {
-                    e.preventDefault();
-                }
-            } else {
-                isPulling = false;
-                pullDistanceRef.current = 0;
-                setPullDistance(0);
-            }
-        };
-
-        const handleTouchEnd = async () => {
-            if (!isPulling) return;
-            isPulling = false;
-
-            const dist = pullDistanceRef.current;
-            pullDistanceRef.current = 0;
-            setPullDistance(0);
-
-            if (dist >= 60) {
-                setRefreshing(true);
-                await queryClient.refetchQueries();
-                setRefreshing(false);
-            }
-        };
-
-        container.addEventListener("touchstart", handleTouchStart, { passive: true });
-        container.addEventListener("touchmove", handleTouchMove, { passive: false });
-        container.addEventListener("touchend", handleTouchEnd, { passive: true });
-
-        return () => {
-            container.removeEventListener("touchstart", handleTouchStart);
-            container.removeEventListener("touchmove", handleTouchMove);
-            container.removeEventListener("touchend", handleTouchEnd);
-        };
-    }, [queryClient]);
-
-
     return (
-        <div className="relative pb-32 select-none overflow-x-hidden w-full">
-            {/* Pull to refresh indicator */}
-            <div 
-                className="flex items-center justify-center transition-all duration-300 overflow-hidden bg-emerald-500/5 text-emerald-800"
-                style={{ 
-                    height: refreshing ? "50px" : `${pullDistance}px`,
-                    opacity: refreshing || pullDistance > 0 ? 1 : 0
-                }}
-            >
-                <div className="flex items-center gap-2 py-2">
-                    <div className={cn("w-4 h-4 border-2 border-emerald-600 border-t-transparent rounded-full", (refreshing || pullDistance >= 60) && "animate-spin")} />
-                    <span className="text-[10px] font-black uppercase tracking-wider">
-                        {refreshing ? "Refreshing Freshness..." : pullDistance >= 60 ? "Release to Refresh" : "Pull Down to Refresh"}
-                    </span>
+        <div className="mx-auto w-full max-w-[1280px] space-y-7 pb-8">
+            <section className="mx-4 mt-4 grid min-h-[180px] grid-cols-[1.15fr_1fr] overflow-hidden rounded-2xl bg-[#e8f7ef] sm:mx-6 sm:min-h-[280px]">
+                <div className="relative z-10 flex flex-col items-start justify-center px-4 py-4 sm:px-10 sm:py-8">
+                    <span className="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#056647] sm:text-xs">Everyday essentials</span>
+                    <h1 className="text-[25px] font-bold leading-[1.12] tracking-tight text-[#17251e] sm:text-4xl lg:text-5xl">Fresh picks.<br />For you.</h1>
+                    <p className="mb-4 mt-3 max-w-xs text-xs leading-relaxed text-[#486052] sm:text-base">Vegetables, fruits and more.</p>
+                    <Link href="/categories" className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-[#087f5b] px-4 text-sm font-semibold text-white hover:bg-[#056647]">Shop now <ArrowRight className="h-4 w-4" /></Link>
                 </div>
-            </div>
-
-            <div className="space-y-6">
-                <BannerCarousel />
-                
-                <div className="px-5 space-y-8">
-                    <CategoryCircles />
-                    <TrendingCategories />
-                    <TrendingSection />
-                    <PromoStrip />
-                    <BuyAgain />
-                    <AllProductsSection />
-                </div>
-            </div>
+                <div className="relative min-h-full"><Image src="/images/hero_grocery_bag.jpg" alt="A grocery bag filled with vegetables" fill priority sizes="(max-width: 640px) 45vw, 600px" className="object-cover" /></div>
+            </section>
+            <EditorialCategoryGrid />
+            <RecommendationSection />
+            <section className="mx-4 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-[#e5ebe7] bg-white p-4 sm:mx-6 sm:p-6">
+                <div className="flex items-center gap-3"><span className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#e8f7ef] text-[#087f5b]"><ShoppingBag className="h-5 w-5" /></span><div><h2 className="text-base font-semibold">Everything for your next meal</h2><p className="text-xs text-[#64736b]">Explore the full grocery collection.</p></div></div>
+                <Link href="/products" className="inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-[#087f5b]">Browse all <ArrowRight className="h-4 w-4" /></Link>
+            </section>
+            <AllProductsSection />
+            <footer className="mx-4 border-t border-[#e5ebe7] pt-6 sm:mx-6">
+                <div className="flex flex-wrap items-center justify-between gap-4"><span className="flex items-center gap-2 font-semibold text-[#087f5b]"><Leaf className="h-5 w-5" /> Book My Veg</span><Link href="/chat" className="flex min-h-11 items-center gap-2 text-sm text-[#64736b]"><MessageCircle className="h-4 w-4" />Need a hand? Talk to us</Link></div>
+                <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-xs text-[#64736b]">{[["Privacy", "/privacy"], ["Terms", "/terms"], ["Exchange policy", "/exchange-policy"], ["Contact", "/contact"]].map(([label, href]) => <Link key={href} href={href} className="inline-flex min-h-11 items-center">{label}</Link>)}</div>
+            </footer>
         </div>
     );
 }

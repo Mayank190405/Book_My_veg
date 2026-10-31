@@ -67,6 +67,12 @@ api.interceptors.response.use(
                 return Promise.reject(error);
             }
 
+            const storedRefreshToken = useUserStore.getState().refreshToken;
+            if (!storedRefreshToken) {
+                useUserStore.getState().logout();
+                return Promise.reject(error);
+            }
+
             if (isRefreshing) {
                 return new Promise((resolve, reject) => {
                     failedQueue.push({ resolve, reject });

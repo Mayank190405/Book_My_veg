@@ -1,89 +1,30 @@
 "use client";
-
-import { Home, LayoutGrid, ShoppingCart, User } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Home, LayoutGrid, Search, ShoppingCart, UserRound } from "lucide-react";
 import { useCartStore } from "@/store/useCartStore";
 import { cn } from "@/lib/utils";
 
-const navItems = [
-  { label: "HOME", icon: Home, href: "/" },
-  { label: "CATEGORIES", icon: LayoutGrid, href: "/categories" },
-  { label: "CART", icon: ShoppingCart, href: "/cart" },
-  { label: "ACCOUNT", icon: User, href: "/account" },
+const destinations = [
+    { label: "Home", href: "/", icon: Home },
+    { label: "Categories", href: "/categories", icon: LayoutGrid },
+    { label: "Search", href: "/search", icon: Search },
+    { label: "Cart", href: "/cart", icon: ShoppingCart },
+    { label: "Account", href: "/account", icon: UserRound },
 ];
-
 export default function BottomNav() {
-  const pathname = usePathname();
-  const { items } = useCartStore();
-
-  if (pathname.startsWith("/admin")) return null;
-
-  return (
-    <div className="fixed bottom-4 left-0 right-0 z-50 flex justify-center px-4">
-      <div className="relative w-full max-w-md bg-white dark:bg-[#0b1c19] rounded-[32px] shadow-[0_12px_40px_rgba(0,0,0,0.15)] border border-gray-100 dark:border-emerald-950/40">
-
-        {/* Active Indicator */}
-        <div className="absolute top-0 left-0 w-full flex justify-around">
-          {navItems.map((item) => {
-            const active = pathname === item.href;
-
-            return (
-              <div
-                key={item.href}
-                className="flex-1 flex justify-center"
-              >
-              </div>
-            );
-          })}
-        </div>
-
-        <div className="grid grid-cols-4 pt-4 pb-3">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const active = pathname === item.href;
-
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className="flex flex-col items-center justify-center gap-1"
-              >
-                <div className="relative">
-
-                  <Icon
-                    size={24}
-                    strokeWidth={2.3}
-                    className={cn(
-                      active
-                        ? "text-[#0B7A53] dark:text-emerald-400"
-                        : "text-gray-400 dark:text-white/40"
-                    )}
-                  />
-
-                  {item.label === "CART" &&
-                    items.length > 0 && (
-                      <span className="absolute -top-2 -right-2 h-4 min-w-[16px] rounded-full bg-[#0B7A53] dark:bg-emerald-500 text-white dark:text-[#061512] text-[9px] font-bold flex items-center justify-center px-1">
-                        {items.length}
-                      </span>
-                    )}
-                </div>
-
-                <span
-                  className={cn(
-                    "text-[10px] tracking-[0.18em] font-bold",
-                    active
-                      ? "text-[#0B7A53] dark:text-emerald-400"
-                      : "text-gray-400 dark:text-white/40"
-                  )}
-                >
-                  {item.label}
-                </span>
-              </Link>
-            );
-          })}
-        </div>
-      </div>
-    </div>
-  );
+    const pathname = usePathname();
+    const totalItems = useCartStore(state => state.totalItems);
+    return (
+        <nav aria-label="Customer navigation" className="fixed inset-x-0 bottom-0 z-50 border-t border-[#e5ebe7] bg-white pb-[env(safe-area-inset-bottom)]">
+            <div className="mx-auto grid max-w-3xl grid-cols-5">
+                {destinations.map(({ label, href, icon: Icon }) => {
+                    const active = href === "/" ? pathname === href : pathname.startsWith(href) || (href === "/categories" && pathname.startsWith("/category/"));
+                    return <Link key={href} href={href} aria-current={active ? "page" : undefined} className={cn("flex min-h-16 min-w-0 flex-col items-center justify-center gap-1 text-[11px] font-medium", active ? "text-[#087f5b]" : "text-[#64736b] hover:text-[#087f5b]")}>
+                        <span className="relative"><Icon className="h-5 w-5" strokeWidth={active ? 2.5 : 1.8} />{href === "/cart" && totalItems > 0 && <span className="absolute -right-3 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#c92a2a] px-1 text-[9px] text-white">{totalItems}</span>}</span>{label}
+                    </Link>;
+                })}
+            </div>
+        </nav>
+    );
 }

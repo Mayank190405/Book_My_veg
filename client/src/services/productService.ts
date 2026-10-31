@@ -5,6 +5,16 @@ export const getProducts = async (cursor?: string, limit = 20) => {
     return response.data;
 };
 
+export const getProductsByCategory = async (categoryId?: string, cursor?: string, limit = 20, locationId?: string) => {
+    const params = new URLSearchParams();
+    if (categoryId) params.append("categoryId", categoryId);
+    if (cursor) params.append("cursor", cursor);
+    if (limit) params.append("limit", limit.toString());
+    if (locationId) params.append("locationId", locationId);
+    const response = await api.get(`/products?${params.toString()}`);
+    return response.data;
+};
+
 export const getTrendingProducts = async (pincode?: string, lat?: number, lng?: number) => {
     const params = new URLSearchParams();
     if (pincode) params.append("pincode", pincode);

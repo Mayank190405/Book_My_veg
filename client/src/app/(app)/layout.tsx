@@ -18,6 +18,8 @@ import { getBaseURL } from "@/services/api";
 import PagePreloader from "@/components/ui/PagePreloader";
 import TopProgressBar from "@/components/ui/TopProgressBar";
 
+import ShareModal from "@/components/ui/ShareModal";
+
 export default function AppLayout({
     children,
 }: {
@@ -55,105 +57,160 @@ export default function AppLayout({
         }
     }, [user, _hasHydrated, router]);
 
+    // Synchronize user location and connect to the nearest store on every reload, refresh, and every 1 hour
     useEffect(() => {
         if (!_hasHydrated) return;
 
-        const initializeStoreAndLocation = async () => {
-            try {
-                // Early return if active store and location coords are already resolved in client state
-                if (activeStore && location && location.coords) return;
+        let isMounted = true;
+        const ONE_HOUR_MS = 60 * 60 * 1000;
 
+        const syncLocationAndStore = async (isInitialOrRefresh: boolean = false) => {
+            try {
                 const apiUrl = getBaseURL();
-                // 1. Fetch available store locations
                 const storesRes = await (await fetch(`${apiUrl}/locations`)).json();
-                if (!storesRes || storesRes.length === 0) return;
+                if (!isMounted || !storesRes || storesRes.length === 0) return;
 
                 const defaultStore = storesRes[0];
 
-                const selectStore = (store: any, lat: number, lng: number, address: string, pincode: string) => {
+                const applyStoreConnection = (
+                    store: any,
+                    lat: number,
+                    lng: number,
+                    address: string,
+                    pincode: string,
+                    secondary?: string,
+                    distKm?: number
+                ) => {
+                    if (!isMounted) return;
+                    const currentStore = useUserStore.getState().activeStore;
+                    const dist = distKm ?? calculateDistance(lat, lng, Number(store.latitude), Number(store.longitude));
+                    const inRange = !store.deliveryRadius || dist <= store.deliveryRadius;
+
                     setActiveStore({ id: store.id, slug: store.slug, name: store.name });
-                    setServiceArea('in-range');
+                    setServiceArea(inRange ? 'in-range' : 'out-of-range');
                     setLocation({
                         address: address || store.name,
                         pincode: pincode || store.pincode || "422002",
-                        coords: { lat, lng }
+                        coords: { lat, lng },
+                        secondary: secondary || `${address || store.name}, Nashik`
                     });
+
+                    try {
+                        localStorage.setItem("bmv_last_location_sync", Date.now().toString());
+                    } catch {}
+
+                    if (currentStore && currentStore.id !== store.id) {
+                        toast.success(`Connected to nearest store: ${store.name} ⚡`);
+                    }
                 };
 
-                // Case A: If location coordinates exist but activeStore is missing, find closest store from existing coords
-                if (location && location.coords && !activeStore) {
-                    const { lat, lng } = location.coords;
+                const findNearestStore = (lat: number, lng: number) => {
                     const eligible = (storesRes || [])
                         .filter((s: any) => s.latitude && s.longitude)
                         .map((s: any) => ({
                             ...s,
                             dist: calculateDistance(lat, lng, Number(s.latitude), Number(s.longitude))
                         }))
-                        .filter((s: any) => !s.deliveryRadius || s.dist <= s.deliveryRadius)
                         .sort((a: any, b: any) => a.dist - b.dist);
 
-                    if (eligible.length > 0) {
-                        selectStore(eligible[0], lat, lng, location.address, location.pincode);
-                    } else {
-                        selectStore(defaultStore, Number(defaultStore.latitude) || 19.9922, Number(defaultStore.longitude) || 73.7753, location.address, location.pincode);
-                    }
-                    return;
-                }
+                    return eligible.length > 0 ? eligible[0] : { ...defaultStore, dist: 0 };
+                };
 
-                // Case B: No activeStore and no location, or force auto connect on first visit
-                if (!activeStore || !location) {
-                    // Instantly fall back to default store so page content renders immediately
-                    selectStore(defaultStore, Number(defaultStore.latitude) || 19.9922, Number(defaultStore.longitude) || 73.7753, defaultStore.name, defaultStore.pincode);
+                // Attempt device GPS geolocation on every reload, refresh, or 1h tick
+                if (typeof navigator !== "undefined" && "geolocation" in navigator) {
+                    navigator.geolocation.getCurrentPosition(
+                        async (position) => {
+                            if (!isMounted) return;
+                            const { latitude, longitude } = position.coords;
+                            try {
+                                const geoResult = await getReverseGeocode(latitude, longitude);
+                                const nearest = findNearestStore(latitude, longitude);
 
-                    // Then silently request precise GPS to refine if allowed
-                    if ("geolocation" in navigator) {
-                        navigator.geolocation.getCurrentPosition(
-                            async (position) => {
-                                const { latitude, longitude } = position.coords;
-                                try {
-                                    const geoResult = await getReverseGeocode(latitude, longitude);
-                                    const eligible = (storesRes || [])
-                                        .filter((s: any) => s.latitude && s.longitude)
-                                        .map((s: any) => ({
-                                            ...s,
-                                            dist: calculateDistance(latitude, longitude, Number(s.latitude), Number(s.longitude))
-                                        }))
-                                        .filter((s: any) => !s.deliveryRadius || s.dist <= s.deliveryRadius)
-                                        .sort((a: any, b: any) => a.dist - b.dist);
+                                let area = nearest.name;
+                                let pin = nearest.pincode || "422002";
+                                let secondary = "";
 
-                                    if (eligible.length > 0) {
-                                        const nearest = eligible[0];
-                                        let area = nearest.name;
-                                        let pin = nearest.pincode || "422002";
-                                        if (geoResult) {
-                                            const context = (geoResult as any).context || [];
-                                            const serverArea = context.find((c: any) => c.id === "area")?.text;
-                                            const serverPincode = context.find((c: any) => c.id === "pincode")?.text;
-                                            const parts = geoResult.place_name.split(",");
-                                            area = serverArea || parts[0].trim();
-                                            pin = serverPincode || (geoResult.place_name.match(/\b\d{6}\b/)?.[0] || "");
-                                        }
-                                        selectStore(nearest, latitude, longitude, area, pin);
-                                        toast.success(`Delivering via ${nearest.name}`);
-                                    }
-                                } catch (err) {
-                                    console.error("Auto-geolocation refinement failed:", err);
+                                if (geoResult) {
+                                    const context = (geoResult as any).context || [];
+                                    const serverArea = context.find((c: any) => c.id === "area")?.text;
+                                    const serverPincode = context.find((c: any) => c.id === "pincode")?.text;
+                                    const parts = geoResult.place_name?.split(",") || [];
+                                    area = serverArea || parts[0]?.trim() || nearest.name;
+                                    pin = serverPincode || (geoResult.place_name?.match(/\b\d{6}\b/)?.[0] || nearest.pincode || "422002");
+                                    secondary = geoResult.place_name || "";
                                 }
-                            },
-                            (error) => {
-                                console.log("Geolocation prompt dismissed, using default Nashik store:", error);
-                            },
-                            { timeout: 5000 }
-                        );
-                    }
+
+                                applyStoreConnection(nearest, latitude, longitude, area, pin, secondary, nearest.dist);
+                            } catch (geoErr) {
+                                console.warn("[LocationSync] Reverse geocoding failed, connecting with coordinates:", geoErr);
+                                const nearest = findNearestStore(latitude, longitude);
+                                applyStoreConnection(nearest, latitude, longitude, nearest.name, nearest.pincode, undefined, nearest.dist);
+                            }
+                        },
+                        (posError) => {
+                            if (!isMounted) return;
+                            console.log("[LocationSync] Geolocation unavailable or permission pending, connecting nearest store to known/default coords:", posError.message);
+                            // Fallback to known location coords or default store coords
+                            const currLocation = useUserStore.getState().location;
+                            if (currLocation?.coords?.lat && currLocation?.coords?.lng) {
+                                const { lat, lng } = currLocation.coords;
+                                const nearest = findNearestStore(lat, lng);
+                                applyStoreConnection(nearest, lat, lng, currLocation.address, currLocation.pincode, currLocation.secondary, nearest.dist);
+                            } else {
+                                const defLat = Number(defaultStore.latitude) || 19.9922;
+                                const defLng = Number(defaultStore.longitude) || 73.7753;
+                                applyStoreConnection(defaultStore, defLat, defLng, defaultStore.name, defaultStore.pincode || "422002", undefined, 0);
+                            }
+                        },
+                        { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
+                    );
+                } else {
+                    // Browser does not support geolocation
+                    const currLocation = useUserStore.getState().location;
+                    const lat = currLocation?.coords?.lat || Number(defaultStore.latitude) || 19.9922;
+                    const lng = currLocation?.coords?.lng || Number(defaultStore.longitude) || 73.7753;
+                    const nearest = findNearestStore(lat, lng);
+                    applyStoreConnection(nearest, lat, lng, currLocation?.address || nearest.name, currLocation?.pincode || nearest.pincode, currLocation?.secondary, nearest.dist);
                 }
             } catch (err) {
-                console.error("Auto connect store error:", err);
+                console.error("[LocationSync] Location & nearest store sync error:", err);
             }
         };
 
-        initializeStoreAndLocation();
-    }, [_hasHydrated, location, activeStore]);
+        // 1. Run immediately on every page reload / refresh mount
+        syncLocationAndStore(true);
+
+        // 2. Run every 1 hour (3600000 ms)
+        const intervalId = setInterval(() => {
+            console.log("[LocationSync] 1-hour interval triggered. Synchronizing location & connecting to nearest store...");
+            syncLocationAndStore(false);
+        }, ONE_HOUR_MS);
+
+        // 3. Check when user returns to the tab/window after 1 hour or more
+        const handleVisibilityOrFocus = () => {
+            if (document.visibilityState === "visible") {
+                try {
+                    const lastSyncStr = localStorage.getItem("bmv_last_location_sync");
+                    const lastSync = lastSyncStr ? parseInt(lastSyncStr, 10) : 0;
+                    if (Date.now() - lastSync >= ONE_HOUR_MS) {
+                        console.log("[LocationSync] Tab resumed after >= 1 hour. Synchronizing location & nearest store...");
+                        syncLocationAndStore(false);
+                    }
+                } catch {}
+            }
+        };
+
+        document.addEventListener("visibilitychange", handleVisibilityOrFocus);
+        window.addEventListener("focus", handleVisibilityOrFocus);
+        window.addEventListener("online", () => syncLocationAndStore(false));
+
+        return () => {
+            isMounted = false;
+            clearInterval(intervalId);
+            document.removeEventListener("visibilitychange", handleVisibilityOrFocus);
+            window.removeEventListener("focus", handleVisibilityOrFocus);
+        };
+    }, [_hasHydrated]);
 
     // Browser session-based scroll restoration for the custom main scroll container
     useEffect(() => {
@@ -202,12 +259,16 @@ export default function AppLayout({
         pathname.startsWith("/orders/") || 
         pathname.startsWith("/category/") || 
         pathname.startsWith("/products/") || 
-        pathname.startsWith("/search");
-    const isExcludedFromCartAndNav = ["/checkout", "/cart", "/account", "/account/addresses", "/returns", "/contact"].includes(pathname) || 
-        pathname.startsWith("/orders/");
+        pathname.startsWith("/search") || pathname.startsWith("/payment/");
+    const isExcludedFromCartAndNav = ["/checkout", "/cart", "/payment-flow", "/payment/success", "/payment/mock-gateway"].includes(pathname) ||
+        pathname.startsWith("/products/") || pathname.startsWith("/orders/");
+    const isPolicy = ["/privacy", "/terms", "/exchange-policy", "/payment-flow"].includes(pathname) || pathname.startsWith("/pages/");
+    const showHeader = !isChat && !isHeaderExcluded && !isPolicy;
+    const isCatalogRoute = ["/", "/products", "/categories", "/search", "/wishlist"].includes(pathname) || pathname.startsWith("/category/");
+    const showFloatingCart = !isChat && !isExcludedFromCartAndNav && isCatalogRoute;
 
     return (
-        <>
+        <div className="customer-ui flex h-full min-h-0 flex-col">
             <PagePreloader />
             <TopProgressBar />
             {/* Out-of-range service area banner */}
@@ -236,38 +297,26 @@ export default function AppLayout({
                     </button>
                 </div>
             )}
-            {!isChat && !isHeaderExcluded && <Header />}
+            {showHeader && <Header />}
             <WelcomeFlow />
             <main 
                 id="main-scroll-container"
-                className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-hide bg-gradient-app transition-all duration-300 overscroll-contain"
+                className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-hide bg-[#f8faf8] overscroll-contain"
             >
                 <div 
                     key={pathname} 
                     className={cn(
-                        "animate-page-transition w-full min-h-full flex flex-col",
-                        isChat
-                            ? "pt-0 pb-0"
-                            : isHeaderExcluded 
-                                ? "pt-0" 
-                                : pathname === "/" 
-                                    ? "pt-[11.2rem]" 
-                                    : pathname === "/orders"
-                                        ? "pt-[5.5rem]"
-                                        : "pt-[8rem]",
-                        !isChat && totalItems > 0 && !isHeaderExcluded ? "pb-60" : !isChat ? "pb-32" : "",
-                        !isChat && isHeaderExcluded && "pb-0"
+                        "w-full min-h-full flex flex-col",
+                        showHeader ? "pt-[176px]" : "pt-0",
+                        !isChat && !isExcludedFromCartAndNav ? (showFloatingCart && totalItems > 0 ? "pb-44" : "pb-24") : "pb-0"
                     )}
                 >
                     {children}
                 </div>
             </main>
-            {!isChat && !isExcludedFromCartAndNav && <FloatingCart />}
+            {showFloatingCart && <FloatingCart />}
             {!isChat && !isExcludedFromCartAndNav && <BottomNav />}
-            {/* Gradient fade overlay — hides content peeking behind the floating nav */}
-            {!isChat && !isExcludedFromCartAndNav && (
-                <div className="fixed bottom-0 left-0 right-0 h-28 bg-gradient-to-t from-[var(--background)] via-[var(--background)]/80 to-transparent pointer-events-none z-40" />
-            )}
-        </>
+            <ShareModal />
+        </div>
     );
 }

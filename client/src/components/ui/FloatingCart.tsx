@@ -20,8 +20,8 @@ export default function FloatingCart() {
             <button
                 onClick={() => setDrawerOpen(true)}
                 className={cn(
-                    "fixed bottom-[6.7rem] left-1/2 -translate-x-1/2 z-50 bg-emerald-600 text-white min-w-[12rem] h-14 shadow-[0_25px_80px_-15px_rgba(16,185,129,0.6)]",
-                    "flex items-center justify-between px-6 py-2 rounded-full border border-white/20 transition-all hover:scale-[1.05] active:scale-95 animate-in slide-in-from-bottom-8 duration-500 scale-100"
+                    "fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-50 bg-[#087f5b] text-white w-[calc(100%-2rem)] max-w-lg h-14 shadow-sm",
+                    "flex items-center justify-between px-4 py-2 rounded-xl border border-white/20 transition-colors hover:bg-[#056647]"
                 )}
                 aria-label="Open cart"
             >
@@ -32,8 +32,8 @@ export default function FloatingCart() {
                     </div>
                     <div className="w-[1.5px] h-8 bg-white/20 rounded-full" />
                     <div className="flex flex-col">
-                        <span className="text-[9px] font-bold uppercase tracking-[0.2em] opacity-60 leading-none mb-1">Total</span>
-                        <span className="font-black text-[18px] uppercase tracking-tighter leading-none tabular-nums italic">₹{Number(totalPrice).toFixed(0)}</span>
+                        <span className="text-[9px] font-bold uppercase tracking-[0.2em] opacity-60 leading-none mb-1">Items subtotal</span>
+                        <span className="font-black text-[18px] tracking-tight leading-none tabular-nums">₹{Number(totalPrice).toFixed(0)}</span>
                     </div>
                 </div>
 

@@ -20,7 +20,8 @@ import {
     Scale,
     Sparkles,
     Filter,
-    RefreshCw
+    RefreshCw,
+    Store
 } from "lucide-react";
 import { useState, useEffect, useMemo, useRef } from "react";
 import { cn } from "@/lib/utils";
@@ -30,6 +31,8 @@ import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import Papa from "papaparse";
 import Image from "next/image";
+import Link from "next/link";
+
 
 const WEIGHT_UNITS = ["GM", "KG", "LITRE", "ML", "PIECE", "PACK"];
 
@@ -345,6 +348,14 @@ export default function AdminVariants() {
                         Import CSV
                     </button>
 
+                    <Link
+                        href="/admin/stores"
+                        className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl border border-emerald-500/30 bg-emerald-50 text-emerald-800 text-sm font-semibold hover:bg-emerald-100 transition-all duration-200"
+                    >
+                        <Store className="w-4 h-4 text-emerald-600" />
+                        <span>Store-Wise Stock & Ordering →</span>
+                    </Link>
+
                     <button
                         onClick={handleOpenCreateModal}
                         className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold shadow-lg shadow-emerald-600/20 transition-all duration-200"
@@ -353,6 +364,7 @@ export default function AdminVariants() {
                         Add New Variant
                     </button>
                 </div>
+
             </div>
 
             {/* Metrics Grid */}
