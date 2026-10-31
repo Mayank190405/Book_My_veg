@@ -362,16 +362,6 @@ const createOrUpdateCustomer = (req, res, next) => __awaiter(void 0, void 0, voi
                 },
                 include: { addresses: { where: { isDefault: true } } }
             });
-            // Trigger welcome registration WhatsApp notification
-            try {
-                const { sendRegistrationThankYouViaWhatsapp } = require("../services/mbgcard");
-                sendRegistrationThankYouViaWhatsapp(customer.phone, customer.name || "Customer").catch((err) => {
-                    console.error("[POS] WhatsApp welcome dispatch error:", err.message);
-                });
-            }
-            catch (err) {
-                console.warn("[POS] Welcome dispatch trigger warning:", err.message);
-            }
         }
         // Upsert default address
         if (address && String(address).trim()) {
@@ -424,7 +414,7 @@ const createOrUpdateCustomer = (req, res, next) => __awaiter(void 0, void 0, voi
 exports.createOrUpdateCustomer = createOrUpdateCustomer;
 // ─── POS Order Processing ─────────────────────────────────────────────────────
 const processPOSOrder = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a, _b, _c, _d;
+    var _a, _b, _c, _d, _e, _f;
     const { customerId, items, paymentMethod, paymentDetails, discountAmount, couponId, packerId, isDelivery = false, deliveryAddress, duePaymentAmount = 0, paidAmount = 0, splitPayments, // Array of { method: "CASH" | "EASEBUZZ" | "WALLET", amount: number, transactionId?: string, denominations?: any }
     suspend = false, denominations, orderId } = req.body;
     const staffId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.userId;
@@ -744,18 +734,23 @@ const processPOSOrder = (req, res, next) => __awaiter(void 0, void 0, void 0, fu
                     const paymentModeDesc = finalOrder.payments.length > 1
                         ? finalOrder.payments.map((p) => `${p.method}: ₹${Number(p.amount)}`).join(", ")
                         : (((_c = finalOrder.payments[0]) === null || _c === void 0 ? void 0 : _c.method) || (finalOrder.isCredit ? "DUE ON ACCOUNT" : "CASH"));
-                    const { sendInvoicePaidViaWhatsapp, sendInvoiceDueViaWhatsapp } = require("../services/mbgcard");
-                    if (isPaid) {
-                        sendInvoicePaidViaWhatsapp(user.phone, user.name || "Customer", orderId, totalAmount, paymentModeDesc, orderId).catch((err) => {
-                            console.error("[POSController] WhatsApp Invoice Paid dispatch failure:", err);
-                        });
-                    }
-                    else {
-                        const dueAmount = isPartial ? currentBillDue : totalAmount;
-                        sendInvoiceDueViaWhatsapp(user.phone, user.name || "Customer", orderId, totalAmount, paymentModeDesc, dueAmount, customerId, orderId).catch((err) => {
-                            console.error("[POSController] WhatsApp Invoice Due dispatch failure:", err);
-                        });
-                    }
+                    const posPaidAmount = Number((_d = result.paidAmount) !== null && _d !== void 0 ? _d : (isPaid ? totalAmount : Math.max(0, totalAmount - currentBillDue)));
+                    const { NotificationService } = require("../modules/messaging");
+                    NotificationService.getInstance().notifyBillCreated({
+                        orderId,
+                        userId: customerId,
+                        customerName: user.name || "Customer",
+                        customerPhone: user.phone,
+                        totalAmount,
+                        paidAmount: posPaidAmount,
+                        dueAmount: isPaid ? 0 : (isPartial ? currentBillDue : totalAmount),
+                        paymentMode: paymentModeDesc,
+                        isPaid,
+                        locationId: finalOrder.locationId || undefined,
+                        actorId: (_e = req.user) === null || _e === void 0 ? void 0 : _e.userId
+                    }).catch((err) => {
+                        console.error("[POSController] WhatsApp Bill notification dispatch failure:", err);
+                    });
                 }
             }
             catch (err) {
@@ -764,7 +759,7 @@ const processPOSOrder = (req, res, next) => __awaiter(void 0, void 0, void 0, fu
         }
     }
     catch (error) {
-        if ((_d = error.message) === null || _d === void 0 ? void 0 : _d.includes("stock")) {
+        if ((_f = error.message) === null || _f === void 0 ? void 0 : _f.includes("stock")) {
             return res.status(409).json({ message: error.message });
         }
         next(error);
@@ -1075,8 +1070,14 @@ const cancelPOSOrder = (req, res, next) => __awaiter(void 0, void 0, void 0, fun
         // ── WhatsApp Notification Dispatch (Bill Cancelled) ────────────────
         if ((_b = order.user) === null || _b === void 0 ? void 0 : _b.phone) {
             try {
-                const { sendBillCancelledViaWhatsapp } = require("../services/mbgcard");
-                sendBillCancelledViaWhatsapp(order.user.phone, order.user.name || "Customer", orderId, reason).catch((err) => {
+                const { NotificationService } = require("../modules/messaging");
+                NotificationService.getInstance().notifyBillCancelled({
+                    orderId,
+                    customerPhone: order.user.phone,
+                    customerName: order.user.name || "Customer",
+                    cancellationReason: reason,
+                    triggeredBy: staffId
+                }).catch((err) => {
                     console.error("[POSController] WhatsApp Bill Cancelled dispatch failure:", err.message);
                 });
             }
@@ -1285,20 +1286,31 @@ const collectDuePayment = (req, res, next) => __awaiter(void 0, void 0, void 0, 
                 const totalAmount = orderTotal;
                 const remainingDueAfter = Math.max(0, orderTotal - newTotalPaid);
                 const paymentModeDesc = `${method || "CASH"}: ₹${totalPayingNow}`;
-                const { sendInvoicePaidViaWhatsapp, sendInvoiceDueViaWhatsapp, sendPaymentReceivedViaWhatsapp } = require("../services/mbgcard");
-                sendPaymentReceivedViaWhatsapp(user.phone, user.name || "Customer", orderId, totalPayingNow, paymentModeDesc).catch((err) => {
+                const { NotificationService } = require("../modules/messaging");
+                NotificationService.getInstance().notifyPaymentReceived({
+                    paymentId: `PAY-${orderId}-${Date.now().toString().slice(-4)}`,
+                    orderId,
+                    customerPhone: user.phone,
+                    customerName: user.name || "Customer",
+                    amount: totalPayingNow,
+                    paymentMethod: paymentModeDesc,
+                    remainingBalance: remainingDueAfter,
+                    triggeredBy: staffId
+                }).catch((err) => {
                     console.error("[POS Bill Settle] WhatsApp Payment Received dispatch failure:", err.message);
                 });
-                if (isFull) {
-                    sendInvoicePaidViaWhatsapp(user.phone, user.name || "Customer", orderId, totalAmount, paymentModeDesc, orderId).catch((err) => {
-                        console.error("[POS Bill Settle] WhatsApp Invoice Paid dispatch failure:", err.message);
-                    });
-                }
-                else {
-                    sendInvoiceDueViaWhatsapp(user.phone, user.name || "Customer", orderId, totalAmount, paymentModeDesc, remainingDueAfter, customerId, orderId).catch((err) => {
-                        console.error("[POS Bill Settle] WhatsApp Invoice Due dispatch failure:", err.message);
-                    });
-                }
+                NotificationService.getInstance().notifyBillCreated({
+                    orderId,
+                    customerPhone: user.phone,
+                    customerName: user.name || "Customer",
+                    totalAmount,
+                    paidAmount: totalPayingNow,
+                    dueAmount: remainingDueAfter,
+                    paymentMode: paymentModeDesc,
+                    triggeredBy: staffId
+                }).catch((err) => {
+                    console.error("[POS Bill Settle] WhatsApp Bill Status dispatch failure:", err.message);
+                });
             }
             catch (wErr) {
                 console.warn("[POS Bill Settle] WhatsApp notification dispatch warning:", wErr.message);
@@ -1466,95 +1478,25 @@ const getPOSDueCustomers = (req, res, next) => __awaiter(void 0, void 0, void 0,
 exports.getPOSDueCustomers = getPOSDueCustomers;
 const sendPOSWhatsappDueReminders = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     var _a, _b, _c, _d;
-    const { customerIds } = req.body; // Array of selected customer IDs, or empty/all to send to all due customers
+    const { customerIds } = req.body;
     const isGlobal = ((_a = req.user) === null || _a === void 0 ? void 0 : _a.role) === "ADMIN" || ((_b = req.user) === null || _b === void 0 ? void 0 : _b.role) === "SUPER_ADMIN";
-    // Location filter: maintain strict parity with getPOSDueCustomers view
     let locationId = (req.body.locationId || req.query.locationId || ((_c = req.user) === null || _c === void 0 ? void 0 : _c.locationId));
     if (locationId === "all" || (isGlobal && !req.body.locationId && !req.query.locationId)) {
         locationId = undefined;
     }
     try {
-        const { sendPaymentReminderViaWhatsapp } = require("../services/mbgcard");
-        const orders = yield prisma_1.default.order.findMany({
-            where: (0, dueCalculationService_1.getEligibleOrdersWhereClause)({ customerIds, locationId }),
-            include: { user: true, payments: true },
-            orderBy: { createdAt: "desc" }
+        const { ReminderService } = require("../modules/messaging");
+        const result = yield ReminderService.getInstance().sendDueReminders({
+            customerIds: Array.isArray(customerIds) ? customerIds : undefined,
+            locationId,
+            triggeredBy: (_d = req.user) === null || _d === void 0 ? void 0 : _d.userId
         });
-        const customerOrdersMap = {};
-        for (const order of orders) {
-            if (!order.user || !order.user.phone)
-                continue;
-            const uId = order.user.id;
-            if (!customerOrdersMap[uId]) {
-                customerOrdersMap[uId] = {
-                    user: order.user,
-                    orders: []
-                };
-            }
-            customerOrdersMap[uId].orders.push(order);
-        }
-        let sentCount = 0;
-        let skippedCount = 0;
-        let failedCount = 0;
-        const isBulk = !Array.isArray(customerIds) || customerIds.length === 0;
-        const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-        for (const entry of Object.values(customerOrdersMap)) {
-            const summary = (0, dueCalculationService_1.calculateCustomerDues)(entry.orders);
-            if (summary.eligibleOrdersCount <= 0 || summary.totalDue <= 0)
-                continue;
-            const formattedTotal = summary.totalDue;
-            const orderCount = summary.eligibleOrdersCount;
-            const latestOrderId = summary.eligibleOrders[0].id;
-            // In bulk mode, avoid spamming customers who already received a reminder in the last 24 hours
-            if (isBulk) {
-                const recentReminder = yield prisma_1.default.auditLog.findFirst({
-                    where: {
-                        entityType: "USER",
-                        entityId: entry.user.id,
-                        action: "WHATSAPP_DUE_REMINDER",
-                        createdAt: { gte: oneDayAgo }
-                    }
-                });
-                if (recentReminder) {
-                    skippedCount++;
-                    continue;
-                }
-            }
-            try {
-                const invoiceLabel = orderCount > 1
-                    ? `All Dues (${orderCount} Bills)`
-                    : latestOrderId;
-                yield sendPaymentReminderViaWhatsapp(entry.user.phone, entry.user.name || "Customer", formattedTotal, invoiceLabel, entry.user.id, latestOrderId);
-                sentCount++;
-                // Record AuditLog
-                yield prisma_1.default.auditLog.create({
-                    data: {
-                        entityType: "USER",
-                        entityId: entry.user.id,
-                        action: "WHATSAPP_DUE_REMINDER",
-                        staffId: (_d = req.user) === null || _d === void 0 ? void 0 : _d.userId,
-                        locationId: locationId || null,
-                        newValue: {
-                            totalDue: formattedTotal,
-                            orderCount,
-                            invoiceLabel,
-                            trigger: "POS_MANUAL",
-                            locationId: locationId || "GLOBAL",
-                            sentAt: new Date()
-                        }
-                    }
-                });
-            }
-            catch (err) {
-                console.error(`Failed to send WhatsApp reminder to ${entry.user.phone}:`, err.message);
-                failedCount++;
-            }
-        }
         res.json({
-            message: `WhatsApp payment reminders sent to ${sentCount} customer(s).${skippedCount > 0 ? ` (${skippedCount} skipped due to 24h cooldown)` : ""}${failedCount > 0 ? ` (${failedCount} failed)` : ""}`,
-            sentCount,
-            skippedCount,
-            failedCount
+            message: `WhatsApp payment reminders sent to ${result.sentCount} customer(s).${result.skippedCount > 0 ? ` (${result.skippedCount} skipped due to 24h cooldown)` : ""}${result.failedCount > 0 ? ` (${result.failedCount} failed)` : ""}`,
+            sentCount: result.sentCount,
+            skippedCount: result.skippedCount,
+            failedCount: result.failedCount,
+            results: result.results
         });
     }
     catch (error) {
@@ -1630,15 +1572,18 @@ const customerDeposit = (req, res, next) => __awaiter(void 0, void 0, void 0, fu
         // Send WhatsApp confirmation if customer phone exists
         if (result.customer.phone) {
             try {
-                const { sendTemplateViaChatHub } = require("../services/mbgcard");
-                yield sendTemplateViaChatHub(result.customer.phone, "payment_received", {
-                    body: [
-                        result.customer.name || "Customer",
-                        `ADV-DEP-${Date.now().toString().slice(-4)}`,
-                        String(depositAmt),
-                        `${paymentMethod} (Advance Wallet Credit - Current Balance: ₹${result.newBalance})`
-                    ]
-                }).catch(() => null);
+                const { NotificationService } = require("../modules/messaging");
+                NotificationService.getInstance().notifyPaymentReceived({
+                    paymentId: result.transaction.referenceId || `ADV-DEP-${Date.now().toString().slice(-4)}`,
+                    orderId: "WALLET_ADVANCE",
+                    customerPhone: result.customer.phone,
+                    customerName: result.customer.name || "Customer",
+                    amount: depositAmt,
+                    paymentMethod: `${paymentMethod} (Advance Wallet Credit - Current Balance: ₹${result.newBalance})`,
+                    triggeredBy: staffId
+                }).catch((err) => {
+                    console.warn("[Deposit WhatsApp warning]:", err.message);
+                });
             }
             catch (err) {
                 console.warn("[Deposit WhatsApp warning]:", err);

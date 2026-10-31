@@ -10,7 +10,7 @@ import {
     isMagicTokenVerified,
     clearMagicToken
 } from "../utils/otp";
-import { sendOtpViaWhatsapp, getConversation, getMyMetaTemplates } from "../services/mbgcard";
+import { NotificationService, TemplateService, getConversation } from "../modules/messaging";
 import { generateTokens, verifyRefreshToken } from "../utils/jwt";
 import logger from "../utils/logger";
 import bcrypt from "bcryptjs";
@@ -55,7 +55,7 @@ export const sendOtp = async (req: Request, res: Response) => {
 
         // Send OTP via MBG Card
         try {
-            await sendOtpViaWhatsapp(phone, otp);
+            await NotificationService.getInstance().sendOtp(phone, otp, "AUTH");
             res.status(200).json({
                 message: "OTP sent successfully"
             });
@@ -558,10 +558,10 @@ export const getMe = async (req: any, res: Response) => {
 
 export const getWhatsappTemplates = async (req: Request, res: Response) => {
     try {
-        const data = await getMyMetaTemplates();
-        res.status(200).json(data);
+        const templates = await TemplateService.getInstance().syncAndGetTemplates();
+        res.status(200).json({ success: true, data: templates });
     } catch (error: any) {
         logger.error("[Auth] getWhatsappTemplates error:", error);
-        res.status(500).json({ message: "Failed to fetch WhatsApp templates from MBG Card", error: error.message });
+        res.status(500).json({ message: "Failed to fetch WhatsApp templates", error: error.message });
     }
 };

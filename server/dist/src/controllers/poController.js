@@ -207,20 +207,21 @@ const createPurchaseOrder = (req, res, next) => __awaiter(void 0, void 0, void 0
         // Trigger WhatsApp to vendor if autoSend is requested and phone is present
         if (autoSend && effectiveSupplierPhone) {
             try {
-                const { sendTemplateViaChatHub } = require("../services/mbgcard");
+                const { NotificationService } = require("../modules/messaging");
                 const storeName = ((_a = po.location) === null || _a === void 0 ? void 0 : _a.name) || "Book My Veg";
                 const origin = process.env.CLIENT_URL || "https://bookmyveg.co.in";
                 const poLink = `${origin}/admin/purchase-orders?po=${po.id}`;
-                yield sendTemplateViaChatHub(effectiveSupplierPhone, "vendor_po_dispatch", {
-                    body: [
-                        effectiveSupplierName || "Vendor",
-                        po.poNumber,
-                        String(po.items.length),
-                        String(Number(po.totalEstimatedCost)),
-                        storeName,
-                        ((_b = po.location) === null || _b === void 0 ? void 0 : _b.address) || "Store Hub",
-                        poLink
-                    ]
+                NotificationService.getInstance().notifyPurchaseOrder({
+                    poId: po.id,
+                    poNumber: po.poNumber,
+                    vendorPhone: effectiveSupplierPhone,
+                    vendorName: effectiveSupplierName || "Vendor",
+                    storeName,
+                    storeAddress: ((_b = po.location) === null || _b === void 0 ? void 0 : _b.address) || "Store Hub",
+                    totalAmount: Number(po.totalEstimatedCost),
+                    itemCount: po.items.length,
+                    poLink,
+                    actorId: caller === null || caller === void 0 ? void 0 : caller.userId
                 }).catch((e) => console.warn("[PO autoSend warning]:", e.message));
             }
             catch (e) {
@@ -551,9 +552,9 @@ const getPurchaseManagerAssignedStores = (req, res, next) => __awaiter(void 0, v
 exports.getPurchaseManagerAssignedStores = getPurchaseManagerAssignedStores;
 // ─── 8. Dispatch PO to Vendor WhatsApp ────────────────────────────────────────
 const sendPOToVendorWhatsApp = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a, _b, _c, _d, _e;
+    var _a, _b, _c, _d, _e, _f;
     const id = String(req.params.id);
-    const { templateName = "vendor_po_dispatch", customPhone, customMessage } = req.body;
+    const { customPhone } = req.body;
     try {
         const po = yield prisma_1.default.purchaseOrder.findUnique({
             where: { id },
@@ -578,22 +579,24 @@ const sendPOToVendorWhatsApp = (req, res, next) => __awaiter(void 0, void 0, voi
         const vendorName = ((_b = po.vendor) === null || _b === void 0 ? void 0 : _b.companyName) || ((_c = po.vendor) === null || _c === void 0 ? void 0 : _c.name) || po.supplierName || "Vendor";
         const storeName = ((_d = po.location) === null || _d === void 0 ? void 0 : _d.name) || "Book My Veg Hub";
         const storeAddress = ((_e = po.location) === null || _e === void 0 ? void 0 : _e.address) || "Store Hub";
-        const totalAmount = String(Number(po.actualCost) > 0 ? Number(po.actualCost) : Number(po.totalEstimatedCost));
+        const totalAmount = Number(po.actualCost) > 0 ? Number(po.actualCost) : Number(po.totalEstimatedCost);
         const origin = process.env.CLIENT_URL || "https://bookmyveg.co.in";
         const poLink = `${origin}/admin/purchase-orders?po=${po.id}`;
-        const { sendTemplateViaChatHub } = require("../services/mbgcard");
-        const variables = [
+        const { NotificationService } = require("../modules/messaging");
+        const dispatchResult = yield NotificationService.getInstance().notifyPurchaseOrder({
+            poId: po.id,
+            poNumber: po.poNumber,
+            vendorPhone: recipientPhone,
             vendorName,
-            po.poNumber,
-            String(po.items.length),
-            totalAmount,
             storeName,
             storeAddress,
-            poLink
-        ];
-        const dispatchResult = yield sendTemplateViaChatHub(recipientPhone, templateName, { body: variables });
+            totalAmount,
+            itemCount: po.items.length,
+            poLink,
+            actorId: (_f = req.user) === null || _f === void 0 ? void 0 : _f.userId
+        });
         res.json({
-            success: true,
+            success: dispatchResult.success,
             message: `Purchase Order ${po.poNumber} sent to vendor WhatsApp (${recipientPhone}).`,
             dispatchResult
         });

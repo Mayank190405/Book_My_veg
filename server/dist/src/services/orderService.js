@@ -226,8 +226,14 @@ exports.orderService = {
                     const user = yield prisma_1.default.user.findUnique({ where: { id: data.userId }, select: { name: true, phone: true } });
                     const phone = user === null || user === void 0 ? void 0 : user.phone;
                     if (phone) {
-                        const { sendOrderConfirmationViaWhatsapp } = require("./mbgcard");
-                        sendOrderConfirmationViaWhatsapp(phone, user.name || "Customer", order.id, Number(order.totalAmount)).catch((err) => {
+                        const { NotificationService } = require("../modules/messaging");
+                        NotificationService.getInstance().notifyOrderConfirmed({
+                            orderId: order.id,
+                            customerPhone: phone,
+                            customerName: user.name || "Customer",
+                            totalAmount: Number(order.totalAmount),
+                            itemsSummary: "BookMyVeg Fresh Order"
+                        }).catch((err) => {
                             console.error("[OrderService] WhatsApp dispatch failure:", err);
                         });
                     }
@@ -281,8 +287,14 @@ exports.orderService = {
             // ── WhatsApp Notification Dispatch (Bill Cancelled) ────────────────
             try {
                 if (targetUser && targetUser.phone) {
-                    const { sendBillCancelledViaWhatsapp } = require("./mbgcard");
-                    sendBillCancelledViaWhatsapp(targetUser.phone, targetUser.name || "Customer", orderId, remark).catch((err) => {
+                    const { NotificationService } = require("../modules/messaging");
+                    NotificationService.getInstance().notifyBillCancelled({
+                        orderId,
+                        customerPhone: targetUser.phone,
+                        customerName: targetUser.name || "Customer",
+                        cancellationReason: remark || "Order cancelled",
+                        triggeredBy: userId || "SYSTEM"
+                    }).catch((err) => {
                         console.error("[OrderService] WhatsApp bill cancellation dispatch failure:", err);
                     });
                 }

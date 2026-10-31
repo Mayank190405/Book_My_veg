@@ -38,7 +38,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.getWhatsappTemplates = exports.getMe = exports.loginWithPassword = exports.logout = exports.refreshToken = exports.whatsappWebhook = exports.checkWhatsappStatus = exports.verifyOtpAndLogin = exports.sendOtp = void 0;
 const prisma_1 = __importStar(require("../config/prisma"));
 const otp_1 = require("../utils/otp");
-const mbgcard_1 = require("../services/mbgcard");
+const messaging_1 = require("../modules/messaging");
 const jwt_1 = require("../utils/jwt");
 const logger_1 = __importDefault(require("../utils/logger"));
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
@@ -77,7 +77,7 @@ const sendOtp = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
         }
         // Send OTP via MBG Card
         try {
-            yield (0, mbgcard_1.sendOtpViaWhatsapp)(phone, otp);
+            yield messaging_1.NotificationService.getInstance().sendOtp(phone, otp, "AUTH");
             res.status(200).json({
                 message: "OTP sent successfully"
             });
@@ -169,7 +169,7 @@ const checkWhatsappStatus = (req, res) => __awaiter(void 0, void 0, void 0, func
         // 2. Fallback: If not verified by webhook, poll MBG Card API
         if (!isVerified) {
             logger_1.default.info(`[Auth] Webhook not hit for ${phone}. Triggering fallback polling...`);
-            const conversation = yield (0, mbgcard_1.getConversation)(phone);
+            const conversation = yield (0, messaging_1.getConversation)(phone);
             if (conversation && conversation.status === "1") {
                 const messages = typeof conversation.message === 'string' ? JSON.parse(conversation.message) : (conversation.message || []);
                 for (const msg of messages) {
@@ -514,12 +514,12 @@ const getMe = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
 exports.getMe = getMe;
 const getWhatsappTemplates = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const data = yield (0, mbgcard_1.getMyMetaTemplates)();
-        res.status(200).json(data);
+        const templates = yield messaging_1.TemplateService.getInstance().syncAndGetTemplates();
+        res.status(200).json({ success: true, data: templates });
     }
     catch (error) {
         logger_1.default.error("[Auth] getWhatsappTemplates error:", error);
-        res.status(500).json({ message: "Failed to fetch WhatsApp templates from MBG Card", error: error.message });
+        res.status(500).json({ message: "Failed to fetch WhatsApp templates", error: error.message });
     }
 });
 exports.getWhatsappTemplates = getWhatsappTemplates;

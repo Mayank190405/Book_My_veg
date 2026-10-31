@@ -45,13 +45,13 @@ import templateRoutes from "./routes/templateRoutes";
 import vendorRoutes from "./routes/vendorRoutes";
 import staffAdvanceRoutes from "./routes/staffAdvanceRoutes";
 import cmsRoutes from "./routes/cmsRoutes";
+import { messagingRoutes } from "./modules/messaging";
 import { authenticate, authorize } from "./middleware/auth";
 import { socketHandler } from "./sockets/socketHandler";
 import logger from "./utils/logger";
 import prisma from "./config/prisma";
 import { SearchService } from "./services/searchService";
 import { startMetricsFlushWorker } from "./services/metricsFlushWorker";
-import { startPaymentReminderWorker } from "./services/paymentReminderWorker";
 
 // Bootstrap auto-cancel queue worker (registers Bull processor)
 import "./queues/autoCancelQueue";
@@ -148,6 +148,7 @@ app.use("/api/v1/templates", templateRoutes);
 app.use("/api/v1/vendors", vendorRoutes);
 app.use("/api/v1/staff-advances", staffAdvanceRoutes);
 app.use("/api/v1/cms", cmsRoutes);
+app.use("/api/v1/messaging", messagingRoutes);
 app.use("/api/integration/v1", integrationRouter);
 
 app.get("/health", (_req, res) => {
@@ -205,9 +206,6 @@ server.listen(PORT, async () => {
 
     // Start background metrics flush daemon
     startMetricsFlushWorker();
-    
-    // Start background feedback and retention dispatch (automated dues reminders disabled)
-    startPaymentReminderWorker();
 
     // Start background 6-hour Easebuzz transaction sync cron
     try {

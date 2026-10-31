@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { getPayInfo, initiatePayDue, publicCustomerOnboard, saveOrderFeedback, sendPaymentReminderController, verifyPayment } from "../controllers/paymentController";
+import { authenticate, authorize } from "../middleware/auth";
 
 const router = Router();
 
@@ -9,6 +10,8 @@ router.post("/pay-due", initiatePayDue);
 router.post("/verify", verifyPayment);
 router.post("/onboard", publicCustomerOnboard);
 router.post("/order-feedback", saveOrderFeedback);
-router.post("/send-reminder", sendPaymentReminderController);
+
+// Payment reminder - Authenticated staff only
+router.post("/send-reminder", authenticate, authorize(["ADMIN", "SUPER_ADMIN", "STORE_ADMIN", "POS_OPERATOR"]), sendPaymentReminderController);
 
 export default router;

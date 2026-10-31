@@ -1,4 +1,12 @@
 "use strict";
+/**
+ * DEPRECATED — Legacy messaging adapter.
+ * All messaging operations have been replaced by the centralized messaging module in:
+ * server/src/modules/messaging/
+ *
+ * Direct HTTP calls to external provider APIs have been removed from this file.
+ * All calls are redirected through the validated, audited, and deduplicated pipeline.
+ */
 var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
     function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
     return new (P || (P = Promise))(function (resolve, reject) {
@@ -12,344 +20,121 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.sendRegistrationThankYouViaWhatsapp = exports.sendInactiveCustomerReminderViaWhatsapp = exports.sendBillCancelledViaWhatsapp = exports.sendOrderStatusUpdateViaWhatsapp = exports.sendPaymentReceivedViaWhatsapp = exports.sendPaymentReminderViaWhatsapp = exports.sendInvoiceDueViaWhatsapp = exports.sendInvoicePaidViaWhatsapp = exports.sendFeedbackRequestViaWhatsapp = exports.sendTemplateViaChatHub = exports.sendOrderConfirmationViaWhatsapp = exports.APPROVED_UTILITY_TEMPLATES = exports.getConversation = exports.getMyMetaTemplates = exports.sendFlowViaChatHub = exports.sendOtpViaWhatsapp = void 0;
-const axios_1 = __importDefault(require("axios"));
-const dotenv_1 = __importDefault(require("dotenv"));
-const dueCalculationService_1 = require("./dueCalculationService");
-dotenv_1.default.config();
-const MBGCARD_API_URL = process.env.MBGCARD_API_URL || "https://chatbotbe.digitalmbg.com/api/whatsapp/send_meta_templet";
-const MBGCARD_API_TOKEN = process.env.MBGCARD_API_TOKEN || "d423777128fdc8a29bef4fb719f3d3c9";
-const MBGCARD_TEMPLATES_URL = process.env.MBGCARD_TEMPLATES_URL || "https://chatbotbe.digitalmbg.com/api/whatsapp/get_my_meta_templets";
-const MBGCARD_TEMPLATE_ID = process.env.MBGCARD_TEMPLATE_ID || "login";
-const MBGCARD_OTP_FLOW_ID = process.env.MBGCARD_OTP_FLOW_ID || "flow_1782732506015";
-const MBGCARD_SENDER_NUMBER = process.env.MBGCARD_SENDER_NUMBER || "917879431560";
-const MBGCARD_CHAT_ID = process.env.MBGCARD_CHAT_ID || "1070587";
-const MAX_RETRIES = 3;
-const INITIAL_BACKOFF = 1000; // 1 second
+exports.getMyMetaTemplates = exports.getConversation = exports.sendFeedbackRequestViaWhatsapp = exports.sendPaymentReminderViaWhatsapp = exports.sendBillCancelledViaWhatsapp = exports.sendPaymentReceivedViaWhatsapp = exports.sendInvoiceDueViaWhatsapp = exports.sendInvoicePaidViaWhatsapp = exports.sendOrderStatusUpdateViaWhatsapp = exports.sendOrderConfirmationViaWhatsapp = exports.sendTemplateViaChatHub = exports.sendFlowViaChatHub = exports.sendOtpViaWhatsapp = exports.APPROVED_UTILITY_TEMPLATES = void 0;
+const messaging_1 = require("../modules/messaging");
+Object.defineProperty(exports, "APPROVED_UTILITY_TEMPLATES", { enumerable: true, get: function () { return messaging_1.APPROVED_UTILITY_TEMPLATES; } });
+const logger_1 = __importDefault(require("../utils/logger"));
 const sendOtpViaWhatsapp = (phone, otp) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a;
-    // Format recipient phone number: remove any non-digits, and prepend country code '91' if missing
-    const cleanPhone = phone.replace(/\D/g, "");
-    const formattedPhone = cleanPhone.startsWith("91") ? cleanPhone : `91${cleanPhone}`;
-    const payload = {
-        templateName: MBGCARD_TEMPLATE_ID, // defaults to "login"
-        to: formattedPhone,
-        variables: {
-            body: [otp]
-        }
-    };
-    let lastError;
-    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-        try {
-            console.log(`Sending OTP via MBG Card Template API (Attempt ${attempt}/${MAX_RETRIES}):`, {
-                url: MBGCARD_API_URL,
-                templateName: payload.templateName,
-                to: payload.to,
-                variables: payload.variables
-            });
-            const response = yield axios_1.default.post(MBGCARD_API_URL, payload, {
-                timeout: 10000,
-                headers: {
-                    'Content-Type': 'application/json',
-                    'accept': '*/*',
-                    'x-api-key': MBGCARD_API_TOKEN,
-                    'User-Agent': 'BookMyVeg-Server/1.0'
-                }
-            });
-            console.log("MBG Card OTP Response:", response.data);
-            return response.data;
-        }
-        catch (error) {
-            lastError = error;
-            const isNetworkError = ['ECONNRESET', 'ETIMEDOUT', 'ECONNABORTED'].includes(error.code);
-            if (isNetworkError && attempt < MAX_RETRIES) {
-                const backoff = INITIAL_BACKOFF * Math.pow(2, attempt - 1);
-                console.warn(`MBG Card OTP failed (${error.code}). Retrying in ${backoff}ms...`);
-                yield new Promise(resolve => setTimeout(resolve, backoff));
-                continue;
-            }
-            console.error("Error sending OTP via MBG Card Template API:", {
-                code: error.code,
-                message: error.message,
-                response: (_a = error.response) === null || _a === void 0 ? void 0 : _a.data
-            });
-            break;
-        }
-    }
-    throw new Error(`Failed to send OTP via Template API after ${MAX_RETRIES} attempts. Last error: ${lastError === null || lastError === void 0 ? void 0 : lastError.message}`);
+    logger_1.default.warn("[DEPRECATION] sendOtpViaWhatsapp called via legacy mbgcard service. Use NotificationService instead.");
+    return messaging_1.NotificationService.getInstance().sendOtp(phone, otp, "AUTH");
 });
 exports.sendOtpViaWhatsapp = sendOtpViaWhatsapp;
-/**
- * Generic helper to send a flow via ChatHub.
- */
 const sendFlowViaChatHub = (phone, flowId, name, customFields) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a;
-    const cleanPhone = phone.replace(/\D/g, "");
-    const formattedPhone = `+${cleanPhone.startsWith("91") ? cleanPhone : `91${cleanPhone}`}`;
-    const actions = [];
-    if (customFields) {
-        for (const [key, value] of Object.entries(customFields)) {
-            actions.push({
-                action: "set_field_value",
-                field_name: key,
-                value: value
-            });
-        }
-    }
-    actions.push({
-        action: "send_flow",
-        flow_id: flowId
-    });
-    const payload = {
-        senderId: formattedPhone,
-        name: name || "Customer",
-        actions
-    };
-    const url = process.env.MBGCARD_FLOW_URL || "https://chatbot.digitalmbg.com/v1/contacts/send_flow";
-    try {
-        console.log(`[ChatHub Flow] Sending flow ${flowId} to ${formattedPhone} with custom fields:`, customFields);
-        if (!MBGCARD_API_TOKEN) {
-            console.log(`[ChatHub Flow] Mock flow sent to ${formattedPhone} (no token configured).`);
-            return { success: true, mock: true };
-        }
-        const response = yield axios_1.default.post(url, payload, {
-            timeout: 10000,
-            headers: {
-                'Content-Type': 'application/json',
-                'x-api-key': MBGCARD_API_TOKEN,
-                'User-Agent': 'BookMyVeg-Server/1.0'
-            }
-        });
-        console.log("[ChatHub Flow] Response:", response.data);
-        return response.data;
-    }
-    catch (error) {
-        console.error("Error sending flow via ChatHub:", {
-            message: error.message,
-            response: (_a = error.response) === null || _a === void 0 ? void 0 : _a.data
-        });
-        throw error;
-    }
+    logger_1.default.warn("[DEPRECATION] sendFlowViaChatHub called via legacy mbgcard service. Use NotificationService instead.");
+    return messaging_1.NotificationService.getInstance().sendChatHubFlow(phone, flowId, name, customFields);
 });
 exports.sendFlowViaChatHub = sendFlowViaChatHub;
-/**
- * Fetch approved WhatsApp templates from MBG Card.
- */
-const getMyMetaTemplates = () => __awaiter(void 0, void 0, void 0, function* () {
-    const url = process.env.MBGCARD_TEMPLATES_URL || "https://chatbotbe.digitalmbg.com/api/whatsapp/get_my_meta_templets";
-    try {
-        console.log(`Fetching Meta templates from MBG Card (${url})...`);
-        const response = yield axios_1.default.get(url, {
-            headers: {
-                'accept': 'application/json',
-                'Content-Type': 'application/json',
-                'x-api-key': MBGCARD_API_TOKEN,
-                'User-Agent': 'BookMyVeg-Server/1.0'
-            },
-            timeout: 10000
-        });
-        return response.data;
-    }
-    catch (error) {
-        console.warn("MBG Card Meta templates fetch notice:", error.message);
-        return { success: false, data: [] };
-    }
+const sendTemplateViaChatHub = (phone, templateName, variables, dynamicMedia) => __awaiter(void 0, void 0, void 0, function* () {
+    logger_1.default.warn("[DEPRECATION] sendTemplateViaChatHub called via legacy mbgcard service. Use TemplateService instead.");
+    return messaging_1.TemplateService.getInstance().sendCustomTemplate({
+        phone,
+        templateName,
+        variables,
+        dynamicMedia,
+        triggerSource: "LEGACY_MBGCARD_WRAPPER"
+    });
 });
-exports.getMyMetaTemplates = getMyMetaTemplates;
-/**
- * Fallback conversation query. Left in place for backward compatibility, returns null as MBG Card has no conversation endpoint.
- */
-const getConversation = (phone) => __awaiter(void 0, void 0, void 0, function* () {
-    console.warn("[MBG Card] getConversation is deprecated and not supported by the MBG Card API.");
-    return null;
-});
-exports.getConversation = getConversation;
-exports.APPROVED_UTILITY_TEMPLATES = new Set([
-    "bill_created", // UTILITY: Invoice Generated (Paid, Due, Cancelled)
-    "payment_due_reminder", // UTILITY: Bill Due Reminder
-    "feedback_request_support_", // UTILITY: Feedback on Recent Purchase
-    "order_management_4", // UTILITY: Order Placed & Processing
-    "order_update_notification", // UTILITY: Produce Out for Delivery
-    "login" // AUTHENTICATION: OTP verification
-]);
-const sendOrderConfirmationViaWhatsapp = (phone, customerName, orderId, _amount) => __awaiter(void 0, void 0, void 0, function* () {
-    // Uses approved UTILITY template: order_management_4
-    return (0, exports.sendTemplateViaChatHub)(phone, "order_management_4", {
-        body: [customerName, orderId]
+exports.sendTemplateViaChatHub = sendTemplateViaChatHub;
+const sendOrderConfirmationViaWhatsapp = (phone, customerName, orderId, amount) => __awaiter(void 0, void 0, void 0, function* () {
+    logger_1.default.warn("[DEPRECATION] sendOrderConfirmationViaWhatsapp called via legacy mbgcard service. Use NotificationService instead.");
+    return messaging_1.NotificationService.getInstance().notifyOrderConfirmed({
+        orderId,
+        customerPhone: phone,
+        customerName,
+        totalAmount: amount || 0,
+        itemsSummary: "BookMyVeg Order"
     });
 });
 exports.sendOrderConfirmationViaWhatsapp = sendOrderConfirmationViaWhatsapp;
-/**
- * Generic helper to send a WhatsApp template via ChatHub.
- * Strictly enforces UTILITY-only templates.
- */
-const sendTemplateViaChatHub = (phone, templateName, variables, dynamicMedia) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a;
-    // ── STRICT UTILITY MESSAGE POLICY ENFORCEMENT ──────────────────
-    if (!exports.APPROVED_UTILITY_TEMPLATES.has(templateName)) {
-        console.warn(`[MBG WhatsApp Template] BLOCKED non-utility template '${templateName}'. Strict utility policy is active.`);
-        return {
-            success: false,
-            blocked: true,
-            message: `Template '${templateName}' was blocked because only approved UTILITY templates are permitted.`
-        };
-    }
-    const cleanPhone = phone.replace(/\D/g, "");
-    const formattedPhone = cleanPhone.length === 10 ? `91${cleanPhone}` : (cleanPhone.startsWith("91") ? cleanPhone : `91${cleanPhone}`);
-    const payload = {
-        templateName,
-        to: formattedPhone,
-        variables: {
-            body: (variables === null || variables === void 0 ? void 0 : variables.body) || []
-        }
-    };
-    if ((variables === null || variables === void 0 ? void 0 : variables.header) && variables.header.length > 0) {
-        payload.variables.header = variables.header;
-    }
-    if (dynamicMedia) {
-        payload.dynamicMedia = dynamicMedia;
-    }
-    const url = process.env.MBGCARD_API_URL || "https://chatbotbe.digitalmbg.com/api/whatsapp/send_meta_templet";
-    try {
-        console.log(`[MBG WhatsApp Utility Template] Sending ${templateName} (UTILITY) to ${formattedPhone} via ${url}`);
-        const response = yield axios_1.default.post(url, payload, {
-            timeout: 10000,
-            headers: {
-                'Content-Type': 'application/json',
-                'accept': '*/*',
-                'x-api-key': MBGCARD_API_TOKEN,
-                'User-Agent': 'BookMyVeg-Server/1.0'
-            }
-        });
-        console.log("[MBG WhatsApp Template] Response:", response.data);
-        return response.data;
-    }
-    catch (error) {
-        console.error("Error sending utility template via ChatHub:", {
-            message: error.message,
-            response: (_a = error.response) === null || _a === void 0 ? void 0 : _a.data
-        });
-        throw error;
-    }
-});
-exports.sendTemplateViaChatHub = sendTemplateViaChatHub;
-/**
- * Post-order feedback request via UTILITY template 'feedback_request_support_'.
- */
-const sendFeedbackRequestViaWhatsapp = (phone, customerName, _orderId) => __awaiter(void 0, void 0, void 0, function* () {
-    return (0, exports.sendTemplateViaChatHub)(phone, "feedback_request_support_", {
-        body: [customerName]
-    });
-});
-exports.sendFeedbackRequestViaWhatsapp = sendFeedbackRequestViaWhatsapp;
-/**
- * Invoice created (Paid) via UTILITY template 'bill_created'.
- */
-const sendInvoicePaidViaWhatsapp = (phone, customerName, invoiceNo, totalAmount, paymentMode, orderId) => __awaiter(void 0, void 0, void 0, function* () {
-    const origin = process.env.CLIENT_URL || "https://bookmyveg.co.in";
-    const invoicePdfLink = `${origin}/invoice/${orderId}`;
-    return (0, exports.sendTemplateViaChatHub)(phone, "bill_created", {
-        body: [customerName, invoiceNo, String(totalAmount), paymentMode, invoicePdfLink]
-    });
-});
-exports.sendInvoicePaidViaWhatsapp = sendInvoicePaidViaWhatsapp;
-/**
- * Invoice created (Due / Partial) via UTILITY template 'bill_created'.
- */
-const sendInvoiceDueViaWhatsapp = (phone, customerName, invoiceNo, totalAmount, paymentMode, dueAmount, userId, orderId) => __awaiter(void 0, void 0, void 0, function* () {
-    const origin = process.env.CLIENT_URL || "https://bookmyveg.co.in";
-    const cleanPhone = phone ? phone.replace(/\D/g, "") : "";
-    let payLink = `${origin}/pay?number=${cleanPhone}`;
-    if (userId) {
-        payLink += `&userid=${userId}`;
-    }
-    // Meta WhatsApp Cloud API rejects template variable parameters containing newlines (\n) with HTTP 400 (#100) Invalid parameter.
-    // Keep URL parameter single-line and clean.
-    const invoiceAndPayLink = `${origin}/invoice/${orderId} | Pay Online: ${payLink}`;
-    const formattedTotal = (0, dueCalculationService_1.formatCurrencyAmount)(totalAmount);
-    const formattedDue = (0, dueCalculationService_1.formatCurrencyAmount)(dueAmount);
-    return (0, exports.sendTemplateViaChatHub)(phone, "bill_created", {
-        body: [customerName, invoiceNo, formattedTotal, `DUE: ₹${formattedDue} (${paymentMode})`, invoiceAndPayLink]
-    });
-});
-exports.sendInvoiceDueViaWhatsapp = sendInvoiceDueViaWhatsapp;
-/**
- * Payment due reminder via approved UTILITY template 'payment_due_reminder'.
- */
-const sendPaymentReminderViaWhatsapp = (phone, customerName, dueAmount, invoiceNo, userId, _orderId) => __awaiter(void 0, void 0, void 0, function* () {
-    const origin = process.env.CLIENT_URL || "https://bookmyveg.co.in";
-    const cleanPhone = phone.replace(/\D/g, "");
-    let payLink = `${origin}/pay?number=${cleanPhone}`;
-    if (userId) {
-        payLink += `&userid=${userId}`;
-    }
-    const dueTiming = `Immediate. Pay online: ${payLink}`;
-    const formattedDue = (0, dueCalculationService_1.formatCurrencyAmount)(dueAmount);
-    const response = yield (0, exports.sendTemplateViaChatHub)(phone, "payment_due_reminder", {
-        body: [customerName, invoiceNo, `₹${formattedDue}`, dueTiming]
-    });
-    // Explicitly record provider acceptance status (distinct from delivered or read webhook confirmations)
-    return Object.assign(Object.assign({}, response), { dispatchStatus: "ACCEPTED_BY_PROVIDER", formattedDue, recipient: cleanPhone });
-});
-exports.sendPaymentReminderViaWhatsapp = sendPaymentReminderViaWhatsapp;
-/**
- * Payment received confirmation via approved UTILITY template 'bill_created'.
- */
-const sendPaymentReceivedViaWhatsapp = (phone, customerName, invoiceNo, paidAmount, paymentMode) => __awaiter(void 0, void 0, void 0, function* () {
-    const origin = process.env.CLIENT_URL || "https://bookmyveg.co.in";
-    const invoicePdfLink = `${origin}/invoice/${invoiceNo}`;
-    return (0, exports.sendTemplateViaChatHub)(phone, "bill_created", {
-        body: [customerName, invoiceNo, String(paidAmount), `${paymentMode} (Paid)`, invoicePdfLink]
-    });
-});
-exports.sendPaymentReceivedViaWhatsapp = sendPaymentReceivedViaWhatsapp;
-/**
- * Order status update via UTILITY templates.
- */
-const sendOrderStatusUpdateViaWhatsapp = (phone, customerName, orderId, statusName) => __awaiter(void 0, void 0, void 0, function* () {
-    if (statusName === "OUT_FOR_DELIVERY" || statusName === "SHIPPED") {
-        return (0, exports.sendTemplateViaChatHub)(phone, "order_update_notification", {
-            body: [customerName]
-        });
-    }
-    return (0, exports.sendTemplateViaChatHub)(phone, "order_management_4", {
-        body: [customerName, orderId]
+const sendOrderStatusUpdateViaWhatsapp = (phone, customerName, orderId, status, deliveryEta) => __awaiter(void 0, void 0, void 0, function* () {
+    logger_1.default.warn("[DEPRECATION] sendOrderStatusUpdateViaWhatsapp called via legacy mbgcard service. Use NotificationService instead.");
+    return messaging_1.NotificationService.getInstance().notifyOrderStatusUpdated({
+        orderId,
+        customerPhone: phone,
+        customerName,
+        status,
+        deliveryEta
     });
 });
 exports.sendOrderStatusUpdateViaWhatsapp = sendOrderStatusUpdateViaWhatsapp;
-/**
- * Bill / Order cancelled notification via approved UTILITY template 'bill_created'.
- */
-const sendBillCancelledViaWhatsapp = (phone, customerName, orderId, reason) => __awaiter(void 0, void 0, void 0, function* () {
-    const origin = process.env.CLIENT_URL || "https://bookmyveg.co.in";
-    const invoicePdfLink = `${origin}/invoice/${orderId}`;
-    const cancelDesc = reason ? `CANCELLED (${reason})` : "CANCELLED";
-    return (0, exports.sendTemplateViaChatHub)(phone, "bill_created", {
-        body: [customerName, orderId, "0", cancelDesc, invoicePdfLink]
+const sendInvoicePaidViaWhatsapp = (phone, customerName, orderId, totalAmount, paymentMethod, _invoiceNumber) => __awaiter(void 0, void 0, void 0, function* () {
+    logger_1.default.warn("[DEPRECATION] sendInvoicePaidViaWhatsapp called via legacy mbgcard service. Use NotificationService instead.");
+    return messaging_1.NotificationService.getInstance().notifyBillCreated({
+        orderId,
+        customerPhone: phone,
+        customerName,
+        totalAmount,
+        paidAmount: totalAmount,
+        dueAmount: 0,
+        paymentMode: paymentMethod
+    });
+});
+exports.sendInvoicePaidViaWhatsapp = sendInvoicePaidViaWhatsapp;
+const sendInvoiceDueViaWhatsapp = (phone, customerName, orderId, totalAmount, paymentMethod, remainingDue, _customerId, _invoiceNumber) => __awaiter(void 0, void 0, void 0, function* () {
+    logger_1.default.warn("[DEPRECATION] sendInvoiceDueViaWhatsapp called via legacy mbgcard service. Use NotificationService instead.");
+    return messaging_1.NotificationService.getInstance().notifyBillCreated({
+        orderId,
+        customerPhone: phone,
+        customerName,
+        totalAmount,
+        paidAmount: Math.max(0, totalAmount - remainingDue),
+        dueAmount: remainingDue,
+        paymentMode: paymentMethod
+    });
+});
+exports.sendInvoiceDueViaWhatsapp = sendInvoiceDueViaWhatsapp;
+const sendPaymentReceivedViaWhatsapp = (phone, customerName, orderId, amount, paymentMethod, remainingBalance) => __awaiter(void 0, void 0, void 0, function* () {
+    logger_1.default.warn("[DEPRECATION] sendPaymentReceivedViaWhatsapp called via legacy mbgcard service. Use NotificationService instead.");
+    return messaging_1.NotificationService.getInstance().notifyPaymentReceived({
+        paymentId: `PAY-${orderId}-${Date.now().toString().slice(-4)}`,
+        orderId,
+        customerPhone: phone,
+        customerName,
+        amount,
+        paymentMethod,
+        remainingBalance: remainingBalance || 0
+    });
+});
+exports.sendPaymentReceivedViaWhatsapp = sendPaymentReceivedViaWhatsapp;
+const sendBillCancelledViaWhatsapp = (phone, customerName, orderId, cancellationReason) => __awaiter(void 0, void 0, void 0, function* () {
+    logger_1.default.warn("[DEPRECATION] sendBillCancelledViaWhatsapp called via legacy mbgcard service. Use NotificationService instead.");
+    return messaging_1.NotificationService.getInstance().notifyBillCancelled({
+        orderId,
+        customerPhone: phone,
+        customerName,
+        cancellationReason
     });
 });
 exports.sendBillCancelledViaWhatsapp = sendBillCancelledViaWhatsapp;
-/**
- * Inactivity reminder - marketing templates blocked by strict utility policy.
- */
-const sendInactiveCustomerReminderViaWhatsapp = (_phone, _customerName) => __awaiter(void 0, void 0, void 0, function* () {
-    console.warn("[MBG WhatsApp] Inactivity reminder skipped: strict utility message policy forbids marketing broadcasts.");
-    return {
-        success: false,
-        skipped: true,
-        message: "Marketing broadcasts are disabled under strict utility-only policy."
-    };
+const sendPaymentReminderViaWhatsapp = (phone, _customerName, _totalDue, _invoiceLabel, _customerId, latestOrderId) => __awaiter(void 0, void 0, void 0, function* () {
+    logger_1.default.warn("[DEPRECATION] sendPaymentReminderViaWhatsapp called via legacy mbgcard service. Use ReminderService instead.");
+    if (latestOrderId) {
+        return messaging_1.ReminderService.getInstance().sendSingleOrderReminder({
+            orderId: latestOrderId
+        });
+    }
+    return { success: false, error: "Legacy reminder call missing order ID" };
 });
-exports.sendInactiveCustomerReminderViaWhatsapp = sendInactiveCustomerReminderViaWhatsapp;
-/**
- * Registration welcome - marketing templates blocked by strict utility policy.
- */
-const sendRegistrationThankYouViaWhatsapp = (_phone, _customerName) => __awaiter(void 0, void 0, void 0, function* () {
-    console.warn("[MBG WhatsApp] Registration welcome skipped: strict utility message policy forbids marketing broadcasts.");
-    return {
-        success: false,
-        skipped: true,
-        message: "Marketing welcome messages are disabled under strict utility-only policy."
-    };
+exports.sendPaymentReminderViaWhatsapp = sendPaymentReminderViaWhatsapp;
+const sendFeedbackRequestViaWhatsapp = (phone, customerName, orderId) => __awaiter(void 0, void 0, void 0, function* () {
+    logger_1.default.warn("[DEPRECATION] sendFeedbackRequestViaWhatsapp called via legacy mbgcard service. Use NotificationService instead.");
+    return messaging_1.NotificationService.getInstance().notifyFeedbackRequest(phone, customerName, orderId);
 });
-exports.sendRegistrationThankYouViaWhatsapp = sendRegistrationThankYouViaWhatsapp;
+exports.sendFeedbackRequestViaWhatsapp = sendFeedbackRequestViaWhatsapp;
+exports.getConversation = messaging_1.getConversation;
+const getMyMetaTemplates = () => __awaiter(void 0, void 0, void 0, function* () {
+    logger_1.default.warn("[DEPRECATION] getMyMetaTemplates called via legacy mbgcard service. Use TemplateService instead.");
+    const templates = yield messaging_1.TemplateService.getInstance().syncAndGetTemplates();
+    return { success: true, data: templates };
+});
+exports.getMyMetaTemplates = getMyMetaTemplates;

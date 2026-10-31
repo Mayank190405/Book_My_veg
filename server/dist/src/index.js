@@ -56,13 +56,13 @@ const templateRoutes_1 = __importDefault(require("./routes/templateRoutes"));
 const vendorRoutes_1 = __importDefault(require("./routes/vendorRoutes"));
 const staffAdvanceRoutes_1 = __importDefault(require("./routes/staffAdvanceRoutes"));
 const cmsRoutes_1 = __importDefault(require("./routes/cmsRoutes"));
+const messaging_1 = require("./modules/messaging");
 const auth_1 = require("./middleware/auth");
 const socketHandler_1 = require("./sockets/socketHandler");
 const logger_1 = __importDefault(require("./utils/logger"));
 const prisma_1 = __importDefault(require("./config/prisma"));
 const searchService_1 = require("./services/searchService");
 const metricsFlushWorker_1 = require("./services/metricsFlushWorker");
-const paymentReminderWorker_1 = require("./services/paymentReminderWorker");
 // Bootstrap auto-cancel queue worker (registers Bull processor)
 require("./queues/autoCancelQueue");
 const redis_adapter_1 = require("@socket.io/redis-adapter");
@@ -148,6 +148,7 @@ app.use("/api/v1/templates", templateRoutes_1.default);
 app.use("/api/v1/vendors", vendorRoutes_1.default);
 app.use("/api/v1/staff-advances", staffAdvanceRoutes_1.default);
 app.use("/api/v1/cms", cmsRoutes_1.default);
+app.use("/api/v1/messaging", messaging_1.messagingRoutes);
 app.use("/api/integration/v1", index_1.default);
 app.get("/health", (_req, res) => {
     res.status(200).json({ status: "ok" });
@@ -198,8 +199,6 @@ server.listen(PORT, () => __awaiter(void 0, void 0, void 0, function* () {
     }
     // Start background metrics flush daemon
     (0, metricsFlushWorker_1.startMetricsFlushWorker)();
-    // Start background feedback and retention dispatch (automated dues reminders disabled)
-    (0, paymentReminderWorker_1.startPaymentReminderWorker)();
     // Start background 6-hour Easebuzz transaction sync cron
     try {
         const { startEasebuzzSyncCron } = require("./services/easebuzzSyncService");

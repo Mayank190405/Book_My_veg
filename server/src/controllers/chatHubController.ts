@@ -1,6 +1,6 @@
 import { Response } from "express";
 import { AuthRequest } from "../middleware/auth";
-import { sendFlowViaChatHub, sendTemplateViaChatHub } from "../services/mbgcard";
+import { NotificationService, TemplateService } from "../modules/messaging";
 
 /**
  * Endpoint to trigger an arbitrary ChatHub flow for a contact.
@@ -17,11 +17,17 @@ export const sendFlowHandler = async (req: AuthRequest, res: Response) => {
             });
         }
 
-        const result = await sendFlowViaChatHub(phone, flowId, name, customFields);
+        const result = await NotificationService.getInstance().sendChatHubFlow(
+            phone,
+            flowId,
+            name,
+            customFields,
+            req.user?.userId
+        );
 
         return res.status(200).json({
-            success: true,
-            message: "Flow triggered successfully",
+            success: result.success,
+            message: result.success ? "Flow triggered successfully" : (result.error || "Failed to trigger flow"),
             data: result
         });
     } catch (error: any) {
@@ -49,11 +55,18 @@ export const sendTemplateHandler = async (req: AuthRequest, res: Response) => {
             });
         }
 
-        const result = await sendTemplateViaChatHub(phone, templateName, variables, dynamicMedia);
+        const result = await TemplateService.getInstance().sendCustomTemplate({
+            phone,
+            templateName,
+            variables,
+            dynamicMedia,
+            actorId: req.user?.userId,
+            triggerSource: "CHATHUB_API"
+        });
 
-        return res.status(200).json({
-            success: true,
-            message: "Template message triggered successfully",
+        return res.status(result.success ? 200 : 400).json({
+            success: result.success,
+            message: result.success ? "Template message triggered successfully" : (result.error || "Failed to dispatch template"),
             data: result
         });
     } catch (error: any) {

@@ -378,15 +378,6 @@ export const createOrUpdateCustomer = async (req: AuthenticatedRequest, res: Res
                 include: { addresses: { where: { isDefault: true } } }
             });
 
-            // Trigger welcome registration WhatsApp notification
-            try {
-                const { sendRegistrationThankYouViaWhatsapp } = require("../services/mbgcard");
-                sendRegistrationThankYouViaWhatsapp(customer.phone, customer.name || "Customer").catch((err: any) => {
-                    console.error("[POS] WhatsApp welcome dispatch error:", err.message);
-                });
-            } catch (err: any) {
-                console.warn("[POS] Welcome dispatch trigger warning:", err.message);
-            }
         }
 
         // Upsert default address
@@ -809,18 +800,23 @@ export const processPOSOrder = async (req: AuthenticatedRequest, res: Response, 
                         ? finalOrder.payments.map((p: any) => `${p.method}: ₹${Number(p.amount)}`).join(", ")
                         : (finalOrder.payments[0]?.method || (finalOrder.isCredit ? "DUE ON ACCOUNT" : "CASH"));
 
-                    const { sendInvoicePaidViaWhatsapp, sendInvoiceDueViaWhatsapp } = require("../services/mbgcard");
-                    
-                    if (isPaid) {
-                        sendInvoicePaidViaWhatsapp(user.phone, user.name || "Customer", orderId, totalAmount, paymentModeDesc, orderId).catch((err: any) => {
-                            console.error("[POSController] WhatsApp Invoice Paid dispatch failure:", err);
-                        });
-                    } else {
-                        const dueAmount = isPartial ? currentBillDue : totalAmount;
-                        sendInvoiceDueViaWhatsapp(user.phone, user.name || "Customer", orderId, totalAmount, paymentModeDesc, dueAmount, customerId, orderId).catch((err: any) => {
-                            console.error("[POSController] WhatsApp Invoice Due dispatch failure:", err);
-                        });
-                    }
+                    const posPaidAmount = Number((result as any).paidAmount ?? (isPaid ? totalAmount : Math.max(0, totalAmount - currentBillDue)));
+                    const { NotificationService } = require("../modules/messaging");
+                    NotificationService.getInstance().notifyBillCreated({
+                        orderId,
+                        userId: customerId,
+                        customerName: user.name || "Customer",
+                        customerPhone: user.phone,
+                        totalAmount,
+                        paidAmount: posPaidAmount,
+                        dueAmount: isPaid ? 0 : (isPartial ? currentBillDue : totalAmount),
+                        paymentMode: paymentModeDesc,
+                        isPaid,
+                        locationId: finalOrder.locationId || undefined,
+                        actorId: req.user?.userId
+                    }).catch((err: any) => {
+                        console.error("[POSController] WhatsApp Bill notification dispatch failure:", err);
+                    });
                 }
             } catch (err) {
                 console.error("[POSController] Failed to send WhatsApp:", err);
@@ -1173,8 +1169,14 @@ export const cancelPOSOrder = async (req: AuthenticatedRequest, res: Response, n
         // ── WhatsApp Notification Dispatch (Bill Cancelled) ────────────────
         if (order.user?.phone) {
             try {
-                const { sendBillCancelledViaWhatsapp } = require("../services/mbgcard");
-                sendBillCancelledViaWhatsapp(order.user.phone, order.user.name || "Customer", orderId, reason).catch((err: any) => {
+                const { NotificationService } = require("../modules/messaging");
+                NotificationService.getInstance().notifyBillCancelled({
+                    orderId,
+                    customerPhone: order.user.phone,
+                    customerName: order.user.name || "Customer",
+                    cancellationReason: reason,
+                    triggeredBy: staffId
+                }).catch((err: any) => {
                     console.error("[POSController] WhatsApp Bill Cancelled dispatch failure:", err.message);
                 });
             } catch (err: any) {
@@ -1403,21 +1405,33 @@ export const collectDuePayment = async (req: AuthenticatedRequest, res: Response
                 const totalAmount = orderTotal;
                 const remainingDueAfter = Math.max(0, orderTotal - newTotalPaid);
                 const paymentModeDesc = `${method || "CASH"}: ₹${totalPayingNow}`;
-                const { sendInvoicePaidViaWhatsapp, sendInvoiceDueViaWhatsapp, sendPaymentReceivedViaWhatsapp } = require("../services/mbgcard");
+                const { NotificationService } = require("../modules/messaging");
 
-                sendPaymentReceivedViaWhatsapp(user.phone, user.name || "Customer", orderId, totalPayingNow, paymentModeDesc).catch((err: any) => {
+                NotificationService.getInstance().notifyPaymentReceived({
+                    paymentId: `PAY-${orderId}-${Date.now().toString().slice(-4)}`,
+                    orderId,
+                    customerPhone: user.phone,
+                    customerName: user.name || "Customer",
+                    amount: totalPayingNow,
+                    paymentMethod: paymentModeDesc,
+                    remainingBalance: remainingDueAfter,
+                    triggeredBy: staffId
+                }).catch((err: any) => {
                     console.error("[POS Bill Settle] WhatsApp Payment Received dispatch failure:", err.message);
                 });
 
-                if (isFull) {
-                    sendInvoicePaidViaWhatsapp(user.phone, user.name || "Customer", orderId, totalAmount, paymentModeDesc, orderId).catch((err: any) => {
-                        console.error("[POS Bill Settle] WhatsApp Invoice Paid dispatch failure:", err.message);
-                    });
-                } else {
-                    sendInvoiceDueViaWhatsapp(user.phone, user.name || "Customer", orderId, totalAmount, paymentModeDesc, remainingDueAfter, customerId, orderId).catch((err: any) => {
-                        console.error("[POS Bill Settle] WhatsApp Invoice Due dispatch failure:", err.message);
-                    });
-                }
+                NotificationService.getInstance().notifyBillCreated({
+                    orderId,
+                    customerPhone: user.phone,
+                    customerName: user.name || "Customer",
+                    totalAmount,
+                    paidAmount: totalPayingNow,
+                    dueAmount: remainingDueAfter,
+                    paymentMode: paymentModeDesc,
+                    triggeredBy: staffId
+                }).catch((err: any) => {
+                    console.error("[POS Bill Settle] WhatsApp Bill Status dispatch failure:", err.message);
+                });
             } catch (wErr: any) {
                 console.warn("[POS Bill Settle] WhatsApp notification dispatch warning:", wErr.message);
             }
@@ -1588,114 +1602,28 @@ export const getPOSDueCustomers = async (req: AuthenticatedRequest, res: Respons
 };
 
 export const sendPOSWhatsappDueReminders = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
-    const { customerIds } = req.body; // Array of selected customer IDs, or empty/all to send to all due customers
+    const { customerIds } = req.body;
     const isGlobal = req.user?.role === "ADMIN" || req.user?.role === "SUPER_ADMIN";
 
-    // Location filter: maintain strict parity with getPOSDueCustomers view
     let locationId = (req.body.locationId || req.query.locationId || req.user?.locationId) as string | undefined;
     if (locationId === "all" || (isGlobal && !req.body.locationId && !req.query.locationId)) {
         locationId = undefined;
     }
 
     try {
-        const { sendPaymentReminderViaWhatsapp } = require("../services/mbgcard");
-
-        const orders = await prisma.order.findMany({
-            where: getEligibleOrdersWhereClause({ customerIds, locationId }),
-            include: { user: true, payments: true },
-            orderBy: { createdAt: "desc" }
+        const { ReminderService } = require("../modules/messaging");
+        const result = await ReminderService.getInstance().sendDueReminders({
+            customerIds: Array.isArray(customerIds) ? customerIds : undefined,
+            locationId,
+            triggeredBy: req.user?.userId
         });
 
-        const customerOrdersMap: Record<string, { user: any; orders: any[] }> = {};
-
-        for (const order of orders) {
-            if (!order.user || !order.user.phone) continue;
-            const uId = order.user.id;
-            if (!customerOrdersMap[uId]) {
-                customerOrdersMap[uId] = {
-                    user: order.user,
-                    orders: []
-                };
-            }
-            customerOrdersMap[uId].orders.push(order);
-        }
-
-        let sentCount = 0;
-        let skippedCount = 0;
-        let failedCount = 0;
-
-        const isBulk = !Array.isArray(customerIds) || customerIds.length === 0;
-        const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-
-        for (const entry of Object.values(customerOrdersMap)) {
-            const summary = calculateCustomerDues(entry.orders);
-            if (summary.eligibleOrdersCount <= 0 || summary.totalDue <= 0) continue;
-
-            const formattedTotal = summary.totalDue;
-            const orderCount = summary.eligibleOrdersCount;
-            const latestOrderId = summary.eligibleOrders[0].id;
-
-            // In bulk mode, avoid spamming customers who already received a reminder in the last 24 hours
-            if (isBulk) {
-                const recentReminder = await (prisma.auditLog.findFirst as any)({
-                    where: {
-                        entityType: "USER",
-                        entityId: entry.user.id,
-                        action: "WHATSAPP_DUE_REMINDER",
-                        createdAt: { gte: oneDayAgo }
-                    }
-                });
-
-                if (recentReminder) {
-                    skippedCount++;
-                    continue;
-                }
-            }
-
-            try {
-                const invoiceLabel = orderCount > 1 
-                    ? `All Dues (${orderCount} Bills)` 
-                    : latestOrderId;
-
-                await sendPaymentReminderViaWhatsapp(
-                    entry.user.phone,
-                    entry.user.name || "Customer",
-                    formattedTotal,
-                    invoiceLabel,
-                    entry.user.id,
-                    latestOrderId
-                );
-                sentCount++;
-
-                // Record AuditLog
-                await (prisma.auditLog.create as any)({
-                    data: {
-                        entityType: "USER",
-                        entityId: entry.user.id,
-                        action: "WHATSAPP_DUE_REMINDER",
-                        staffId: req.user?.userId,
-                        locationId: locationId || null,
-                        newValue: {
-                            totalDue: formattedTotal,
-                            orderCount,
-                            invoiceLabel,
-                            trigger: "POS_MANUAL",
-                            locationId: locationId || "GLOBAL",
-                            sentAt: new Date()
-                        }
-                    }
-                });
-            } catch (err: any) {
-                console.error(`Failed to send WhatsApp reminder to ${entry.user.phone}:`, err.message);
-                failedCount++;
-            }
-        }
-
         res.json({
-            message: `WhatsApp payment reminders sent to ${sentCount} customer(s).${skippedCount > 0 ? ` (${skippedCount} skipped due to 24h cooldown)` : ""}${failedCount > 0 ? ` (${failedCount} failed)` : ""}`,
-            sentCount,
-            skippedCount,
-            failedCount
+            message: `WhatsApp payment reminders sent to ${result.sentCount} customer(s).${result.skippedCount > 0 ? ` (${result.skippedCount} skipped due to 24h cooldown)` : ""}${result.failedCount > 0 ? ` (${result.failedCount} failed)` : ""}`,
+            sentCount: result.sentCount,
+            skippedCount: result.skippedCount,
+            failedCount: result.failedCount,
+            results: result.results
         });
     } catch (error) { next(error); }
 };
@@ -1774,16 +1702,19 @@ export const customerDeposit = async (req: AuthenticatedRequest, res: Response, 
         // Send WhatsApp confirmation if customer phone exists
         if (result.customer.phone) {
             try {
-                const { sendTemplateViaChatHub } = require("../services/mbgcard");
-                await sendTemplateViaChatHub(result.customer.phone, "payment_received", {
-                    body: [
-                        result.customer.name || "Customer",
-                        `ADV-DEP-${Date.now().toString().slice(-4)}`,
-                        String(depositAmt),
-                        `${paymentMethod} (Advance Wallet Credit - Current Balance: ₹${result.newBalance})`
-                    ]
-                }).catch(() => null);
-            } catch (err) {
+                const { NotificationService } = require("../modules/messaging");
+                NotificationService.getInstance().notifyPaymentReceived({
+                    paymentId: result.transaction.referenceId || `ADV-DEP-${Date.now().toString().slice(-4)}`,
+                    orderId: "WALLET_ADVANCE",
+                    customerPhone: result.customer.phone,
+                    customerName: result.customer.name || "Customer",
+                    amount: depositAmt,
+                    paymentMethod: `${paymentMethod} (Advance Wallet Credit - Current Balance: ₹${result.newBalance})`,
+                    triggeredBy: staffId
+                }).catch((err: any) => {
+                    console.warn("[Deposit WhatsApp warning]:", err.message);
+                });
+            } catch (err: any) {
                 console.warn("[Deposit WhatsApp warning]:", err);
             }
         }

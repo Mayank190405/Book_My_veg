@@ -11,9 +11,9 @@ import axios from "axios";
 import crypto from "crypto";
 import { getPaymentEligibility } from "../services/paymentEligibilityService";
 import { syncCustomerTotalDue } from "./orderController";
-import { 
-    calculateCustomerDues, 
-    calculateOrderDue, 
+import {
+    calculateCustomerDues,
+    calculateOrderDue,
     getEligibleOrdersWhereClause,
     isAllDuesDisplayLabel,
     calculateOrderPaidAmountDecimal
@@ -247,37 +247,37 @@ export const initiatePayment = async (req: AuthenticatedRequest, res: Response) 
 
         // Easebuzz Integration Pathway
         if (process.env.EASEBUZZ_KEY || process.env.EASEBUZZ_MERCHANT_KEY) {
-    logger.info(`[Payment] Using Easebuzz Payment Gateway for order: ${order.id}`);
-    try {
-        const protocol = req.headers["x-forwarded-proto"] || (req.secure ? "https" : "http");
-        const callbackUrl = `${protocol}://${req.headers.host}/api/v1/payments/easebuzz/callback`;
+            logger.info(`[Payment] Using Easebuzz Payment Gateway for order: ${order.id}`);
+            try {
+                const protocol = req.headers["x-forwarded-proto"] || (req.secure ? "https" : "http");
+                const callbackUrl = `${protocol}://${req.headers.host}/api/v1/payments/easebuzz/callback`;
 
-        const addressObj = address as any;
-        const customerName = addressObj?.name || user.name || "Customer";
-        const customerPhone = addressObj?.phone || user.phone || "9999999999";
+                const addressObj = address as any;
+                const customerName = addressObj?.name || user.name || "Customer";
+                const customerPhone = addressObj?.phone || user.phone || "9999999999";
 
-        const easeResult = await callEasebuzzInitiateApi({
-            txnid: order.id,
-            amount: Number(amount),
-            firstname: customerName,
-            email: user.email || "customer@example.com",
-            phone: customerPhone,
-            productinfo: `Order ${order.id}`,
-            callbackUrl
-        });
+                const easeResult = await callEasebuzzInitiateApi({
+                    txnid: order.id,
+                    amount: Number(amount),
+                    firstname: customerName,
+                    email: user.email || "customer@example.com",
+                    phone: customerPhone,
+                    productinfo: `Order ${order.id}`,
+                    callbackUrl
+                });
 
-        return res.json({
-            orderId: order.id,
-            ...easeResult
-        });
-    } catch (easebuzzError: any) {
-        logger.error(`[Payment] Easebuzz initiation failed, falling back to mock gateway. Error: ${easebuzzError.message}`);
-        return res.json({
-            orderId: order.id,
-            paymentLink: `${baseUrl.replace(/\/$/, "")}/payment/mock-gateway?orderId=${order.id}&amount=${amount}`,
-        });
-    }
-}
+                return res.json({
+                    orderId: order.id,
+                    ...easeResult
+                });
+            } catch (easebuzzError: any) {
+                logger.error(`[Payment] Easebuzz initiation failed, falling back to mock gateway. Error: ${easebuzzError.message}`);
+                return res.json({
+                    orderId: order.id,
+                    paymentLink: `${baseUrl.replace(/\/$/, "")}/payment/mock-gateway?orderId=${order.id}&amount=${amount}`,
+                });
+            }
+        }
 
         // Fallback to Mock Payment Gateway if JUSPAY_API_KEY is not configured/empty
         if (!process.env.JUSPAY_API_KEY) {
@@ -322,7 +322,7 @@ export const initiatePayment = async (req: AuthenticatedRequest, res: Response) 
 
 export const generatePaymentLink = async (req: AuthenticatedRequest, res: Response) => {
     const { orderId } = req.params;
-    
+
     try {
         const order = await prisma.order.findUnique({
             where: { id: orderId as string },
@@ -344,12 +344,12 @@ export const generatePaymentLink = async (req: AuthenticatedRequest, res: Respon
         // Easebuzz Integration Pathway
         if (process.env.EASEBUZZ_SERVICE_URL && process.env.EASEBUZZ_MERCHANT_KEY) {
             logger.info(`[Payment] Using Easebuzz Payment Gateway for generating link: ${orderId}`);
-            
+
             const pendingOnlinePayment = await prisma.payment.findFirst({
                 where: { orderId: order.id, method: "ONLINE", status: "PENDING" }
             });
             const requestedAmount = req.body?.amount ? Number(req.body.amount) : (req.query?.amount ? Number(req.query.amount) : null);
-            const amountToCharge = requestedAmount 
+            const amountToCharge = requestedAmount
                 ? requestedAmount.toFixed(2)
                 : (pendingOnlinePayment ? Number(pendingOnlinePayment.amount).toFixed(2) : Number(order.totalAmount).toFixed(2));
 
@@ -417,7 +417,7 @@ export const generatePaymentLink = async (req: AuthenticatedRequest, res: Respon
         const pendingOnlinePaymentFallback = await prisma.payment.findFirst({
             where: { orderId: order.id, method: "ONLINE", status: "PENDING" }
         });
-        const amountToChargeFallback = pendingOnlinePaymentFallback 
+        const amountToChargeFallback = pendingOnlinePaymentFallback
             ? Number(pendingOnlinePaymentFallback.amount).toFixed(2)
             : Number(order.totalAmount).toFixed(2);
 
@@ -460,9 +460,9 @@ export const generatePaymentLink = async (req: AuthenticatedRequest, res: Respon
 // ─── Shared Helper: Complete Order Payment ───────────────────────────────────
 
 export const settleDuesForCustomer = async (
-    userId: string, 
-    amount: number, 
-    transactionId: string, 
+    userId: string,
+    amount: number,
+    transactionId: string,
     metadata: any,
     preferredOrderId?: string
 ) => {
@@ -750,265 +750,83 @@ export const settleDuesForCustomer = async (
     });
 };
 
-/**
- * Bulk Bill Settlement Engine:
- * When Easebuzz returns a success for a transaction initiated via the payment link,
- * this function loads the JSON list of orders stored for this transaction and settles
- * ALL bills in bulk atomically.
- */
-export const executeBulkBillSettlement = async (txnid: string, paymentDetails: any) => {
-    logger.info(`[BulkSettlement] Processing bulk bill settlement for txnid: ${txnid}`);
-
-    if (paymentDetails.status !== "CHARGED" && paymentDetails.status !== "SUCCESS") {
-        logger.warn(`[BulkSettlement] Payment status for ${txnid} is ${paymentDetails.status}, aborting settlement.`);
-        return { status: "FAILED", message: `Payment status is ${paymentDetails.status}` };
-    }
-
-    const candidateTxnIds = Array.from(new Set([
-        txnid,
-        paymentDetails?.txn_id,
-        paymentDetails?.order_id,
-        paymentDetails?.metadata?.txnid,
-        paymentDetails?.metadata?.order_id
-    ].map((s: any) => String(s || "").trim()).filter(Boolean)));
-
-    // 1. Look for BULK_BILL_SETTLEMENT or PAYMENT_REQUEST in AuditLog
-    const auditEntry = await prisma.auditLog.findFirst({
-        where: {
-            entityType: { in: ["BULK_BILL_SETTLEMENT", "PAYMENT_REQUEST"] },
-            entityId: { in: candidateTxnIds }
-        },
-        orderBy: { createdAt: "desc" }
-    });
-
-    const bulkData = auditEntry?.newValue as any;
-    let orderList: Array<{ orderId: string; amountToPay?: number; intendedAmount?: number; amountToSettle?: number }> = 
-        bulkData?.orderList || bulkData?.intendedAllocations || [];
-    let customerId = bulkData?.customerId && bulkData.customerId !== "ANONYMOUS" ? bulkData.customerId : null;
-
-    // 2. If not found in audit log, find pending payments by transactionId
-    if (orderList.length === 0) {
-        const pendingPayments = await prisma.payment.findMany({
-            where: { transactionId: { in: candidateTxnIds } }
-        });
-        if (pendingPayments.length > 0) {
-            orderList = pendingPayments.map((p: any) => ({
-                orderId: p.orderId,
-                amountToPay: Number(p.amount)
-            }));
-            const firstOrd = await prisma.order.findUnique({ where: { id: pendingPayments[0].orderId } });
-            if (firstOrd?.userId) customerId = firstOrd.userId;
-        }
-    }
-
-    // 3. Fallback: Lookup customer by phone from txnid or paymentDetails
-    if (!customerId) {
-        const rawPhone = (paymentDetails?.phone || paymentDetails?.customerPhone || txnid.split("_")[1] || "").toString();
-        const cleanPhone = rawPhone.replace(/\D/g, "").slice(-10);
-        if (cleanPhone.length === 10) {
-            const user = await prisma.user.findFirst({
-                where: { OR: [{ phone: cleanPhone }, { phone: `+91${cleanPhone}` }, { phone: `91${cleanPhone}` }] }
-            });
-            if (user) customerId = user.id;
-        }
-    }
-
-    // 4. If customer is identified, fetch ALL their unpaid orders to ensure 100% complete settlement
-    let ordersToProcess: Array<{ orderId: string; amountToPay: number }> = orderList.map(o => ({
-        orderId: o.orderId,
-        amountToPay: Number(o.amountToPay || o.amountToSettle || o.intendedAmount || 0)
-    }));
-    const seenOrderIds = new Set<string>(ordersToProcess.map(o => o.orderId));
-
-    if (customerId) {
-        const allCustUnpaid = await prisma.order.findMany({
-            where: {
-                userId: customerId,
-                id: { notIn: Array.from(seenOrderIds) },
-                isPaid: false,
-                status: { notIn: ["CANCELLED", "FAILED"] }
-            },
-            include: { payments: true },
-            orderBy: { createdAt: "asc" }
-        });
-
-        for (const ord of allCustUnpaid) {
-            const due = calculateOrderDue(ord).dueAmount;
-            if (due > 0) {
-                ordersToProcess.push({
-                    orderId: ord.id,
-                    amountToPay: due
-                });
-                seenOrderIds.add(ord.id);
-            }
-        }
-    }
-
-    if (ordersToProcess.length === 0) {
-        logger.warn(`[BulkSettlement] No bills found to settle for txnid: ${txnid}`);
-        return { status: "FAILED", message: "No bills found for settlement" };
-    }
-
-    let remainingFundDec = new Decimal(paymentDetails?.amount ? Number(paymentDetails.amount) : 0);
-    // If amount is not passed or 0, calculate total of all bills to pay
-    const isFullSettlementMode = remainingFundDec.lessThanOrEqualTo(0);
-
-    const settledOrders: string[] = [];
-
-    await prisma.$transaction(async (tx: any) => {
-        for (const item of ordersToProcess) {
-            if (!isFullSettlementMode && remainingFundDec.lessThanOrEqualTo(0.005)) break;
-
-            const order = await tx.order.findUnique({
-                where: { id: item.orderId },
-                include: { payments: true }
-            });
-            if (!order || ["CANCELLED", "FAILED"].includes(order.status)) continue;
-
-            const paidDec = calculateOrderPaidAmountDecimal(order.payments);
-            const orderTotalDec = new Decimal(order.totalAmount ? order.totalAmount.toString() : 0);
-            const dueDec = Decimal.max(0, orderTotalDec.minus(paidDec));
-            if (dueDec.lessThanOrEqualTo(0.005)) {
-                if (!order.isPaid) {
-                    await tx.order.update({
-                        where: { id: order.id },
-                        data: { isPaid: true, paymentStatus: "COMPLETED" }
-                    });
-                }
-                continue;
-            }
-
-            const toPayDec = isFullSettlementMode ? dueDec : Decimal.min(remainingFundDec, dueDec);
-            const toPayAmount = Number(toPayDec.toFixed(2));
-            if (toPayAmount <= 0) continue;
-
-            if (!isFullSettlementMode) {
-                remainingFundDec = Decimal.max(0, remainingFundDec.minus(toPayDec));
-            }
-
-            const itemTxnId = `${txnid}_${order.id.slice(0, 6)}`;
-
-            const existingPayment = await tx.payment.findFirst({
-                where: {
-                    orderId: order.id,
-                    OR: [
-                        { transactionId: txnid },
-                        { transactionId: itemTxnId },
-                        ...(paymentDetails?.txn_id ? [{ transactionId: paymentDetails.txn_id }] : [])
-                    ]
-                }
-            });
-
-            if (existingPayment) {
-                await tx.payment.update({
-                    where: { id: existingPayment.id },
-                    data: {
-                        status: "SUCCESS",
-                        amount: toPayAmount,
-                        method: paymentDetails?.payment_method_type || paymentDetails?.mode || "ONLINE",
-                        transactionId: itemTxnId,
-                        metadata: paymentDetails || {}
-                    }
-                });
-            } else {
-                await tx.payment.create({
-                    data: {
-                        orderId: order.id,
-                        amount: toPayAmount,
-                        method: paymentDetails?.payment_method_type || paymentDetails?.mode || "ONLINE",
-                        status: "SUCCESS",
-                        transactionId: itemTxnId,
-                        metadata: paymentDetails || {}
-                    }
-                });
-            }
-
-            const newPaidDec = paidDec.plus(toPayDec);
-            const newDueDec = Decimal.max(0, orderTotalDec.minus(newPaidDec));
-            const isFullyPaid = newDueDec.lessThanOrEqualTo(0.005);
-
-            await tx.order.update({
-                where: { id: order.id },
-                data: {
-                    isPaid: isFullyPaid,
-                    paidAmount: Number(newPaidDec.toFixed(2)),
-                    paymentStatus: isFullyPaid ? "COMPLETED" : "PARTIAL",
-                    easebuzzCollected: { increment: new Prisma.Decimal(toPayAmount) }
-                }
-            });
-
-            // Cleanup any stale pending payments for this order
-            await tx.payment.deleteMany({
-                where: {
-                    orderId: order.id,
-                    status: "PENDING",
-                    id: { not: existingPayment?.id }
-                }
-            });
-
-            settledOrders.push(order.id);
-        }
-
-        // Update audit entry if present
-        if (auditEntry) {
-            await tx.auditLog.update({
-                where: { id: auditEntry.id },
-                data: {
-                    action: "COMPLETED",
-                    newValue: {
-                        ...(auditEntry.newValue as any),
-                        status: "SETTLED",
-                        settledAt: new Date().toISOString(),
-                        settledOrders
-                    }
-                }
-            });
-        }
-
-        // Sync customer total balance
-        if (customerId) {
-            await syncCustomerTotalDue(customerId, tx);
-        }
-    });
-
-    logger.info(`[BulkSettlement] Finished bulk settlement for txnid: ${txnid}. Cleared ${settledOrders.length} bills.`);
-    return { status: "SUCCESS", settledOrders, count: settledOrders.length };
-};
-
 export const completeOrderPayment = async (orderId: string, paymentDetails: any) => {
     let resolvedOrderId = orderId;
-    if (orderId && !orderId.startsWith("DUE_") && !orderId.startsWith("SET_") && !orderId.startsWith("SETTLE_") && !orderId.startsWith("BULK_")) {
+    if (orderId && !orderId.startsWith("DUE_") && !orderId.startsWith("SET_") && !orderId.startsWith("SETTLE_")) {
         resolvedOrderId = orderId.replace(/_\d{3,}$/, "");
     }
 
-    // 0. Primary Interceptor: Check for Bulk Settlement Transaction ID
-    const isBulkSettlement = (
-        orderId.startsWith("BULK_") ||
-        orderId.startsWith("SET_") ||
-        orderId.startsWith("SETTLE_") ||
-        orderId.startsWith("DUE_") ||
-        Boolean(paymentDetails?.metadata?.txnid?.startsWith("BULK_")) ||
-        Boolean(paymentDetails?.metadata?.txnid?.startsWith("SET_")) ||
-        Boolean(paymentDetails?.settleDues)
-    );
+    // Handle explicit SETTLE_, SET_, or DUE_ settlement transactions first
+    if (orderId.startsWith("SETTLE_") || orderId.startsWith("SET_") || orderId.startsWith("DUE_")) {
+        if (paymentDetails.status === "CHARGED" || paymentDetails.status === "SUCCESS") {
+            const parts = orderId.split("_");
+            let targetUserOrBill = parts[1];
+            let preferredBill = parts[2];
 
-    if (isBulkSettlement) {
-        const bulkTxnId = (
-            orderId.startsWith("BULK_") || orderId.startsWith("SET_") || orderId.startsWith("SETTLE_") || orderId.startsWith("DUE_")
-                ? orderId
-                : (paymentDetails?.metadata?.txnid || paymentDetails?.txn_id || orderId)
-        );
-        return await executeBulkBillSettlement(bulkTxnId, paymentDetails);
-    }
+            // 1. Check saved PAYMENT_REQUEST for precise customerId & billIds
+            const candidateIds = Array.from(new Set([
+                orderId,
+                paymentDetails.txn_id,
+                paymentDetails.metadata?.txnid,
+                paymentDetails.metadata?.order_id,
+                paymentDetails.metadata?.orderId
+            ].map((s: any) => String(s || "").trim()).filter(Boolean)));
 
-    const bulkAudit = await prisma.auditLog.findFirst({
-        where: {
-            entityType: { in: ["BULK_BILL_SETTLEMENT", "PAYMENT_REQUEST"] },
-            entityId: { in: [orderId, paymentDetails?.txn_id, paymentDetails?.order_id].filter(Boolean) }
+            const savedReq = await prisma.auditLog.findFirst({
+                where: {
+                    entityType: "PAYMENT_REQUEST",
+                    entityId: { in: candidateIds }
+                },
+                orderBy: { createdAt: "desc" }
+            });
+            const savedReqData = savedReq?.newValue as any;
+
+            let targetUserId: string | null = savedReqData?.customerId && savedReqData.customerId !== "ANONYMOUS"
+                ? savedReqData.customerId
+                : null;
+
+            if (!targetUserId && targetUserOrBill) {
+                const userObj = await prisma.user.findUnique({ where: { id: targetUserOrBill } });
+                if (userObj) {
+                    targetUserId = userObj.id;
+                } else {
+                    const orderObj = await prisma.order.findUnique({ where: { id: targetUserOrBill } });
+                    if (orderObj) {
+                        targetUserId = orderObj.userId;
+                        preferredBill = orderObj.id;
+                    }
+                }
+            }
+
+            if (!targetUserId && targetUserOrBill && targetUserOrBill.length >= 8) {
+                const prefix8 = targetUserOrBill.replace(/[^a-zA-Z0-9]/g, "").slice(0, 8);
+                const userByPrefix = await prisma.user.findFirst({
+                    where: { id: { startsWith: prefix8, mode: "insensitive" } }
+                });
+                if (userByPrefix) targetUserId = userByPrefix.id;
+            }
+
+            if (!targetUserId) {
+                const rawPhone = (paymentDetails.phone || paymentDetails.customerPhone || targetUserOrBill || "").toString();
+                const cleanPhone = rawPhone.replace(/\D/g, "").slice(-10);
+                if (cleanPhone.length === 10) {
+                    const foundUser = await prisma.user.findFirst({
+                        where: { OR: [{ phone: cleanPhone }, { phone: `+91${cleanPhone}` }, { phone: `91${cleanPhone}` }] }
+                    });
+                    if (foundUser) targetUserId = foundUser.id;
+                }
+            }
+
+            const finalUserId = targetUserId || targetUserOrBill;
+            await settleDuesForCustomer(
+                finalUserId,
+                Number(paymentDetails.amount),
+                paymentDetails.txn_id || orderId,
+                paymentDetails,
+                preferredBill
+            );
+            return { status: "SUCCESS" };
         }
-    });
-    if (bulkAudit) {
-        return await executeBulkBillSettlement(bulkAudit.entityId, paymentDetails);
     }
 
     // 1. Resolve exact orderId from Payment record if it was initiated with a unique txnid
@@ -1131,8 +949,8 @@ export const completeOrderPayment = async (orderId: string, paymentDetails: any)
         if (existingTxnPayment) {
             // Check if this payment left excess/surplus on an order while customer has other unpaid orders
             if (existing && existing.userId) {
-                const orderPayments = existing.payments && existing.payments.length > 0 
-                    ? existing.payments 
+                const orderPayments = existing.payments && existing.payments.length > 0
+                    ? existing.payments
                     : await prisma.payment.findMany({ where: { orderId: existing.id } });
                 const orderPaidDec = calculateOrderPaidAmountDecimal(orderPayments);
                 const orderTotalDec = new Decimal(existing.totalAmount ? existing.totalAmount.toString() : 0);
@@ -1161,8 +979,8 @@ export const completeOrderPayment = async (orderId: string, paymentDetails: any)
 
         // Check if this transaction is an explicit multi-order settlement request
         const isExplicitSettlement = (
-            orderId.startsWith("DUE_") || 
-            orderId.startsWith("SET_") || 
+            orderId.startsWith("DUE_") ||
+            orderId.startsWith("SET_") ||
             orderId.startsWith("SETTLE_") ||
             Boolean(paymentDetails.settleDues) ||
             Boolean(paymentDetails.metadata?.settleDues) ||
@@ -1313,30 +1131,32 @@ export const completeOrderPayment = async (orderId: string, paymentDetails: any)
 
         // ── Real-time Notification for Logistics & Driver Portal ─────────
         try {
-            getIo().emit("OP_NEW_ORDER", { 
-                id: orderId, 
-                status: "CONFIRMED", 
-                timestamp: new Date() 
+            getIo().emit("OP_NEW_ORDER", {
+                id: orderId,
+                status: "CONFIRMED",
+                timestamp: new Date()
             });
             getIo().emit("order:updated", {
                 orderId: resolvedOrderId,
                 isPaid: true,
                 paymentStatus: "COMPLETED"
             });
-        } catch (_) {}
+        } catch (_) { }
 
-        // ── WhatsApp Notification Dispatch ────────────────────────────────
+        // ── WhatsApp Notification Dispatch via Central Messaging Module ────
         const user = existing.user;
         if (user && user.phone) {
             try {
-                const { sendPaymentReceivedViaWhatsapp } = require("../services/mbgcard");
-                sendPaymentReceivedViaWhatsapp(
-                    user.phone, 
-                    user.name || "Customer", 
-                    orderId, 
-                    Number(paymentDetails.amount || existing.totalAmount), 
-                    paymentDetails.payment_method_type || "ONLINE"
-                ).catch((err: any) => {
+                const { NotificationService } = require("../modules/messaging");
+                NotificationService.getInstance().notifyPaymentReceived({
+                    orderId,
+                    userId: existing.userId,
+                    customerName: user.name || "Customer",
+                    customerPhone: user.phone,
+                    paidAmount: Number(paymentDetails.amount || existing.totalAmount),
+                    paymentMode: paymentDetails.payment_method_type || "ONLINE",
+                    transactionId: paymentDetails.txnid || undefined
+                }).catch((err: any) => {
                     console.error("[PaymentController] WhatsApp Payment Received dispatch failure:", err);
                 });
             } catch (err) {
@@ -1439,7 +1259,7 @@ export const verifyPayment = async (req: AuthenticatedRequest, res: Response) =>
                 metadata: req.body
             });
 
-            return res.json({ 
+            return res.json({
                 status: "SUCCESS",
                 message: "Account settlement payment completed successfully"
             });
@@ -1485,10 +1305,10 @@ export const verifyPayment = async (req: AuthenticatedRequest, res: Response) =>
             const rawStatus = req.body.status;
             const SUCCESS_STATUSES = ["CHARGED", "SUCCESS", "PAYMENT_SUCCESS", "AUTHORIZED"];
             const isSuccess = SUCCESS_STATUSES.includes(rawStatus.toUpperCase());
-            
+
             if (!isSuccess) {
                 logger.info(`[Payment] Payment verification received non-success status '${rawStatus}' for order ${resolvedOrderId}`);
-                
+
                 // Purge draft order & restore stock so no bill is created
                 const orderToPurge = await prisma.order.findUnique({
                     where: { id: resolvedOrderId },
@@ -1514,7 +1334,7 @@ export const verifyPayment = async (req: AuthenticatedRequest, res: Response) =>
                     });
                 }
 
-                return res.status(400).json({ 
+                return res.status(400).json({
                     status: "FAILED",
                     message: `Payment was cancelled or failed (status: ${rawStatus}). Bill was not created.`
                 });
@@ -1527,7 +1347,7 @@ export const verifyPayment = async (req: AuthenticatedRequest, res: Response) =>
                 amount: Number(bodyAmount || existing.totalAmount),
                 payment_method_type: "ONLINE"
             });
-            return res.json({ 
+            return res.json({
                 status: "SUCCESS",
                 message: "Payment verified successfully"
             });
@@ -1590,7 +1410,7 @@ export const verifyPayment = async (req: AuthenticatedRequest, res: Response) =>
                     amount: existing.totalAmount,
                     payment_method_type: "MOCK_ONLINE"
                 });
-                return res.json({ 
+                return res.json({
                     status: "SUCCESS",
                     message: "Mock verification fallback succeeded"
                 });
@@ -1614,7 +1434,7 @@ export const verifyPayment = async (req: AuthenticatedRequest, res: Response) =>
                 amount: existing.totalAmount,
                 payment_method_type: "MOCK_ONLINE"
             });
-            return res.json({ 
+            return res.json({
                 status: isSuccess ? "SUCCESS" : "FAILED",
                 message: isSuccess ? "Mock verification fallback succeeded" : "Mock verification fallback failed"
             });
@@ -1654,7 +1474,7 @@ export const handleWebhook = async (req: Request, res: Response) => {
     // 1. Easebuzz Webhook Pathway
     if (req.body.txnid && (req.body.hash || req.body.status)) {
         logger.info(`[Webhook] Easebuzz notification received: ${JSON.stringify(req.body)}`);
-        
+
         if (req.body.hash && process.env.EASEBUZZ_SALT) {
             const calculatedHash = getEasebuzzReverseHash(req.body, process.env.EASEBUZZ_SALT);
             if (calculatedHash !== req.body.hash) {
@@ -1696,7 +1516,7 @@ export const handleWebhook = async (req: Request, res: Response) => {
         if (txPayment?.orderId) {
             resolvedOrderId = txPayment.orderId;
         }
-        
+
         try {
             await completeOrderPayment(resolvedOrderId, {
                 status: isSuccess ? "CHARGED" : "FAILED",
@@ -1746,9 +1566,9 @@ export const handleWebhook = async (req: Request, res: Response) => {
 export const handleEasebuzzCallback = async (req: Request, res: Response) => {
     const payload = { ...(req.query || {}), ...(req.body || {}) };
     logger.info(`[Easebuzz Callback] Received callback payload: ${JSON.stringify(payload)}`);
-    
+
     const clientUrl = process.env.CLIENT_URL || "http://localhost:3000";
-    
+
     if (payload.hash && process.env.EASEBUZZ_SALT) {
         const calculatedHash = getEasebuzzReverseHash(payload, process.env.EASEBUZZ_SALT);
         if (calculatedHash !== payload.hash) {
@@ -1806,7 +1626,7 @@ export const handleEasebuzzCallback = async (req: Request, res: Response) => {
             resolvedOrderId = cbPayment.orderId;
         }
     }
-    
+
     try {
         await completeOrderPayment(resolvedOrderId, {
             status: isSuccess ? "CHARGED" : "FAILED",
@@ -1820,7 +1640,7 @@ export const handleEasebuzzCallback = async (req: Request, res: Response) => {
             settleDues: isSettlementTxn,
             metadata: payload
         });
-        
+
         return res.redirect(`${clientUrl}/payment/success?order_id=${resolvedOrderId}&status=${isSuccess ? "success" : "failed"}`);
     } catch (error: any) {
         logger.error(`[Easebuzz Callback] Error completing payment: ${error.message}`);
@@ -2101,37 +1921,92 @@ export const initiatePayDue = async (req: Request, res: Response) => {
             return res.status(400).json({ message: "Invalid payment amount" });
         }
 
-        // ── 1. Gather Customer's ALL Unpaid Orders for Bulk Settlement ──
-        let customerUnpaidOrders: any[] = [];
-        if (effectiveUserId && effectiveUserId !== "ANONYMOUS") {
-            customerUnpaidOrders = await prisma.order.findMany({
+        // ── Persist Original Bill Selection & Intended Allocations ──
+        const intendedBills: Array<{ orderId: string; intendedAmount: number; dueAmount: number }> = [];
+        let remainingToAllocate = amountToPay;
+
+        if (order) {
+            const orderDue = calculateOrderDue(order).dueAmount;
+            const toAlloc = Math.min(remainingToAllocate, orderDue > 0 ? orderDue : amountToPay);
+            intendedBills.push({
+                orderId: order.id,
+                intendedAmount: toAlloc,
+                dueAmount: orderDue
+            });
+            remainingToAllocate = Math.max(0, remainingToAllocate - toAlloc);
+
+            // If customer has additional unpaid orders and remaining funds, cascade across them
+            if (remainingToAllocate > 0 && effectiveUserId && effectiveUserId !== "ANONYMOUS") {
+                const otherCustOrders = await prisma.order.findMany({
+                    where: {
+                        ...getEligibleOrdersWhereClause({ customerId: effectiveUserId }),
+                        id: { not: order.id }
+                    },
+                    include: { payments: true },
+                    orderBy: { createdAt: "asc" }
+                });
+                for (const ord of otherCustOrders) {
+                    if (remainingToAllocate <= 0) break;
+                    const ordDue = calculateOrderDue(ord).dueAmount;
+                    if (ordDue > 0) {
+                        const cascadeAlloc = Math.min(remainingToAllocate, ordDue);
+                        intendedBills.push({ orderId: ord.id, intendedAmount: cascadeAlloc, dueAmount: ordDue });
+                        remainingToAllocate = Math.max(0, remainingToAllocate - cascadeAlloc);
+                    }
+                }
+            }
+        } else if (Array.isArray(req.body.billIds) && req.body.billIds.length > 0) {
+            const validBillIds = req.body.billIds
+                .map((b: any) => String(b).replace(/^#/, "").trim())
+                .filter((b: string) => b && !isAllDuesDisplayLabel(b));
+
+            const explicitOrders = await prisma.order.findMany({
+                where: { id: { in: validBillIds }, status: { notIn: ["CANCELLED", "FAILED"] } },
+                include: { payments: true },
+                orderBy: { createdAt: "asc" }
+            });
+
+            for (const ord of explicitOrders) {
+                if (remainingToAllocate <= 0) break;
+                const ordDue = calculateOrderDue(ord).dueAmount;
+                if (ordDue > 0) {
+                    const toAlloc = Math.min(remainingToAllocate, ordDue);
+                    intendedBills.push({ orderId: ord.id, intendedAmount: toAlloc, dueAmount: ordDue });
+                    remainingToAllocate = Math.max(0, remainingToAllocate - toAlloc);
+                }
+            }
+
+            if (remainingToAllocate > 0 && effectiveUserId && effectiveUserId !== "ANONYMOUS") {
+                const otherOrders = await prisma.order.findMany({
+                    where: {
+                        ...getEligibleOrdersWhereClause({ customerId: effectiveUserId }),
+                        id: { notIn: validBillIds }
+                    },
+                    include: { payments: true },
+                    orderBy: { createdAt: "asc" }
+                });
+                for (const ord of otherOrders) {
+                    if (remainingToAllocate <= 0) break;
+                    const ordDue = calculateOrderDue(ord).dueAmount;
+                    if (ordDue > 0) {
+                        const toAlloc = Math.min(remainingToAllocate, ordDue);
+                        intendedBills.push({ orderId: ord.id, intendedAmount: toAlloc, dueAmount: ordDue });
+                        remainingToAllocate = Math.max(0, remainingToAllocate - toAlloc);
+                    }
+                }
+            }
+        } else if (effectiveUserId && effectiveUserId !== "ANONYMOUS") {
+            const custOrders = await prisma.order.findMany({
                 where: getEligibleOrdersWhereClause({ customerId: effectiveUserId }),
                 include: { payments: true },
                 orderBy: { createdAt: "asc" }
             });
-        }
-
-        if (customerUnpaidOrders.length === 0 && order) {
-            customerUnpaidOrders = [order];
-        } else if (order && !customerUnpaidOrders.some((o: any) => o.id === order.id)) {
-            customerUnpaidOrders.unshift(order);
-        }
-
-        // ── 2. Build the JSON list of intended allocations across all bills ──
-        const intendedBills: Array<{ orderId: string; intendedAmount: number; dueAmount: number; totalAmount: number }> = [];
-        let remainingToAllocate = amountToPay;
-
-        for (const ord of customerUnpaidOrders) {
-            const ordDue = calculateOrderDue(ord).dueAmount;
-            if (ordDue > 0) {
-                const toAlloc = remainingToAllocate > 0 ? Math.min(remainingToAllocate, ordDue) : ordDue;
-                intendedBills.push({
-                    orderId: ord.id,
-                    intendedAmount: toAlloc,
-                    dueAmount: ordDue,
-                    totalAmount: Number(ord.totalAmount)
-                });
-                if (remainingToAllocate > 0) {
+            for (const ord of custOrders) {
+                if (remainingToAllocate <= 0) break;
+                const ordDue = calculateOrderDue(ord).dueAmount;
+                if (ordDue > 0) {
+                    const toAlloc = Math.min(remainingToAllocate, ordDue);
+                    intendedBills.push({ orderId: ord.id, intendedAmount: toAlloc, dueAmount: ordDue });
                     remainingToAllocate = Math.max(0, remainingToAllocate - toAlloc);
                 }
             }
@@ -2142,41 +2017,50 @@ export const initiatePayDue = async (req: Request, res: Response) => {
         // Easebuzz requires a unique txnid <= 40 characters matching ^[a-zA-Z0-9_|/\-]{1,40}$
         const timestamp = Date.now();
         const shortNonce = String(timestamp).slice(-6); // 6 digits
-        const cleanCustPhone = (customerPhone || "").replace(/\D/g, "").slice(-10);
         let txnid: string;
         let productInfoLabel: string;
 
         if (isMultiBill) {
-            txnid = `BULK_${cleanCustPhone || "CUST"}_${shortNonce}`;
+            const cleanCustPhone = (customerPhone || "").replace(/\D/g, "").slice(-10);
+            if (cleanCustPhone.length === 10) {
+                txnid = `SET_${cleanCustPhone}_${shortNonce}`;
+            } else {
+                const compactUser = String(effectiveUserId).replace(/[^a-zA-Z0-9]/g, "").slice(0, 20);
+                txnid = `SET_${compactUser}_${shortNonce}`;
+            }
             productInfoLabel = `All Dues (${intendedBills.length} Bills) - ${customerPhone || String(effectiveUserId).slice(0, 10)}`;
         } else if (order) {
             const compactOrder = order.id.replace(/[^a-zA-Z0-9]/g, "").slice(0, 18);
-            txnid = `DUE_${compactOrder}_${shortNonce}`;
+            const compactUser = String(effectiveUserId).replace(/[^a-zA-Z0-9]/g, "").slice(0, 10);
+            txnid = `DUE_${compactUser}_${compactOrder}_${shortNonce}`;
+            if (txnid.length > 40) {
+                txnid = `DUE_${compactOrder}_${shortNonce}`;
+            }
             productInfoLabel = `Bill Payment ${order.id.slice(0, 20)}`;
         } else {
-            txnid = `BULK_${cleanCustPhone || "CUST"}_${shortNonce}`;
+            const cleanCustPhone = (customerPhone || "").replace(/\D/g, "").slice(-10);
+            if (cleanCustPhone.length === 10) {
+                txnid = `SET_${cleanCustPhone}_${shortNonce}`;
+            } else {
+                const compactUser = String(effectiveUserId).replace(/[^a-zA-Z0-9]/g, "").slice(0, 20);
+                txnid = `SET_${compactUser}_${shortNonce}`;
+            }
             productInfoLabel = `Account Settlement ${customerPhone || String(effectiveUserId).slice(0, 15)}`;
         }
 
-        // ── 3. Persist BULK_BILL_SETTLEMENT & PAYMENT_REQUEST in AuditLog ──
+        // Persist Payment Request in AuditLog for auditable server-side verification & settlement
         try {
             await prisma.auditLog.create({
                 data: {
-                    entityType: "BULK_BILL_SETTLEMENT",
+                    entityType: "PAYMENT_REQUEST",
                     entityId: txnid,
-                    action: "INITIATE_BULK_PAYMENT",
+                    action: "INITIATE_PAYMENT_REQUEST",
                     newValue: {
                         customerId: effectiveUserId,
                         customerPhone,
                         customerName,
-                        totalAmount: amountToPay,
+                        expectedAmount: amountToPay,
                         txnid,
-                        orderList: intendedBills.map(b => ({
-                            orderId: b.orderId,
-                            totalAmount: b.totalAmount,
-                            dueAmount: b.dueAmount,
-                            amountToPay: b.intendedAmount
-                        })),
                         billIds: intendedBills.map(b => b.orderId),
                         intendedAllocations: intendedBills,
                         status: "INITIATED",
@@ -2185,25 +2069,20 @@ export const initiatePayDue = async (req: Request, res: Response) => {
                 }
             });
         } catch (auditErr: any) {
-            logger.warn(`[Initiate Pay Due] Could not create bulk audit settlement request: ${auditErr.message}`);
+            logger.warn(`[Initiate Pay Due] Could not create audit payment request: ${auditErr.message}`);
         }
 
-        // ── 4. Record Pending Payment record for each intended bill linked to txnid ──
+        // Record a pending payment record for each intended bill so webhooks/callbacks can trace order immediately
         for (const b of intendedBills) {
             try {
-                const targetTxn = isMultiBill ? `${txnid}_${b.orderId.slice(0, 6)}` : txnid;
+                const targetTxn = intendedBills.length === 1 && order ? txnid : `${txnid}_${b.orderId.slice(0, 6)}`;
                 await prisma.payment.create({
                     data: {
                         orderId: b.orderId,
                         amount: b.intendedAmount,
                         method: "ONLINE",
                         status: "PENDING",
-                        transactionId: targetTxn,
-                        metadata: {
-                            txnid,
-                            isBulkSettlement: isMultiBill,
-                            customerId: effectiveUserId
-                        }
+                        transactionId: targetTxn
                     }
                 });
             } catch (pErr) {
@@ -2337,16 +2216,6 @@ export const publicCustomerOnboard = async (req: Request, res: Response, next: N
                 include: { addresses: true }
             });
 
-            // Trigger welcome registration WhatsApp notification!
-            try {
-                const { sendRegistrationThankYouViaWhatsapp } = require("../services/mbgcard");
-                sendRegistrationThankYouViaWhatsapp(customer.phone, customer.name || "Customer").catch((err: any) => {
-                    console.error("[Onboarding] Welcome WhatsApp dispatch failure:", err);
-                });
-            } catch (err) {
-                console.error("[Onboarding] Failed to send welcome WhatsApp:", err);
-            }
-
             return res.status(201).json({ message: "Customer registered successfully", customer });
         }
     } catch (error) {
@@ -2404,10 +2273,10 @@ export const saveOrderFeedback = async (req: Request, res: Response, next: NextF
             // fallback to env / default
         }
 
-        return res.json({ 
-            message: "Feedback submitted successfully", 
+        return res.json({
+            message: "Feedback submitted successfully",
             order: updatedOrder,
-            googleReviewUrl 
+            googleReviewUrl
         });
     } catch (error) {
         next(error);
@@ -2421,7 +2290,7 @@ export const triggerEasebuzzSync = async (req: AuthenticatedRequest, res: Respon
     const { startDate, endDate, dryRun } = req.body || {};
     try {
         const { syncEasebuzzTransactions } = await import("../services/easebuzzSyncService");
-        
+
         // Support dry-run mode and custom date filters
         const result = await syncEasebuzzTransactions({
             customStartDate: startDate,
@@ -2437,58 +2306,32 @@ export const triggerEasebuzzSync = async (req: AuthenticatedRequest, res: Respon
 };
 
 export const sendPaymentReminderController = async (req: Request, res: Response, next: NextFunction) => {
-    const { orderId } = req.body;
+    const { orderId, locationId } = req.body;
 
     if (!orderId) {
         return res.status(400).json({ message: "Order ID is required" });
     }
 
     try {
-        const order = await prisma.order.findUnique({
-            where: { id: orderId },
-            include: { user: true, payments: true }
-        });
+        const { ReminderService } = require("../modules/messaging");
+        const actorId = (req as any).user?.userId;
+        const scopedLocationId = locationId || (req as any).user?.locationId;
 
-        if (!order) {
-            return res.status(404).json({ message: "Order not found" });
+        const result = await ReminderService.getInstance().sendSingleOrderReminder(
+            orderId,
+            actorId,
+            scopedLocationId
+        );
+
+        if (result.success) {
+            return res.json({ message: "Payment reminder sent successfully via WhatsApp" });
         }
 
-        const dueResult = calculateOrderDue(order);
-        if (!dueResult.isEligible || dueResult.dueAmount <= 0) {
-            return res.status(400).json({ 
-                message: `Order is not eligible for payment reminder (${dueResult.ineligibilityReason || "Already settled"})` 
-            });
+        if (result.status === "SKIPPED_COOLDOWN") {
+            return res.status(429).json({ message: result.error || "Customer already received a payment reminder within the last 24 hours." });
         }
 
-        const user = order.user;
-        if (!user || !user.phone) {
-            return res.status(400).json({ message: "Customer phone number not found" });
-        }
-
-        const dueAmount = dueResult.dueAmount;
-
-        const { sendPaymentReminderViaWhatsapp } = require("../services/mbgcard");
-        await sendPaymentReminderViaWhatsapp(user.phone, user.name || "Customer", dueAmount, order.id, user.id, order.id);
-
-        // Record in AuditLog to coordinate with worker and POS cooldowns
-        await (prisma.auditLog.create as any)({
-            data: {
-                entityType: "USER",
-                entityId: user.id,
-                action: "WHATSAPP_DUE_REMINDER",
-                staffId: (req as any).user?.userId,
-                newValue: {
-                    dueAmount,
-                    orderId: order.id,
-                    trigger: "ADMIN_SINGLE_ORDER",
-                    sentAt: new Date()
-                }
-            }
-        }).catch((auditErr: any) => {
-            logger.warn(`Failed to write AuditLog for single order reminder: ${auditErr.message}`);
-        });
-
-        return res.json({ message: "Payment reminder sent successfully via WhatsApp" });
+        return res.status(400).json({ message: result.error || "Failed to send WhatsApp reminder" });
     } catch (error: any) {
         logger.error(`[Send Payment Reminder Error] ${error.message}`);
         return res.status(500).json({ message: "Failed to send WhatsApp reminder" });
@@ -2570,7 +2413,7 @@ export const cleanUpDuplicatePayments = async () => {
 
             const orderTotal = Number(order.totalAmount);
             let totalPaid = payments.reduce((sum, p) => sum + Number(p.amount), 0);
-            
+
             // Only examine orders where total paid exceeds order total amount (overpayment)
             if (totalPaid <= orderTotal) continue;
 
@@ -2742,17 +2585,18 @@ export const processWalletDepositCredit = async ({
             }
         });
 
-        // Dispatch WhatsApp receipt confirmation
+        // Dispatch WhatsApp receipt confirmation via Central Messaging Module
         if (customer.phone) {
             try {
-                const { sendTemplateViaChatHub } = require("../services/mbgcard");
-                await sendTemplateViaChatHub(customer.phone, "payment_received", {
-                    body: [
-                        customer.name || "Customer",
-                        `ADV-${referenceId.slice(-6)}`,
-                        String(depositAmt),
-                        `Easebuzz Online (Advance Wallet Credit - Current Balance: ₹${newBalance})`
-                    ]
+                const { NotificationService } = require("../modules/messaging");
+                NotificationService.getInstance().notifyPaymentReceived({
+                    orderId: `ADV-${referenceId.slice(-6)}`,
+                    userId: customer.id,
+                    customerName: customer.name || "Customer",
+                    customerPhone: customer.phone,
+                    paidAmount: depositAmt,
+                    paymentMode: `Easebuzz Online (Advance Wallet Credit - Current Balance: ₹${newBalance})`,
+                    transactionId: referenceId
                 }).catch(() => null);
             } catch (err) {
                 console.warn("[Wallet Deposit WhatsApp warning]:", err);
@@ -2904,6 +2748,3 @@ export const getWalletDetails = async (req: AuthenticatedRequest, res: Response)
         return res.status(500).json({ message: "Failed to load wallet details" });
     }
 };
-
-
-

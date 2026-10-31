@@ -10,12 +10,13 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.sendTemplateHandler = exports.sendFlowHandler = void 0;
-const mbgcard_1 = require("../services/mbgcard");
+const messaging_1 = require("../modules/messaging");
 /**
  * Endpoint to trigger an arbitrary ChatHub flow for a contact.
  * POST /api/v1/chathub/send-flow
  */
 const sendFlowHandler = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
     try {
         const { phone, flowId, name, customFields } = req.body;
         if (!phone || !flowId) {
@@ -24,10 +25,10 @@ const sendFlowHandler = (req, res) => __awaiter(void 0, void 0, void 0, function
                 message: "Phone and flowId are required"
             });
         }
-        const result = yield (0, mbgcard_1.sendFlowViaChatHub)(phone, flowId, name, customFields);
+        const result = yield messaging_1.NotificationService.getInstance().sendChatHubFlow(phone, flowId, name, customFields, (_a = req.user) === null || _a === void 0 ? void 0 : _a.userId);
         return res.status(200).json({
-            success: true,
-            message: "Flow triggered successfully",
+            success: result.success,
+            message: result.success ? "Flow triggered successfully" : (result.error || "Failed to trigger flow"),
             data: result
         });
     }
@@ -46,6 +47,7 @@ exports.sendFlowHandler = sendFlowHandler;
  * POST /api/v1/chathub/send-template
  */
 const sendTemplateHandler = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
     try {
         const { phone, templateName, variables, dynamicMedia } = req.body;
         if (!phone || !templateName) {
@@ -54,10 +56,17 @@ const sendTemplateHandler = (req, res) => __awaiter(void 0, void 0, void 0, func
                 message: "Phone and templateName are required"
             });
         }
-        const result = yield (0, mbgcard_1.sendTemplateViaChatHub)(phone, templateName, variables, dynamicMedia);
-        return res.status(200).json({
-            success: true,
-            message: "Template message triggered successfully",
+        const result = yield messaging_1.TemplateService.getInstance().sendCustomTemplate({
+            phone,
+            templateName,
+            variables,
+            dynamicMedia,
+            actorId: (_a = req.user) === null || _a === void 0 ? void 0 : _a.userId,
+            triggerSource: "CHATHUB_API"
+        });
+        return res.status(result.success ? 200 : 400).json({
+            success: result.success,
+            message: result.success ? "Template message triggered successfully" : (result.error || "Failed to dispatch template"),
             data: result
         });
     }

@@ -1,425 +1,194 @@
-import axios from "axios";
-import dotenv from "dotenv";
-import { formatCurrencyAmount } from "./dueCalculationService";
+/**
+ * DEPRECATED — Legacy messaging adapter.
+ * All messaging operations have been replaced by the centralized messaging module in:
+ * server/src/modules/messaging/
+ * 
+ * Direct HTTP calls to external provider APIs have been removed from this file.
+ * All calls are redirected through the validated, audited, and deduplicated pipeline.
+ */
 
-dotenv.config();
+import {
+    NotificationService,
+    TemplateService,
+    ReminderService,
+    APPROVED_UTILITY_TEMPLATES,
+    getConversation as moduleGetConversation
+} from "../modules/messaging";
+import logger from "../utils/logger";
 
-const MBGCARD_API_URL = process.env.MBGCARD_API_URL || "https://chatbotbe.digitalmbg.com/api/whatsapp/send_meta_templet";
-const MBGCARD_API_TOKEN = process.env.MBGCARD_API_TOKEN || "d423777128fdc8a29bef4fb719f3d3c9";
-const MBGCARD_TEMPLATES_URL = process.env.MBGCARD_TEMPLATES_URL || "https://chatbotbe.digitalmbg.com/api/whatsapp/get_my_meta_templets";
-const MBGCARD_TEMPLATE_ID = process.env.MBGCARD_TEMPLATE_ID || "login";
-const MBGCARD_OTP_FLOW_ID = process.env.MBGCARD_OTP_FLOW_ID || "flow_1782732506015";
-const MBGCARD_SENDER_NUMBER = process.env.MBGCARD_SENDER_NUMBER || "917879431560";
-const MBGCARD_CHAT_ID = process.env.MBGCARD_CHAT_ID || "1070587";
-
-const MAX_RETRIES = 3;
-const INITIAL_BACKOFF = 1000; // 1 second
+export { APPROVED_UTILITY_TEMPLATES };
 
 export const sendOtpViaWhatsapp = async (phone: string, otp: string) => {
-    // Format recipient phone number: remove any non-digits, and prepend country code '91' if missing
-    const cleanPhone = phone.replace(/\D/g, "");
-    const formattedPhone = cleanPhone.startsWith("91") ? cleanPhone : `91${cleanPhone}`;
-
-    const payload = {
-        templateName: MBGCARD_TEMPLATE_ID, // defaults to "login"
-        to: formattedPhone,
-        variables: {
-            body: [otp]
-        }
-    };
-
-    let lastError: any;
-
-    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-        try {
-            console.log(`Sending OTP via MBG Card Template API (Attempt ${attempt}/${MAX_RETRIES}):`, {
-                url: MBGCARD_API_URL,
-                templateName: payload.templateName,
-                to: payload.to,
-                variables: payload.variables
-            });
-
-            const response = await axios.post(MBGCARD_API_URL, payload, {
-                timeout: 10000,
-                headers: {
-                    'Content-Type': 'application/json',
-                    'accept': '*/*',
-                    'x-api-key': MBGCARD_API_TOKEN,
-                    'User-Agent': 'BookMyVeg-Server/1.0'
-                }
-            });
-
-            console.log("MBG Card OTP Response:", response.data);
-            return response.data;
-        } catch (error: any) {
-            lastError = error;
-            const isNetworkError = ['ECONNRESET', 'ETIMEDOUT', 'ECONNABORTED'].includes(error.code);
-
-            if (isNetworkError && attempt < MAX_RETRIES) {
-                const backoff = INITIAL_BACKOFF * Math.pow(2, attempt - 1);
-                console.warn(`MBG Card OTP failed (${error.code}). Retrying in ${backoff}ms...`);
-                await new Promise(resolve => setTimeout(resolve, backoff));
-                continue;
-            }
-
-            console.error("Error sending OTP via MBG Card Template API:", {
-                code: error.code,
-                message: error.message,
-                response: error.response?.data
-            });
-            break;
-        }
-    }
-
-    throw new Error(`Failed to send OTP via Template API after ${MAX_RETRIES} attempts. Last error: ${lastError?.message}`);
+    logger.warn("[DEPRECATION] sendOtpViaWhatsapp called via legacy mbgcard service. Use NotificationService instead.");
+    return NotificationService.getInstance().sendOtp(phone, otp, "AUTH");
 };
 
-/**
- * Generic helper to send a flow via ChatHub.
- */
 export const sendFlowViaChatHub = async (
     phone: string,
     flowId: string,
     name?: string,
     customFields?: Record<string, string>
 ) => {
-    const cleanPhone = phone.replace(/\D/g, "");
-    const formattedPhone = `+${cleanPhone.startsWith("91") ? cleanPhone : `91${cleanPhone}`}`;
-
-    const actions: any[] = [];
-    if (customFields) {
-        for (const [key, value] of Object.entries(customFields)) {
-            actions.push({
-                action: "set_field_value",
-                field_name: key,
-                value: value
-            });
-        }
-    }
-    actions.push({
-        action: "send_flow",
-        flow_id: flowId
-    });
-
-    const payload = {
-        senderId: formattedPhone,
-        name: name || "Customer",
-        actions
-    };
-
-    const url = process.env.MBGCARD_FLOW_URL || "https://chatbot.digitalmbg.com/v1/contacts/send_flow";
-
-    try {
-        console.log(`[ChatHub Flow] Sending flow ${flowId} to ${formattedPhone} with custom fields:`, customFields);
-
-        if (!MBGCARD_API_TOKEN) {
-            console.log(`[ChatHub Flow] Mock flow sent to ${formattedPhone} (no token configured).`);
-            return { success: true, mock: true };
-        }
-
-        const response = await axios.post(url, payload, {
-            timeout: 10000,
-            headers: {
-                'Content-Type': 'application/json',
-                'x-api-key': MBGCARD_API_TOKEN,
-                'User-Agent': 'BookMyVeg-Server/1.0'
-            }
-        });
-
-        console.log("[ChatHub Flow] Response:", response.data);
-        return response.data;
-    } catch (error: any) {
-        console.error("Error sending flow via ChatHub:", {
-            message: error.message,
-            response: error.response?.data
-        });
-        throw error;
-    }
+    logger.warn("[DEPRECATION] sendFlowViaChatHub called via legacy mbgcard service. Use NotificationService instead.");
+    return NotificationService.getInstance().sendChatHubFlow(phone, flowId, name, customFields);
 };
 
-/**
- * Fetch approved WhatsApp templates from MBG Card.
- */
-export const getMyMetaTemplates = async () => {
-    const url = process.env.MBGCARD_TEMPLATES_URL || "https://chatbotbe.digitalmbg.com/api/whatsapp/get_my_meta_templets";
-    try {
-        console.log(`Fetching Meta templates from MBG Card (${url})...`);
-        const response = await axios.get(url, {
-            headers: {
-                'accept': 'application/json',
-                'Content-Type': 'application/json',
-                'x-api-key': MBGCARD_API_TOKEN,
-                'User-Agent': 'BookMyVeg-Server/1.0'
-            },
-            timeout: 10000
-        });
-        return response.data;
-    } catch (error: any) {
-        console.warn("MBG Card Meta templates fetch notice:", error.message);
-        return { success: false, data: [] };
-    }
-};
-
-/**
- * Fallback conversation query. Left in place for backward compatibility, returns null as MBG Card has no conversation endpoint.
- */
-export const getConversation = async (phone: string): Promise<any> => {
-    console.warn("[MBG Card] getConversation is deprecated and not supported by the MBG Card API.");
-    return null;
-};
-
-export const APPROVED_UTILITY_TEMPLATES = new Set([
-    "bill_created",              // UTILITY: Invoice Generated (Paid, Due, Cancelled)
-    "payment_due_reminder",     // UTILITY: Bill Due Reminder
-    "feedback_request_support_", // UTILITY: Feedback on Recent Purchase
-    "order_management_4",       // UTILITY: Order Placed & Processing
-    "order_update_notification",// UTILITY: Produce Out for Delivery
-    "login"                     // AUTHENTICATION: OTP verification
-]);
-
-export const sendOrderConfirmationViaWhatsapp = async (phone: string, customerName: string, orderId: string, _amount?: number) => {
-    // Uses approved UTILITY template: order_management_4
-    return sendTemplateViaChatHub(phone, "order_management_4", {
-        body: [customerName, orderId]
-    });
-};
-
-/**
- * Generic helper to send a WhatsApp template via ChatHub.
- * Strictly enforces UTILITY-only templates.
- */
 export const sendTemplateViaChatHub = async (
     phone: string,
     templateName: string,
-    variables?: { header?: string[]; body?: string[] },
+    variables?: any,
     dynamicMedia?: string
 ) => {
-    // ── STRICT UTILITY MESSAGE POLICY ENFORCEMENT ──────────────────
-    if (!APPROVED_UTILITY_TEMPLATES.has(templateName)) {
-        console.warn(`[MBG WhatsApp Template] BLOCKED non-utility template '${templateName}'. Strict utility policy is active.`);
-        return {
-            success: false,
-            blocked: true,
-            message: `Template '${templateName}' was blocked because only approved UTILITY templates are permitted.`
-        };
-    }
-
-    const cleanPhone = phone.replace(/\D/g, "");
-    const formattedPhone = cleanPhone.length === 10 ? `91${cleanPhone}` : (cleanPhone.startsWith("91") ? cleanPhone : `91${cleanPhone}`);
-
-    const payload: any = {
+    logger.warn("[DEPRECATION] sendTemplateViaChatHub called via legacy mbgcard service. Use TemplateService instead.");
+    return TemplateService.getInstance().sendCustomTemplate({
+        phone,
         templateName,
-        to: formattedPhone,
-        variables: {
-            body: variables?.body || []
-        }
-    };
-    if (variables?.header && variables.header.length > 0) {
-        payload.variables.header = variables.header;
-    }
-    if (dynamicMedia) {
-        payload.dynamicMedia = dynamicMedia;
-    }
-
-    const url = process.env.MBGCARD_API_URL || "https://chatbotbe.digitalmbg.com/api/whatsapp/send_meta_templet";
-
-    try {
-        console.log(`[MBG WhatsApp Utility Template] Sending ${templateName} (UTILITY) to ${formattedPhone} via ${url}`);
-
-        const response = await axios.post(url, payload, {
-            timeout: 10000,
-            headers: {
-                'Content-Type': 'application/json',
-                'accept': '*/*',
-                'x-api-key': MBGCARD_API_TOKEN,
-                'User-Agent': 'BookMyVeg-Server/1.0'
-            }
-        });
-
-        console.log("[MBG WhatsApp Template] Response:", response.data);
-        return response.data;
-    } catch (error: any) {
-        console.error("Error sending utility template via ChatHub:", {
-            message: error.message,
-            response: error.response?.data
-        });
-        throw error;
-    }
-};
-
-/**
- * Post-order feedback request via UTILITY template 'feedback_request_support_'.
- */
-export const sendFeedbackRequestViaWhatsapp = async (phone: string, customerName: string, _orderId?: string) => {
-    return sendTemplateViaChatHub(phone, "feedback_request_support_", {
-        body: [customerName]
+        variables,
+        dynamicMedia,
+        triggerSource: "LEGACY_MBGCARD_WRAPPER"
     });
 };
 
-/**
- * Invoice created (Paid) via UTILITY template 'bill_created'.
- */
-export const sendInvoicePaidViaWhatsapp = async (
+export const sendOrderConfirmationViaWhatsapp = async (
     phone: string,
     customerName: string,
-    invoiceNo: string,
-    totalAmount: number,
-    paymentMode: string,
-    orderId: string
+    orderId: string,
+    amount?: number
 ) => {
-    const origin = process.env.CLIENT_URL || "https://bookmyveg.co.in";
-    const invoicePdfLink = `${origin}/invoice/${orderId}`;
-    return sendTemplateViaChatHub(phone, "bill_created", {
-        body: [customerName, invoiceNo, String(totalAmount), paymentMode, invoicePdfLink]
+    logger.warn("[DEPRECATION] sendOrderConfirmationViaWhatsapp called via legacy mbgcard service. Use NotificationService instead.");
+    return NotificationService.getInstance().notifyOrderConfirmed({
+        orderId,
+        customerPhone: phone,
+        customerName,
+        totalAmount: amount || 0,
+        itemsSummary: "BookMyVeg Order"
     });
 };
 
-/**
- * Invoice created (Due / Partial) via UTILITY template 'bill_created'.
- */
-export const sendInvoiceDueViaWhatsapp = async (
-    phone: string,
-    customerName: string,
-    invoiceNo: string,
-    totalAmount: number,
-    paymentMode: string,
-    dueAmount: number,
-    userId: string,
-    orderId: string
-) => {
-    const origin = process.env.CLIENT_URL || "https://bookmyveg.co.in";
-    const cleanPhone = phone ? phone.replace(/\D/g, "") : "";
-
-    let payLink = `${origin}/pay?number=${cleanPhone}`;
-    if (userId) {
-        payLink += `&userid=${userId}`;
-    }
-
-    // Meta WhatsApp Cloud API rejects template variable parameters containing newlines (\n) with HTTP 400 (#100) Invalid parameter.
-    // Keep URL parameter single-line and clean.
-    const invoiceAndPayLink = `${origin}/invoice/${orderId} | Pay Online: ${payLink}`;
-    const formattedTotal = formatCurrencyAmount(totalAmount);
-    const formattedDue = formatCurrencyAmount(dueAmount);
-
-    return sendTemplateViaChatHub(phone, "bill_created", {
-        body: [customerName, invoiceNo, formattedTotal, `DUE: ₹${formattedDue} (${paymentMode})`, invoiceAndPayLink]
-    });
-};
-
-/**
- * Payment due reminder via approved UTILITY template 'payment_due_reminder'.
- */
-export const sendPaymentReminderViaWhatsapp = async (
-    phone: string,
-    customerName: string,
-    dueAmount: number | any,
-    invoiceNo: string,
-    userId?: string,
-    _orderId?: string
-) => {
-    const origin = process.env.CLIENT_URL || "https://bookmyveg.co.in";
-    const cleanPhone = phone.replace(/\D/g, "");
-    
-    let payLink = `${origin}/pay?number=${cleanPhone}`;
-    if (userId) {
-        payLink += `&userid=${userId}`;
-    }
-
-    const dueTiming = `Immediate. Pay online: ${payLink}`;
-    const formattedDue = formatCurrencyAmount(dueAmount);
-
-    const response = await sendTemplateViaChatHub(phone, "payment_due_reminder", {
-        body: [customerName, invoiceNo, `₹${formattedDue}`, dueTiming]
-    });
-
-    // Explicitly record provider acceptance status (distinct from delivered or read webhook confirmations)
-    return {
-        ...response,
-        dispatchStatus: "ACCEPTED_BY_PROVIDER",
-        formattedDue,
-        recipient: cleanPhone
-    };
-};
-
-/**
- * Payment received confirmation via approved UTILITY template 'bill_created'.
- */
-export const sendPaymentReceivedViaWhatsapp = async (
-    phone: string,
-    customerName: string,
-    invoiceNo: string,
-    paidAmount: number,
-    paymentMode: string
-) => {
-    const origin = process.env.CLIENT_URL || "https://bookmyveg.co.in";
-    const invoicePdfLink = `${origin}/invoice/${invoiceNo}`;
-    return sendTemplateViaChatHub(phone, "bill_created", {
-        body: [customerName, invoiceNo, String(paidAmount), `${paymentMode} (Paid)`, invoicePdfLink]
-    });
-};
-
-/**
- * Order status update via UTILITY templates.
- */
 export const sendOrderStatusUpdateViaWhatsapp = async (
     phone: string,
     customerName: string,
     orderId: string,
-    statusName: string
+    status: string,
+    deliveryEta?: string
 ) => {
-    if (statusName === "OUT_FOR_DELIVERY" || statusName === "SHIPPED") {
-        return sendTemplateViaChatHub(phone, "order_update_notification", {
-            body: [customerName]
-        });
-    }
-    return sendTemplateViaChatHub(phone, "order_management_4", {
-        body: [customerName, orderId]
+    logger.warn("[DEPRECATION] sendOrderStatusUpdateViaWhatsapp called via legacy mbgcard service. Use NotificationService instead.");
+    return NotificationService.getInstance().notifyOrderStatusUpdated({
+        orderId,
+        customerPhone: phone,
+        customerName,
+        status,
+        deliveryEta
     });
 };
 
-/**
- * Bill / Order cancelled notification via approved UTILITY template 'bill_created'.
- */
+export const sendInvoicePaidViaWhatsapp = async (
+    phone: string,
+    customerName: string,
+    orderId: string,
+    totalAmount: number,
+    paymentMethod: string,
+    _invoiceNumber?: string
+) => {
+    logger.warn("[DEPRECATION] sendInvoicePaidViaWhatsapp called via legacy mbgcard service. Use NotificationService instead.");
+    return NotificationService.getInstance().notifyBillCreated({
+        orderId,
+        customerPhone: phone,
+        customerName,
+        totalAmount,
+        paidAmount: totalAmount,
+        dueAmount: 0,
+        paymentMode: paymentMethod
+    });
+};
+
+export const sendInvoiceDueViaWhatsapp = async (
+    phone: string,
+    customerName: string,
+    orderId: string,
+    totalAmount: number,
+    paymentMethod: string,
+    remainingDue: number,
+    _customerId?: string,
+    _invoiceNumber?: string
+) => {
+    logger.warn("[DEPRECATION] sendInvoiceDueViaWhatsapp called via legacy mbgcard service. Use NotificationService instead.");
+    return NotificationService.getInstance().notifyBillCreated({
+        orderId,
+        customerPhone: phone,
+        customerName,
+        totalAmount,
+        paidAmount: Math.max(0, totalAmount - remainingDue),
+        dueAmount: remainingDue,
+        paymentMode: paymentMethod
+    });
+};
+
+export const sendPaymentReceivedViaWhatsapp = async (
+    phone: string,
+    customerName: string,
+    orderId: string,
+    amount: number,
+    paymentMethod: string,
+    remainingBalance?: number
+) => {
+    logger.warn("[DEPRECATION] sendPaymentReceivedViaWhatsapp called via legacy mbgcard service. Use NotificationService instead.");
+    return NotificationService.getInstance().notifyPaymentReceived({
+        paymentId: `PAY-${orderId}-${Date.now().toString().slice(-4)}`,
+        orderId,
+        customerPhone: phone,
+        customerName,
+        amount,
+        paymentMethod,
+        remainingBalance: remainingBalance || 0
+    });
+};
+
 export const sendBillCancelledViaWhatsapp = async (
     phone: string,
     customerName: string,
     orderId: string,
-    reason?: string
+    cancellationReason: string
 ) => {
-    const origin = process.env.CLIENT_URL || "https://bookmyveg.co.in";
-    const invoicePdfLink = `${origin}/invoice/${orderId}`;
-    const cancelDesc = reason ? `CANCELLED (${reason})` : "CANCELLED";
-    return sendTemplateViaChatHub(phone, "bill_created", {
-        body: [customerName, orderId, "0", cancelDesc, invoicePdfLink]
+    logger.warn("[DEPRECATION] sendBillCancelledViaWhatsapp called via legacy mbgcard service. Use NotificationService instead.");
+    return NotificationService.getInstance().notifyBillCancelled({
+        orderId,
+        customerPhone: phone,
+        customerName,
+        cancellationReason
     });
 };
 
-/**
- * Inactivity reminder - marketing templates blocked by strict utility policy.
- */
-export const sendInactiveCustomerReminderViaWhatsapp = async (
-    _phone: string,
-    _customerName?: string
+export const sendPaymentReminderViaWhatsapp = async (
+    phone: string,
+    _customerName: string,
+    _totalDue: number,
+    _invoiceLabel: string,
+    _customerId?: string,
+    latestOrderId?: string
 ) => {
-    console.warn("[MBG WhatsApp] Inactivity reminder skipped: strict utility message policy forbids marketing broadcasts.");
-    return {
-        success: false,
-        skipped: true,
-        message: "Marketing broadcasts are disabled under strict utility-only policy."
-    };
+    logger.warn("[DEPRECATION] sendPaymentReminderViaWhatsapp called via legacy mbgcard service. Use ReminderService instead.");
+    if (latestOrderId) {
+        return ReminderService.getInstance().sendSingleOrderReminder({
+            orderId: latestOrderId
+        });
+    }
+    return { success: false, error: "Legacy reminder call missing order ID" };
 };
 
-/**
- * Registration welcome - marketing templates blocked by strict utility policy.
- */
-export const sendRegistrationThankYouViaWhatsapp = async (
-    _phone: string,
-    _customerName: string
+export const sendFeedbackRequestViaWhatsapp = async (
+    phone: string,
+    customerName: string,
+    orderId: string
 ) => {
-    console.warn("[MBG WhatsApp] Registration welcome skipped: strict utility message policy forbids marketing broadcasts.");
-    return {
-        success: false,
-        skipped: true,
-        message: "Marketing welcome messages are disabled under strict utility-only policy."
-    };
+    logger.warn("[DEPRECATION] sendFeedbackRequestViaWhatsapp called via legacy mbgcard service. Use NotificationService instead.");
+    return NotificationService.getInstance().notifyFeedbackRequest(phone, customerName, orderId);
+};
+
+export const getConversation = moduleGetConversation;
+
+export const getMyMetaTemplates = async () => {
+    logger.warn("[DEPRECATION] getMyMetaTemplates called via legacy mbgcard service. Use TemplateService instead.");
+    const templates = await TemplateService.getInstance().syncAndGetTemplates();
+    return { success: true, data: templates };
 };

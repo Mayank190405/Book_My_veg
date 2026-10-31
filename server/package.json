@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "tsx src/tests/dueCalculation.test.ts",
+    "test": "tsx src/tests/dueCalculation.test.ts && tsx src/tests/messagingReplacement.test.ts && tsx src/tests/messagingIntegration.test.ts",
     "test:scan": "tsx src/tests/test_scan.ts",
     "verify:easebuzz": "tsx src/scripts/verifyEasebuzzPastRecords.ts",
     "reconcile:ledger": "tsx src/scripts/reconcileFinancialLedger.ts",

@@ -15,7 +15,7 @@ import { orderService } from "../services/orderService";
 import { AppError } from "../utils/errors";
 import { getIo } from "../sockets/io";
 import { generateOtp, storeOtp, verifyOtp } from "../utils/otp";
-import { sendOtpViaWhatsapp } from "../services/mbgcard";
+import { NotificationService } from "../modules/messaging";
 import { generateOrderId } from "../utils/idGenerator";
 import { calculateCustomerDues, getEligibleOrdersWhereClause } from "../services/dueCalculationService";
 
@@ -310,13 +310,25 @@ export const updateOrderStatus = async (req: AuthenticatedRequest, res: Response
         try {
             const user = await prisma.user.findUnique({ where: { id: order.userId }, select: { name: true, phone: true } });
             if (user?.phone) {
-                const { sendOrderStatusUpdateViaWhatsapp, sendBillCancelledViaWhatsapp } = require("../services/mbgcard");
                 if (status === "CANCELLED") {
-                    sendBillCancelledViaWhatsapp(user.phone, user.name || "Customer", id as string, remark).catch((err: any) => {
+                    NotificationService.getInstance().notifyBillCancelled({
+                        orderId: id as string,
+                        customerPhone: user.phone,
+                        customerName: user.name || "Customer",
+                        cancellationReason: remark || "Order cancelled by store",
+                        triggeredBy: userId
+                    }).catch((err: any) => {
                         console.error("[OrderController] WhatsApp bill cancellation dispatch failure:", err);
                     });
                 } else {
-                    sendOrderStatusUpdateViaWhatsapp(user.phone, user.name || "Customer", id as string, status).catch((err: any) => {
+                    NotificationService.getInstance().notifyOrderStatusUpdated({
+                        orderId: id as string,
+                        customerPhone: user.phone,
+                        customerName: user.name || "Customer",
+                        status,
+                        deliveryEta: remark || "Soon",
+                        triggeredBy: userId
+                    }).catch((err: any) => {
                         console.error("[OrderController] WhatsApp status update dispatch failure:", err);
                     });
                 }
@@ -512,7 +524,7 @@ export const sendDeliveryOtp = async (req: AuthenticatedRequest, res: Response) 
         await storeOtp(`DELIVERY_${id}`, otp);
 
         try {
-            await sendOtpViaWhatsapp((order as any).user.phone, otp);
+            await NotificationService.getInstance().sendOtp((order as any).user.phone, otp, "DELIVERY", id as string);
             res.json({ message: "Delivery OTP sent via WhatsApp" });
         } catch (e: any) {
             console.error("WhatsApp delivery failed, fallback OTP used.", e);
@@ -962,7 +974,7 @@ export const sendCashCollectionOtp = async (req: AuthenticatedRequest, res: Resp
         const maskedPhone = cleanPhone.slice(-4).padStart(cleanPhone.length, "*");
 
         try {
-            await sendOtpViaWhatsapp(cleanPhone, otp);
+            await NotificationService.getInstance().sendOtp(cleanPhone, otp, "CASH_COLLECTION", orderId || customerId);
         } catch (msgErr) {
             logger.warn(`[sendCashCollectionOtp] WhatsApp delivery failed, using fallback OTP:`, msgErr);
         }

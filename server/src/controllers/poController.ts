@@ -207,20 +207,21 @@ export const createPurchaseOrder = async (req: AuthenticatedRequest, res: Respon
         // Trigger WhatsApp to vendor if autoSend is requested and phone is present
         if (autoSend && effectiveSupplierPhone) {
             try {
-                const { sendTemplateViaChatHub } = require("../services/mbgcard");
+                const { NotificationService } = require("../modules/messaging");
                 const storeName = po.location?.name || "Book My Veg";
                 const origin = process.env.CLIENT_URL || "https://bookmyveg.co.in";
                 const poLink = `${origin}/admin/purchase-orders?po=${po.id}`;
-                await sendTemplateViaChatHub(effectiveSupplierPhone, "vendor_po_dispatch", {
-                    body: [
-                        effectiveSupplierName || "Vendor",
-                        po.poNumber,
-                        String(po.items.length),
-                        String(Number(po.totalEstimatedCost)),
-                        storeName,
-                        po.location?.address || "Store Hub",
-                        poLink
-                    ]
+                NotificationService.getInstance().notifyPurchaseOrder({
+                    poId: po.id,
+                    poNumber: po.poNumber,
+                    vendorPhone: effectiveSupplierPhone,
+                    vendorName: effectiveSupplierName || "Vendor",
+                    storeName,
+                    storeAddress: po.location?.address || "Store Hub",
+                    totalAmount: Number(po.totalEstimatedCost),
+                    itemCount: po.items.length,
+                    poLink,
+                    actorId: caller?.userId
                 }).catch((e: any) => console.warn("[PO autoSend warning]:", e.message));
             } catch (e) {
                 console.error("[PO autoSend error]:", e);
@@ -576,7 +577,7 @@ export const getPurchaseManagerAssignedStores = async (req: AuthenticatedRequest
 
 export const sendPOToVendorWhatsApp = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     const id = String(req.params.id);
-    const { templateName = "vendor_po_dispatch", customPhone, customMessage } = req.body;
+    const { customPhone } = req.body;
 
     try {
         const po = await prisma.purchaseOrder.findUnique({
@@ -605,25 +606,26 @@ export const sendPOToVendorWhatsApp = async (req: AuthenticatedRequest, res: Res
         const vendorName = po.vendor?.companyName || po.vendor?.name || po.supplierName || "Vendor";
         const storeName = po.location?.name || "Book My Veg Hub";
         const storeAddress = po.location?.address || "Store Hub";
-        const totalAmount = String(Number(po.actualCost) > 0 ? Number(po.actualCost) : Number(po.totalEstimatedCost));
+        const totalAmount = Number(po.actualCost) > 0 ? Number(po.actualCost) : Number(po.totalEstimatedCost);
         const origin = process.env.CLIENT_URL || "https://bookmyveg.co.in";
         const poLink = `${origin}/admin/purchase-orders?po=${po.id}`;
 
-        const { sendTemplateViaChatHub } = require("../services/mbgcard");
-        const variables = [
+        const { NotificationService } = require("../modules/messaging");
+        const dispatchResult = await NotificationService.getInstance().notifyPurchaseOrder({
+            poId: po.id,
+            poNumber: po.poNumber,
+            vendorPhone: recipientPhone,
             vendorName,
-            po.poNumber,
-            String(po.items.length),
-            totalAmount,
             storeName,
             storeAddress,
-            poLink
-        ];
-
-        const dispatchResult = await sendTemplateViaChatHub(recipientPhone, templateName, { body: variables });
+            totalAmount,
+            itemCount: po.items.length,
+            poLink,
+            actorId: req.user?.userId
+        });
 
         res.json({
-            success: true,
+            success: dispatchResult.success,
             message: `Purchase Order ${po.poNumber} sent to vendor WhatsApp (${recipientPhone}).`,
             dispatchResult
         });
