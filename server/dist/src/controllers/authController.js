@@ -77,7 +77,10 @@ const sendOtp = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
         }
         // Send OTP via MBG Card
         try {
-            yield messaging_1.NotificationService.getInstance().sendOtp(phone, otp, "AUTH");
+            const sendResult = yield messaging_1.NotificationService.getInstance().sendOtp(phone, otp, "AUTH");
+            if (!sendResult.success) {
+                throw new Error(sendResult.error || "Failed to dispatch OTP via WhatsApp provider");
+            }
             res.status(200).json({
                 message: "OTP sent successfully"
             });

@@ -9,6 +9,7 @@ import logger from "../../../../utils/logger";
 
 const MAX_RETRIES = 3;
 const INITIAL_BACKOFF_MS = 1000;
+const DEFAULT_MBGCARD_API_TOKEN = "d423777128fdc8a29bef4fb719f3d3c9";
 
 export class MbgWhatsAppProvider implements IWhatsAppProvider {
     private readonly apiUrl: string;
@@ -20,11 +21,7 @@ export class MbgWhatsAppProvider implements IWhatsAppProvider {
         this.apiUrl = process.env.MBGCARD_API_URL || "https://chatbotbe.digitalmbg.com/api/whatsapp/send_meta_templet";
         this.templatesUrl = process.env.MBGCARD_TEMPLATES_URL || "https://chatbotbe.digitalmbg.com/api/whatsapp/get_my_meta_templets";
         this.flowUrl = process.env.MBGCARD_FLOW_URL || "https://chatbot.digitalmbg.com/v1/contacts/send_flow";
-        this.apiToken = process.env.MBGCARD_API_TOKEN || "";
-
-        if (!this.apiToken && process.env.NODE_ENV === "production") {
-            logger.error("[MbgWhatsAppProvider] MBGCARD_API_TOKEN is not configured in environment!");
-        }
+        this.apiToken = process.env.MBGCARD_API_TOKEN || DEFAULT_MBGCARD_API_TOKEN;
     }
 
     /**
@@ -63,14 +60,13 @@ export class MbgWhatsAppProvider implements IWhatsAppProvider {
             payload.dynamicMedia = request.dynamicMedia;
         }
 
-        // Sandbox / Test fallback if no token
+        // Failsafe if token is missing
         if (!this.apiToken) {
-            logger.warn(`[MbgWhatsAppProvider] Mock dispatch for ${request.templateName} to ${formattedPhone} (No token configured).`);
+            logger.error(`[MbgWhatsAppProvider] Missing MBGCARD_API_TOKEN. Cannot dispatch '${request.templateName}' to ${formattedPhone}.`);
             return {
-                success: true,
-                status: "ACCEPTED_BY_PROVIDER",
-                providerMessageId: `mock-msg-${Date.now()}`,
-                rawResponse: { mock: true }
+                success: false,
+                status: "FAILED",
+                error: "MBGCARD_API_TOKEN is not configured"
             };
         }
 
@@ -224,11 +220,11 @@ export class MbgWhatsAppProvider implements IWhatsAppProvider {
         };
 
         if (!this.apiToken) {
-            logger.info(`[MbgWhatsAppProvider] Mock flow dispatched to ${formattedPhone} (No token).`);
+            logger.error(`[MbgWhatsAppProvider] Missing MBGCARD_API_TOKEN. Cannot dispatch flow to ${formattedPhone}.`);
             return {
-                success: true,
-                status: "ACCEPTED_BY_PROVIDER",
-                providerMessageId: `mock-flow-${Date.now()}`
+                success: false,
+                status: "FAILED",
+                error: "MBGCARD_API_TOKEN is not configured"
             };
         }
 

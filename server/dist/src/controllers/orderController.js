@@ -517,7 +517,9 @@ const sendDeliveryOtp = (req, res) => __awaiter(void 0, void 0, void 0, function
         const otp = (0, otp_1.generateOtp)();
         yield (0, otp_1.storeOtp)(`DELIVERY_${id}`, otp);
         try {
-            yield messaging_1.NotificationService.getInstance().sendOtp(order.user.phone, otp, "DELIVERY", id);
+            const sendRes = yield messaging_1.NotificationService.getInstance().sendOtp(order.user.phone, otp, "DELIVERY", id);
+            if (!sendRes.success)
+                throw new Error(sendRes.error || "Failed to deliver OTP via WhatsApp");
             res.json({ message: "Delivery OTP sent via WhatsApp" });
         }
         catch (e) {
@@ -946,7 +948,9 @@ const sendCashCollectionOtp = (req, res) => __awaiter(void 0, void 0, void 0, fu
         const cleanPhone = phone.replace(/\D/g, "");
         const maskedPhone = cleanPhone.slice(-4).padStart(cleanPhone.length, "*");
         try {
-            yield messaging_1.NotificationService.getInstance().sendOtp(cleanPhone, otp, "CASH_COLLECTION", orderId || customerId);
+            const sendRes = yield messaging_1.NotificationService.getInstance().sendOtp(cleanPhone, otp, "CASH_COLLECTION", orderId || customerId);
+            if (!sendRes.success)
+                throw new Error(sendRes.error || "Failed to deliver OTP via WhatsApp");
         }
         catch (msgErr) {
             logger_1.default.warn(`[sendCashCollectionOtp] WhatsApp delivery failed, using fallback OTP:`, msgErr);

@@ -55,7 +55,10 @@ export const sendOtp = async (req: Request, res: Response) => {
 
         // Send OTP via MBG Card
         try {
-            await NotificationService.getInstance().sendOtp(phone, otp, "AUTH");
+            const sendResult = await NotificationService.getInstance().sendOtp(phone, otp, "AUTH");
+            if (!sendResult.success) {
+                throw new Error(sendResult.error || "Failed to dispatch OTP via WhatsApp provider");
+            }
             res.status(200).json({
                 message: "OTP sent successfully"
             });
