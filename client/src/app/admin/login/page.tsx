@@ -3,12 +3,12 @@
 import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { loginWithPassword } from "@/services/authService";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, ShieldAlert, Cpu, Lock, Globe, Zap, ShieldCheck, Key, User as UserIcon, Eye, EyeOff } from "lucide-react";
+import { Loader2, Lock, ShieldCheck, User as UserIcon, Eye, EyeOff, Leaf, ArrowRight } from "lucide-react";
+import Link from "next/link";
+import Image from "next/image";
+import { isAxiosError } from "axios";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
 import { useUserStore } from "@/store/useUserStore";
 
 export default function AdminLogin() {
@@ -50,119 +50,47 @@ export default function AdminLogin() {
             } else {
                 router.push(redirect);
             }
-        } catch (error: any) {
-            toast.error(error.response?.data?.message || "Invalid Admin Credentials");
+        } catch (error: unknown) {
+            toast.error((isAxiosError(error) && error.response?.data?.message) || "Invalid admin credentials");
         } finally {
             setLoading(false);
         }
     };
 
     return (
-        <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center p-6 relative overflow-hidden font-sans selection:bg-emerald-100 selection:text-emerald-900">
-            {/* Subtle Design Elements */}
-            <div className="absolute top-0 right-0 w-1/3 h-1/3 bg-emerald-50 rounded-full blur-[120px] -mr-32 -mt-32 opacity-50"></div>
-            <div className="absolute bottom-0 left-0 w-1/3 h-1/3 bg-blue-50 rounded-full blur-[120px] -ml-32 -mb-32 opacity-50"></div>
-            
-            <div className="w-full max-w-lg relative">
-                <div className="bg-white border border-slate-200 rounded-[2.5rem] p-10 md:p-14 shadow-2xl shadow-slate-200/50 relative overflow-hidden">
-                    <div className="relative z-10 flex flex-col items-center">
-                        {/* Branding Header */}
-                        <div className="flex flex-col items-center mb-12 text-center">
-                            <div className="w-16 h-16 bg-emerald-600 rounded-2xl flex items-center justify-center shadow-xl shadow-emerald-200 mb-6 group transition-transform hover:scale-105 duration-500">
-                                <ShieldCheck className="h-8 w-8 text-white" />
-                            </div>
-                            <h1 className="text-3xl font-bold text-slate-900 tracking-tight mb-2">Admin Portal</h1>
-                            <p className="text-sm text-slate-500 font-medium">Verify your credentials to access management</p>
+        <div className="bmv-theme bmv-admin h-dvh overflow-y-auto bg-[var(--bmv-bg)] text-[var(--bmv-text)]">
+            <header className="bmv-topbar border-b border-white/10">
+                <div className="mx-auto flex min-h-20 max-w-7xl items-center justify-between gap-4 px-4 sm:px-8">
+                    <Link href="/" className="inline-flex min-h-11 items-center gap-3 text-base font-semibold"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--bmv-accent)] text-[#004b30]"><Leaf className="h-5 w-5" /></span>Book My Veg</Link>
+                    <Link href="/" className="inline-flex min-h-11 items-center gap-2 text-sm text-green-100/80 hover:text-white"><span className="hidden sm:inline">Visit store</span><ArrowRight className="h-4 w-4" /></Link>
+                </div>
+            </header>
+            <main className="mx-auto grid max-w-7xl items-center gap-10 px-4 py-10 sm:px-8 lg:min-h-[calc(100vh-5rem)] lg:grid-cols-[1.15fr_1fr] lg:gap-20 lg:py-16">
+                <section className="hidden lg:block" aria-labelledby="workspace-heading">
+                    <span className="inline-flex items-center gap-2 rounded-full border border-[var(--bmv-border)] bg-white px-4 py-2 text-xs font-medium text-[var(--bmv-accent-strong)]"><Leaf className="h-3.5 w-3.5" />Book My Veg management</span>
+                    <h2 id="workspace-heading" className="mt-6 max-w-lg text-5xl font-semibold leading-[1.12] tracking-tight">Fresh thinking.<br /><span className="text-[var(--bmv-accent-strong)]">Every day.</span></h2>
+                    <p className="mt-5 max-w-md text-base leading-relaxed text-[var(--bmv-muted)]">Your workspace for products, orders, inventory and the people behind every delivery.</p>
+                    <div className="relative mt-8 h-64 max-w-lg overflow-hidden rounded-[2rem] border border-[var(--bmv-border)] bg-[var(--bmv-raised)]"><Image src="/images/fresh_produce_banner.png" alt="A selection of vegetables" fill sizes="(min-width:1024px) 500px, 1px" className="object-cover" /></div>
+                </section>
+                <section className="mx-auto w-full max-w-md rounded-[1.75rem] border border-[var(--bmv-border)] bg-[var(--bmv-surface)] p-6 sm:p-9" aria-labelledby="login-heading">
+                    <span className="mb-6 flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--bmv-raised)] text-[var(--bmv-accent-strong)]"><ShieldCheck className="h-6 w-6" /></span>
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-[.12em] text-[var(--bmv-accent-strong)]">Management workspace</p>
+                    <h1 id="login-heading" className="text-3xl font-semibold tracking-tight">Welcome back</h1>
+                    <p className="mt-3 text-sm leading-relaxed text-[var(--bmv-muted)]">Sign in with your administrator account to continue.</p>
+                    <form onSubmit={handleLogin} className="mt-8 space-y-5">
+                        <div className="space-y-2">
+                            <Label htmlFor="admin-phone" className="text-sm font-medium text-[var(--bmv-text)]">Phone number</Label>
+                            <div className="relative"><UserIcon className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--bmv-muted)]" /><input id="admin-phone" type="tel" inputMode="tel" autoComplete="username" placeholder="Enter phone number" value={phone} onChange={event => setPhone(event.target.value)} required className="h-13 w-full rounded-xl border border-[var(--bmv-border)] bg-[var(--bmv-bg)] pl-11 pr-4 text-sm text-[var(--bmv-text)] placeholder:text-[var(--bmv-muted)] focus:border-[var(--bmv-accent-strong)] focus:outline-none focus:ring-2 focus:ring-[var(--bmv-accent)]" /></div>
                         </div>
-
-                        <form onSubmit={handleLogin} className="w-full space-y-8">
-                            <div className="space-y-6">
-                                {/* Admin ID / Phone */}
-                                <div className="space-y-2">
-                                    <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Phone Number</Label>
-                                    <div className="relative group">
-                                        <div className="absolute left-5 top-1/2 -translate-y-1/2 flex items-center pr-4 border-r border-slate-100 transition-colors group-focus-within:border-emerald-200 py-1">
-                                            <UserIcon className="h-4 w-4 text-slate-400 group-focus-within:text-emerald-600 transition-colors" />
-                                        </div>
-                                        <input 
-                                            type="tel"
-                                            placeholder="Ph. Number"
-                                            value={phone}
-                                            onChange={(e) => setPhone(e.target.value)}
-                                            className="w-full h-14 bg-slate-50 border border-slate-200 rounded-xl pl-16 pr-6 text-base font-bold text-slate-900 outline-none focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-500/5 transition-all placeholder:text-slate-300"
-                                            required
-                                        />
-                                    </div>
-                                </div>
-
-                                {/* Security Key / Password */}
-                                <div className="space-y-2">
-                                    <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Password</Label>
-                                    <div className="relative group">
-                                        <div className="absolute left-5 top-1/2 -translate-y-1/2 flex items-center pr-4 border-r border-slate-100 transition-colors group-focus-within:border-emerald-200 py-1">
-                                            <Lock className="h-4 w-4 text-slate-400 group-focus-within:text-emerald-600 transition-colors" />
-                                        </div>
-                                        <input 
-                                            type={showPassword ? "text" : "password"}
-                                            placeholder="••••••••"
-                                            value={password}
-                                            onChange={(e) => setPassword(e.target.value)}
-                                            className={cn(
-                                                "w-full h-14 bg-slate-50 border border-slate-200 rounded-xl pl-16 pr-14 text-base font-bold text-slate-900 outline-none focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-500/5 transition-all placeholder:text-slate-300",
-                                                !showPassword && "tracking-[0.2em]"
-                                            )}
-                                            required
-                                        />
-                                        <button 
-                                            type="button"
-                                            onClick={() => setShowPassword(!showPassword)}
-                                            className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors focus:outline-none"
-                                        >
-                                            {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <button 
-                                type="submit" 
-                                disabled={loading}
-                                className="w-full h-14 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold uppercase tracking-widest text-sm shadow-xl shadow-slate-200 flex items-center justify-center gap-3 transition-all active:scale-95 disabled:opacity-50 disabled:scale-100"
-                            >
-                                {loading ? (
-                                    <Loader2 className="h-5 w-5 animate-spin" />
-                                ) : (
-                                    <>
-                                        <span>Log In</span>
-                                        <Zap className="h-4 w-4 text-amber-400 fill-amber-400" />
-                                    </>
-                                )}
-                            </button>
-                            
-                            <div className="flex items-center justify-center gap-6 pt-4 border-t border-slate-100">
-                                <div className="flex items-center gap-2">
-                                    <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></div>
-                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Authorized Access</span>
-                                </div>
-                                <div className="hidden md:flex items-center gap-2">
-                                    <div className="w-1.5 h-1.5 bg-blue-500 rounded-full"></div>
-                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">System Connection Verified</span>
-                                </div>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-
-                {/* Footer Credits */}
-                <div className="mt-10 flex flex-col items-center gap-2 opacity-40">
-                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">Book My Veg Administrative Interface</p>
-                    <div className="flex items-center gap-4">
-                        <span className="text-[9px] font-bold text-slate-400 uppercase">Version 2.4.0</span>
-                        <div className="w-1 h-1 bg-slate-400 rounded-full"></div>
-                        <span className="text-[9px] font-bold text-slate-400 uppercase">Cloud Environment</span>
-                    </div>
-                </div>
-            </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="admin-password" className="text-sm font-medium text-[var(--bmv-text)]">Password</Label>
+                            <div className="relative"><Lock className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--bmv-muted)]" /><input id="admin-password" type={showPassword ? "text" : "password"} autoComplete="current-password" placeholder="Enter password" value={password} onChange={event => setPassword(event.target.value)} required className="h-13 w-full rounded-xl border border-[var(--bmv-border)] bg-[var(--bmv-bg)] pl-11 pr-14 text-sm text-[var(--bmv-text)] placeholder:text-[var(--bmv-muted)] focus:border-[var(--bmv-accent-strong)] focus:outline-none focus:ring-2 focus:ring-[var(--bmv-accent)]" /><button type="button" onClick={() => setShowPassword(!showPassword)} aria-label={showPassword ? "Hide password" : "Show password"} aria-pressed={showPassword} className="absolute right-1 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-lg text-[var(--bmv-muted)] hover:bg-[var(--bmv-raised)]">{showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button></div>
+                        </div>
+                        <button type="submit" disabled={loading} className="mt-2 flex min-h-13 w-full items-center justify-center gap-3 rounded-full bg-[var(--bmv-accent-strong)] px-5 text-sm font-semibold text-white transition-colors hover:bg-[#005236] disabled:cursor-wait disabled:opacity-60">{loading ? <><Loader2 className="h-4 w-4 animate-spin" />Signing in…</> : <>Sign in<ArrowRight className="h-4 w-4" /></>}</button>
+                        <p className="border-t border-[var(--bmv-border)] pt-5 text-center text-xs leading-relaxed text-[var(--bmv-muted)]">For authorized Book My Veg team members.</p>
+                    </form>
+                </section>
+            </main>
         </div>
     );
 }

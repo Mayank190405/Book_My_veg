@@ -1,3 +1,5 @@
+Latest visual update: [31 October green-and-white reference styling](reference-styling-2026-10-31.md). [Customer preview](http://127.0.0.1:3001/) · [Management login](http://127.0.0.1:3001/admin/login).
+
 # Book My Veg — design and technical review pack
 
 28 October 2026 · **Customer UI implementation requested and applied** · Release not authorized

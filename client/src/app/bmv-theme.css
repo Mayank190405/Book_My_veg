@@ -1,0 +1,60 @@
+/* Shared Book My Veg visual tokens; scoped to customer and management shells. */
+.bmv-theme, .bmv-theme.customer-ui {
+  --bmv-bg: #f8faf8;
+  --bmv-surface: #ffffff;
+  --bmv-raised: #eef6ed;
+  --bmv-text: #14251c;
+  --bmv-muted: #617166;
+  --bmv-border: #e0e9e2;
+  --bmv-accent: #c5ef75;
+  --bmv-accent-strong: #006c45;
+  --background: var(--bmv-bg);
+  --foreground: var(--bmv-text);
+  --card: var(--bmv-surface);
+  --card-foreground: var(--bmv-text);
+  --popover: var(--bmv-surface);
+  --popover-foreground: var(--bmv-text);
+  --primary: var(--bmv-accent-strong);
+  --primary-foreground: #ffffff;
+  --secondary: var(--bmv-raised);
+  --secondary-foreground: #005236;
+  --accent: #e5f5ce;
+  --accent-foreground: #005236;
+  --muted: #f0f4f1;
+  --muted-foreground: var(--bmv-muted);
+  --border: var(--bmv-border);
+  --input: var(--bmv-border);
+  --ring: var(--bmv-accent-strong);
+  background: var(--bmv-bg);
+  color: var(--bmv-text);
+  font-family: var(--font-inter), sans-serif;
+  color-scheme: light;
+}
+.bmv-theme :is(h1,h2,h3,h4) { font-family: var(--font-inter), sans-serif; letter-spacing: -.025em; }
+.bmv-theme :focus-visible { outline: 2px solid #087f5b; outline-offset: 3px; }
+.bmv-theme :is(input,textarea,select) { accent-color: var(--bmv-accent-strong); }
+.bmv-topbar { background: #004b30; color: #fff; }
+.bmv-topbar :is(.text-slate-600,.text-slate-900,.text-slate-800,.text-emerald-800,[class~="text-[#087f5b]"]) { color: #fff; }
+.bmv-topbar [role="button"] h2 { color: #fff; }
+.bmv-topbar [role="button"] :is(.text-emerald-700,.text-slate-500,.text-slate-400) { color: #d0e8cf; }
+.bmv-topbar :is(a,button).hover\:bg-slate-50:hover { background: #ffffff18; }
+.bmv-topbar .bmv-search { background: #fff; color: #617166; }
+.bmv-topbar .bmv-search svg { color: #006c45; }
+.bmv-topbar [class~="bg-[#e8f7ef]"] { background: #c5ef7520; color: #c5ef75; border: 1px solid #c5ef7560; }
+.bmv-admin table { border-collapse: separate; border-spacing: 0; }
+.bmv-admin :is(th,td) { padding-block: 14px; }
+.bmv-admin th { font-size: 11px; letter-spacing: .04em; color: var(--bmv-muted); }
+.bmv-admin :is(input,select,textarea) { border-radius: 12px; }
+.bmv-admin :is(.uppercase,.tracking-widest) { text-transform: none; letter-spacing: .02em; }
+.bmv-admin .font-black { font-weight: 700; }
+@media (prefers-reduced-motion: reduce) {
+  .bmv-theme *, .bmv-theme *::before, .bmv-theme *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+}
+
+/* Portal roots own tokens without painting over their backdrops. */
+.bmv-product-sheet[role="dialog"] { background: transparent; }
+/* Keep existing management screens light without changing the user's global theme. */
+.bmv-admin :is(.bg-slate-50,.bg-gray-50,.bg-slate-100,.dark\:bg-slate-900,.dark\:bg-slate-950) { background-color: var(--bmv-bg); }
+.bmv-admin :is(.bg-white,.dark\:bg-slate-800,.dark\:bg-gray-900) { background-color: var(--bmv-surface); }
+.bmv-admin :is(.text-slate-900,.text-slate-800,.dark\:text-white,.dark\:text-slate-100) { color: var(--bmv-text); }
+.bmv-admin :is(.border-slate-100,.border-slate-200,.dark\:border-slate-700,.dark\:border-slate-800) { border-color: var(--bmv-border); }

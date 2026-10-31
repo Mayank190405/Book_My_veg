@@ -1,9 +1,9 @@
 "use client";
 
 import Image from "next/image";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
-import { X, Share2, Bookmark, Check, Bell, Plus, Minus, Sparkles } from "lucide-react";
+import { X, Share2, Bookmark, Check, Bell, Plus, Minus, Leaf } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { getProductById } from "@/services/productService";
 import { useCartStore } from "@/store/useCartStore";
@@ -36,6 +36,7 @@ export interface ProductDetailsDrawerProps {
 }
 
 export default function ProductDetailsDrawer({ isOpen, onClose, product }: ProductDetailsDrawerProps) {
+    const modalRef = useRef<HTMLDivElement>(null);
     const [mounted, setMounted] = useState(false);
     const [activeVariantId, setActiveVariantId] = useState<string | null>(null);
     const [customNote, setCustomNote] = useState("");
@@ -90,6 +91,25 @@ export default function ProductDetailsDrawer({ isOpen, onClose, product }: Produ
             document.body.style.overflow = "";
         };
     }, [isOpen, onClose]);
+
+    useEffect(() => {
+        if (!mounted || !isOpen) return;
+        const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        const modal = modalRef.current;
+        const first = modal?.querySelector<HTMLElement>("button");
+        first?.focus();
+        const trapFocus = (event: KeyboardEvent) => {
+            if (event.key !== "Tab" || !modal) return;
+            const controls = Array.from(modal.querySelectorAll<HTMLElement>('button:not([disabled]), textarea, a[href]'));
+            const start = controls[0];
+            const end = controls[controls.length - 1];
+            if (!start) { event.preventDefault(); return; }
+            if (event.shiftKey && document.activeElement === start) { event.preventDefault(); end.focus(); }
+            else if (!event.shiftKey && document.activeElement === end) { event.preventDefault(); start.focus(); }
+        };
+        document.addEventListener("keydown", trapFocus);
+        return () => { document.removeEventListener("keydown", trapFocus); previous?.focus(); };
+    }, [mounted, isOpen]);
 
     if (!mounted || !isOpen || !product) return null;
 
@@ -156,16 +176,9 @@ export default function ProductDetailsDrawer({ isOpen, onClose, product }: Produ
         ? p.images
         : (product.images && product.images.length > 0)
             ? product.images
-            : ["https://placehold.co/600x600/1e2129/bef264?text=Fresh+Produce"];
+            : [];
 
     const isNonVeg = /egg|chicken|mutton|fish|meat|prawn|pork/i.test(p.name) || (Array.isArray(p.tags) && p.tags.some((t: string) => /non-?veg|egg|chicken/i.test(t)));
-
-    // Dynamic Social Proof
-    const dynamicProof = isOutOfStock
-        ? { text: "Restocking soon", barColor: "bg-slate-500", barPercent: 20 }
-        : discountPct >= 15
-            ? { text: `Best Value • Save ${discountPct}%`, barColor: "bg-emerald-500", barPercent: 90 }
-            : { text: "Highly reordered", barColor: "bg-emerald-500", barPercent: 80 };
 
     const handleShare = () => {
         openShare({
@@ -242,51 +255,51 @@ export default function ProductDetailsDrawer({ isOpen, onClose, product }: Produ
     };
 
     const drawerContent = (
-        <div className="fixed inset-0 z-[300] flex flex-col justify-end">
+        <div ref={modalRef} role="dialog" aria-modal="true" aria-label={p.name} className="bmv-theme bmv-product-sheet fixed inset-0 z-[300] flex flex-col justify-end [&_button:focus-visible]:outline-2 [&_button:focus-visible]:outline-offset-2 [&_button:focus-visible]:outline-[#006c45]">
             {/* Backdrop Blur */}
             <div
                 onClick={onClose}
                 className="fixed inset-0 bg-black/75 backdrop-blur-xs transition-opacity duration-300 animate-in fade-in"
             />
 
-            {/* Floating Close 'X' Button Directly Above Sheet (Exact Zomato Match) */}
+            {/* Floating Close 'X' Button Directly Above Sheet (Reference-inspired close action) */}
             <div className="relative z-[320] w-full max-w-lg mx-auto flex justify-center pb-3">
                 <button
                     type="button"
                     onClick={onClose}
                     aria-label="Close"
-                    className="w-11 h-11 rounded-full bg-[#252830] text-white flex items-center justify-center shadow-2xl active:scale-90 hover:bg-[#323640] transition-all cursor-pointer border border-white/10"
+                    className="w-11 h-11 rounded-full bg-[#eef6ed] text-[#14251c] flex items-center justify-center shadow-2xl active:scale-90 hover:bg-[#e0e9e2] transition-all cursor-pointer border border-[#e0e9e2]"
                 >
                     <X className="w-5 h-5 stroke-[2.5]" />
                 </button>
             </div>
 
-            {/* Bottom Sheet Drawer Container (Exact Zomato Dark Theme) */}
+            {/* Bottom Sheet Drawer Container (Book My Veg light surface) */}
             <div
-                className="relative z-[310] w-full max-w-lg mx-auto bg-[#18191e] text-white rounded-t-[2.2rem] shadow-[0_-20px_80px_rgba(0,0,0,0.6)] border-t border-white/10 flex flex-col max-h-[88vh] overflow-hidden animate-in slide-in-from-bottom duration-300 ease-out"
+                className="relative z-[310] w-full max-w-lg mx-auto bg-white text-[#14251c] rounded-t-[2.2rem] shadow-[0_-20px_80px_rgba(0,0,0,0.6)] border-t border-[#e0e9e2] flex flex-col max-h-[88vh] overflow-hidden animate-in slide-in-from-bottom duration-300 ease-out"
             >
                 {/* Scrollable Content: Photo on Top, Details Below */}
-                <div className="flex-1 overflow-y-auto px-5 pt-5 pb-24 space-y-4">
+                <div className="flex-1 overflow-y-auto px-5 pt-5 pb-32 space-y-4">
                     
                     {/* 1. PHOTO ON TOP (Rounded Hero Produce Showcase) */}
-                    <div className="relative w-full aspect-[4/3] rounded-2xl overflow-hidden bg-[#22242b] border border-white/5 shadow-md">
-                        <Image
+                    <div className="relative w-full aspect-[4/3] rounded-2xl overflow-hidden bg-[#f4f8f1] border border-[#e0e9e2] shadow-md">
+                        {images[0] ? <Image
                             src={images[0]}
                             alt={p.name}
                             fill
                             unoptimized
                             className={cn(
-                                "object-cover transition-transform duration-700 hover:scale-105",
+                                "object-contain p-4 transition-transform duration-700 hover:scale-105",
                                 isOutOfStock && "opacity-35 grayscale"
                             )}
                             sizes="(max-width: 768px) 100vw, 500px"
                             priority
-                        />
+                        /> : <div className="flex h-full flex-col items-center justify-center gap-3 text-[#617166]"><Leaf className="h-12 w-12" /><span className="text-sm">Image unavailable</span></div>}
 
                         {/* Out of Stock Scrim */}
                         {isOutOfStock && (
                             <div className="absolute inset-0 bg-black/60 backdrop-blur-[2px] flex items-center justify-center z-10">
-                                <span className="text-xs font-black text-white px-3 py-1 rounded-full uppercase tracking-widest bg-black/80 border border-white/20">
+                                <span className="text-xs font-semibold text-white px-3 py-1 rounded-full  tracking-normal bg-black/80 border border-white/20">
                                     OUT OF STOCK
                                 </span>
                             </div>
@@ -294,45 +307,34 @@ export default function ProductDetailsDrawer({ isOpen, onClose, product }: Produ
 
                         {/* Discount Badge */}
                         {discountPct > 0 && !isOutOfStock && (
-                            <div className="absolute top-3 left-3 bg-[#e23744] text-white px-2 py-0.5 rounded-md font-black text-[10px] uppercase tracking-wider shadow-md">
+                            <div className="absolute top-3 left-3 bg-[#006c45] text-white px-2 py-0.5 rounded-md font-semibold text-xs  tracking-normal shadow-md">
                                 {discountPct}% OFF
                             </div>
                         )}
                     </div>
 
-                    {/* 2. TITLE ROW & ACTIONS (Exact Zomato Layout) */}
+                    {/* 2. TITLE ROW & ACTIONS (Product information and actions) */}
                     <div className="pt-1">
                         <div className="flex items-start justify-between gap-3">
                             <div className="space-y-1.5 flex-1 min-w-0">
                                 {/* Veg / Non-Veg Indicator */}
                                 <div className="flex items-center gap-2">
                                     {isNonVeg ? (
-                                        <div className="w-4 h-4 border border-amber-600 flex items-center justify-center rounded-[3px] bg-[#1a120e] p-[2px] shrink-0">
+                                        <div className="w-4 h-4 border border-amber-600 flex items-center justify-center rounded-[3px] bg-amber-50 p-[2px] shrink-0">
                                             <div className="w-0 h-0 border-l-[3.5px] border-l-transparent border-r-[3.5px] border-r-transparent border-b-[6px] border-b-amber-600" />
                                         </div>
                                     ) : (
-                                        <div className="w-4 h-4 border border-emerald-500 flex items-center justify-center rounded-[3px] bg-[#0a1813] p-[2px] shrink-0">
+                                        <div className="w-4 h-4 border border-emerald-500 flex items-center justify-center rounded-[3px] bg-emerald-50 p-[2px] shrink-0">
                                             <div className="w-2 h-2 rounded-full bg-emerald-500" />
                                         </div>
                                     )}
 
-                                    <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight leading-snug">
+                                    <h2 className="text-xl sm:text-2xl font-bold text-[#14251c] tracking-tight leading-snug">
                                         {p.name}
                                     </h2>
                                 </div>
 
-                                {/* Dynamic Social Proof Badge (e.g. Highly reordered) */}
-                                <div className="flex items-center gap-2 pt-0.5">
-                                    <div className="w-10 h-1.5 rounded-full bg-white/10 overflow-hidden flex">
-                                        <div
-                                            className={cn("h-full rounded-full transition-all duration-500", dynamicProof.barColor)}
-                                            style={{ width: `${dynamicProof.barPercent}%` }}
-                                        />
-                                    </div>
-                                    <span className="text-xs font-semibold text-slate-300">
-                                        {dynamicProof.text}
-                                    </span>
-                                </div>
+                                <p className="text-sm text-[#617166]">{currentVariant ? `${currentVariant.weight} ${currentVariant.weightUnit || ''}` : p.weight ? `${p.weight} ${p.weightUnit || ''}` : "Select your preferred pack"}</p>
                             </div>
 
                             {/* Right Action Icons: Bookmark & Share */}
@@ -345,21 +347,22 @@ export default function ProductDetailsDrawer({ isOpen, onClose, product }: Produ
                                         price: finalPrice,
                                         image: images[0] || "",
                                     })}
-                                    title="Save to Wishlist"
+                                    aria-label={inWishlist ? "Remove from wishlist" : "Save to wishlist"}
+                                    aria-pressed={inWishlist}
                                     className={cn(
-                                        "w-9 h-9 rounded-full flex items-center justify-center active:scale-90 transition-all cursor-pointer border border-white/10",
+                                        "w-11 h-11 rounded-full flex items-center justify-center active:scale-90 transition-all cursor-pointer border border-[#e0e9e2]",
                                         inWishlist
-                                            ? "bg-rose-500/20 text-rose-500 border-rose-500/30"
-                                            : "bg-[#252830] text-slate-300 hover:text-white"
+                                            ? "bg-[#eef6ed] text-[#006c45] border-[#006c45]"
+                                            : "bg-[#eef6ed] text-[#617166] hover:text-[#14251c]"
                                     )}
                                 >
-                                    <Bookmark className={cn("w-4 h-4", inWishlist && "fill-current text-rose-500")} />
+                                    <Bookmark className={cn("w-4 h-4", inWishlist && "fill-current text-[#006c45]")} />
                                 </button>
                                 <button
                                     type="button"
                                     onClick={handleShare}
-                                    title="Share"
-                                    className="w-9 h-9 rounded-full bg-[#252830] text-slate-300 hover:text-white flex items-center justify-center active:scale-90 transition-all cursor-pointer border border-white/10"
+                                    aria-label="Share product"
+                                    className="w-11 h-11 rounded-full bg-[#eef6ed] text-[#617166] hover:text-[#14251c] flex items-center justify-center active:scale-90 transition-all cursor-pointer border border-[#e0e9e2]"
                                 >
                                     <Share2 className="w-4 h-4" />
                                 </button>
@@ -367,16 +370,15 @@ export default function ProductDetailsDrawer({ isOpen, onClose, product }: Produ
                         </div>
 
                         {/* Description Text */}
-                        <p className="text-xs text-slate-400 leading-relaxed mt-2.5">
-                            {p.description ||
-                                `Fresh and handpicked ${p.name}. Sourced daily from local organic farms to ensure the highest natural nutrients and farm-fresh flavor.`}
+                        <p className="text-xs text-[#617166] leading-relaxed mt-2.5">
+                            {p.description || "Choose a pack size and add this item to your cart."}
                         </p>
                     </div>
 
                     {/* Pack Size Variants (if customizable) */}
                     {hasVariants && variants.length > 1 && (
                         <div className="pt-1 space-y-2">
-                            <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider">
+                            <span className="text-xs font-bold text-[#617166]  tracking-normal">
                                 Select Size / Quantity
                             </span>
                             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -387,17 +389,18 @@ export default function ProductDetailsDrawer({ isOpen, onClose, product }: Produ
                                             key={v.id}
                                             type="button"
                                             onClick={() => setActiveVariantId(v.id)}
+                                            aria-pressed={isSelected}
                                             className={cn(
-                                                "p-3 rounded-xl border text-left transition-all active:scale-95 cursor-pointer flex flex-col justify-between",
+                                                "min-h-14 p-3 rounded-xl border text-left transition-all active:scale-95 cursor-pointer flex flex-col justify-between",
                                                 isSelected
-                                                    ? "border-emerald-500 bg-[#142e22] text-white shadow-xs"
-                                                    : "border-white/10 bg-[#22242b] text-slate-300 hover:border-white/20"
+                                                    ? "border-emerald-500 bg-[#eef6ed] text-[#14251c] shadow-xs"
+                                                    : "border-[#e0e9e2] bg-[#f4f8f1] text-[#617166] hover:border-white/20"
                                             )}
                                         >
                                             <span className="text-xs font-bold">
                                                 {v.weight} {v.weightUnit}
                                             </span>
-                                            <span className="text-xs font-black text-[#bef264] mt-1">
+                                            <span className="text-xs font-semibold text-[#006c45] mt-1">
                                                 ₹{Number(v.price)}
                                             </span>
                                         </button>
@@ -407,26 +410,27 @@ export default function ProductDetailsDrawer({ isOpen, onClose, product }: Produ
                         </div>
                     )}
 
-                    {/* 3. ADD A PACKING / PREPARATION REQUEST (OPTIONAL) - Exact Zomato Box */}
-                    <div className="bg-[#202228] rounded-2xl p-4 border border-white/5 space-y-2.5">
+                    {/* 3. ADD A PACKING / PREPARATION REQUEST (OPTIONAL) - Optional packing note */}
+                    <div className="bg-[#f8faf8] rounded-2xl p-4 border border-[#e0e9e2] space-y-2.5">
                         <div className="space-y-0.5">
-                            <h3 className="text-sm font-bold text-white tracking-tight">
+                            <h3 className="text-sm font-bold text-[#14251c] tracking-tight">
                                 Add a packing request (optional)
                             </h3>
-                            <p className="text-[11px] text-slate-400 leading-snug">
+                            <p className="text-xs text-[#617166] leading-snug">
                                 Our packaging team will try their best to fulfil your requests.
                             </p>
                         </div>
 
                         <div className="relative">
                             <textarea
+                                aria-label="Packing request (optional)"
                                 value={customNote}
                                 onChange={(e) => setCustomNote(e.target.value.slice(0, 100))}
                                 placeholder="e.g. Choose medium-ripe tomatoes, pack leafy greens separately"
                                 rows={2}
-                                className="w-full bg-[#18191e] border border-white/10 rounded-xl p-3 text-xs text-white placeholder-slate-500 focus:outline-hidden focus:border-emerald-500 resize-none transition-colors"
+                                className="w-full bg-white border border-[#e0e9e2] rounded-xl p-3 text-xs text-[#14251c] placeholder-slate-500 focus:outline-hidden focus:border-emerald-500 resize-none transition-colors"
                             />
-                            <span className="absolute bottom-2.5 right-3 text-[10px] font-semibold text-slate-500 tabular-nums">
+                            <span className="absolute bottom-2.5 right-3 text-xs font-semibold text-[#617166] tabular-nums">
                                 {100 - customNote.length}
                             </span>
                         </div>
@@ -434,21 +438,21 @@ export default function ProductDetailsDrawer({ isOpen, onClose, product }: Produ
 
                 </div>
 
-                {/* 4. BOTTOM STICKY ACTION BAR (Exact Zomato Match) */}
-                <div className="absolute bottom-0 left-0 right-0 p-4 bg-[#18191e]/98 backdrop-blur-md border-t border-white/10 flex items-center gap-3 z-20">
+                {/* 4. BOTTOM STICKY ACTION BAR (Reference-inspired close action) */}
+                <div className="absolute bottom-0 left-0 right-0 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] bg-white backdrop-blur-md border-t border-[#e0e9e2] flex items-center gap-3 z-20">
                     {/* Left: Stepper Counter [- 1 +] */}
-                    <div className="h-12 w-28 rounded-2xl bg-[#262830] border border-white/10 flex items-center justify-between px-3 text-white font-bold shrink-0 select-none">
+                    <div className="h-12 w-28 rounded-2xl bg-[#eef6ed] border border-[#e0e9e2] flex items-center justify-between px-0 text-[#14251c] font-bold shrink-0 select-none">
                         <button
                             type="button"
                             onClick={() => handleQtyChange(-1)}
                             aria-label="Decrease"
-                            className="w-7 h-7 rounded-lg flex items-center justify-center text-[#e23744] hover:bg-white/10 active:scale-75 transition-all cursor-pointer"
+                            className="w-11 h-11 rounded-lg flex items-center justify-center text-[#006c45] hover:bg-white/10 active:scale-75 transition-all cursor-pointer"
                         >
                             <Minus className="w-4 h-4 stroke-[3]" />
                         </button>
                         <span
                             key={displayQty}
-                            className="text-base font-black min-w-[20px] text-center tabular-nums animate-in fade-in zoom-in-75 duration-150"
+                            className="text-base font-semibold min-w-[20px] text-center tabular-nums animate-in fade-in zoom-in-75 duration-150"
                         >
                             {displayQty}
                         </span>
@@ -456,7 +460,7 @@ export default function ProductDetailsDrawer({ isOpen, onClose, product }: Produ
                             type="button"
                             onClick={() => handleQtyChange(1)}
                             aria-label="Increase"
-                            className="w-7 h-7 rounded-lg flex items-center justify-center text-[#e23744] hover:bg-white/10 active:scale-75 transition-all cursor-pointer"
+                            className="w-11 h-11 rounded-lg flex items-center justify-center text-[#006c45] hover:bg-white/10 active:scale-75 transition-all cursor-pointer"
                         >
                             <Plus className="w-4 h-4 stroke-[3]" />
                         </button>
@@ -470,10 +474,10 @@ export default function ProductDetailsDrawer({ isOpen, onClose, product }: Produ
                                 onClick={handleNotify}
                                 disabled={isNotified}
                                 className={cn(
-                                    "w-full h-12 rounded-2xl font-black text-sm uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all",
+                                    "w-full h-12 rounded-2xl font-semibold text-sm  tracking-normal flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all",
                                     isNotified
                                         ? "bg-emerald-700 text-white cursor-default"
-                                        : "bg-[#252830] text-[#bef264] border border-emerald-500/40 hover:border-emerald-400 cursor-pointer"
+                                        : "bg-[#eef6ed] text-[#006c45] border border-emerald-500/40 hover:border-emerald-400 cursor-pointer"
                                 )}
                             >
                                 {isNotified ? (
@@ -492,7 +496,7 @@ export default function ProductDetailsDrawer({ isOpen, onClose, product }: Produ
                             <button
                                 type="button"
                                 onClick={handleAdd}
-                                className="w-full h-12 rounded-2xl font-black text-sm tracking-wide text-white bg-[#e23744] hover:bg-[#d42d3a] flex items-center justify-center gap-1.5 shadow-lg active:scale-95 transition-all cursor-pointer"
+                                className="w-full h-12 rounded-2xl font-semibold text-sm tracking-wide text-white bg-[#006c45] hover:bg-[#005537] flex items-center justify-center gap-1.5 shadow-lg active:scale-95 transition-all cursor-pointer"
                             >
                                 <span>{activeQty > 0 ? "Update item" : "Add item"}</span>
                                 <span className="opacity-70">•</span>

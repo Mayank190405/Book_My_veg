@@ -1,494 +1,64 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { getProducts } from "@/services/productService";
 import { getCategories } from "@/services/categoryService";
-import ProductCard from "@/components/ui/ProductCard";
-import { Search, SlidersHorizontal, ArrowLeft, History, X, Sparkles, HelpCircle, Flame, Droplet, Milk, ShoppingBag, Leaf } from "lucide-react";
-import { cn } from "@/lib/utils";
+import ProductListItem from "@/components/ui/ProductListItem";
+import { Search, ArrowLeft, Clock, X, ShoppingCart, UserRound, ArrowUpRight } from "lucide-react";
 import { useUserStore } from "@/store/useUserStore";
-import { Suspense } from "react";
-
-const getCategoryIcon = (name: string, active: boolean) => {
-    const n = name.toLowerCase();
-    const iconClass = cn("h-4 w-4 shrink-0 transition-colors", active ? "text-[#056647]" : "text-slate-400");
-    if (n.includes("oil") || n.includes("ghee")) return <Droplet className={iconClass} />;
-    if (n.includes("dairy") || n.includes("milk")) return <Milk className={iconClass} />;
-    if (n.includes("exo")) return <ShoppingBag className={iconClass} />;
-    if (n.includes("leaf") || n.includes("veg") || n.includes("greens")) return <Leaf className={iconClass} />;
-    return <Sparkles className={iconClass} />;
-};
-
-const SUGGESTED_TAGS = ["Carrot", "Potato", "Tomato", "Onion", "Dairy", "Mango"];
+import { useCartStore } from "@/store/useCartStore";
+import api from "@/services/api";
 
 function SearchContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const query = searchParams.get("q") ?? "";
-
     const [inputValue, setInputValue] = useState(query);
     const [debouncedSearchQuery, setDebouncedSearchQuery] = useState(query);
-    const [activeCategoryId, setActiveCategoryId] = useState<string | null>(null);
-    const [sort, setSort] = useState<"default" | "price_asc" | "price_desc">("default");
-    const [isFocused, setIsFocused] = useState(false);
-
-    // Keep input in sync when URL changes
-    useEffect(() => {
-        setInputValue(query);
-        setDebouncedSearchQuery(query);
-    }, [query]);
-
-    // 300ms Debounce for typing
-    useEffect(() => {
-        const handler = setTimeout(() => {
-            setDebouncedSearchQuery(inputValue);
-        }, 300);
-        return () => clearTimeout(handler);
-    }, [inputValue]);
-
-    const { 
-        recentSearches: recent, 
-        clearRecentSearches: clear, 
-        addRecentSearch, 
-        removeRecentSearch,
-        _hasHydrated 
-    } = useUserStore();
-
-    const handleSearch = (term: string) => {
-        const t = term.trim();
-        if (t) {
-            addRecentSearch(t);
-            router.push(`/search?q=${encodeURIComponent(t)}`);
-        } else {
-            router.push("/search");
-        }
-        setIsFocused(false);
-    };
-
-    const handleKeyDown = (e: React.KeyboardEvent) => {
-        if (e.key === "Enter") {
-            handleSearch(inputValue);
-        }
-    };
-
-    const handleSuggestedClick = (tag: string) => {
-        // Strip emoji
-        const cleanTag = tag.replace(/[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD00-\uDFFF]/g, "").trim();
-        setInputValue(cleanTag);
-        handleSearch(cleanTag);
-    };
-
-    const { data: allProducts, isLoading: isLoadingProducts, isError: isProductsError, refetch: refetchProducts } = useQuery({
-        queryKey: ["all-products"],
-        queryFn: () => getProducts(undefined, 250),
-        staleTime: 5 * 60 * 1000,
-    });
-
-    const { data: categories } = useQuery({
-        queryKey: ["categories"],
-        queryFn: getCategories,
-    });
-
+    const [selectedCategory, setSelectedCategory] = useState("");
+    const [sort, setSort] = useState("relevance");
+    const { user, _hasHydrated, recentSearches, clearRecentSearches, addRecentSearch, removeRecentSearch } = useUserStore();
+    const totalItems = useCartStore(state => state.totalItems);
+    useEffect(() => { setInputValue(query); setDebouncedSearchQuery(query); }, [query]);
+    useEffect(() => { const timer = setTimeout(() => setDebouncedSearchQuery(inputValue), 300); return () => clearTimeout(timer); }, [inputValue]);
+    const { data: allProducts, isLoading, isError, refetch } = useQuery({ queryKey: ["search-products"], queryFn: () => getProducts(undefined, 250), staleTime: 5 * 60 * 1000 });
+    const { data: categories = [] } = useQuery({ queryKey: ["categories"], queryFn: getCategories });
+    const { data: popularSearches = [] } = useQuery({ queryKey: ["popular-searches"], queryFn: async () => (await api.get<string[]>("/search/popular")).data, staleTime: 5 * 60 * 1000 });
+    const handleSearch = (term: string) => { const text = term.trim(); if (text) addRecentSearch(text); router.push(text ? `/search?q=${encodeURIComponent(text)}` : "/search"); };
     const activeSearch = debouncedSearchQuery.trim().toLowerCase();
-
-    // Helper for Levenshtein Distance (spelling matching)
-    const getLevenshteinDistance = (a: string, b: string): number => {
-        const matrix = [];
-        for (let i = 0; i <= b.length; i++) {
-            matrix[i] = [i];
-        }
-        for (let j = 0; j <= a.length; j++) {
-            matrix[0][j] = j;
-        }
-        for (let i = 1; i <= b.length; i++) {
-            for (let j = 1; j <= a.length; j++) {
-                if (b.charAt(i - 1) === a.charAt(j - 1)) {
-                    matrix[i][j] = matrix[i - 1][j - 1];
-                } else {
-                    matrix[i][j] = Math.min(
-                        matrix[i - 1][j - 1] + 1,
-                        matrix[i][j - 1] + 1,
-                        matrix[i - 1][j] + 1
-                    );
-                }
-            }
-        }
-        return matrix[b.length][a.length];
-    };
-
-    const scoredProducts = (allProducts?.data ?? [])
-        .map((p: any) => {
-            const matchesCategory = !activeCategoryId || p.categoryId === activeCategoryId;
-            if (!matchesCategory) return null;
-
-            if (!activeSearch) {
-                return { product: p, tagPosition: 0, spellingScore: 0 };
-            }
-
-            const nameLower = p.name.toLowerCase();
-            const descLower = (p.description || "").toLowerCase();
-            
-            // Safe tags parsing
-            let tagsArray: string[] = [];
-            if (Array.isArray(p.tags)) {
-                tagsArray = p.tags;
-            } else if (typeof p.tags === "string") {
-                try {
-                    tagsArray = JSON.parse(p.tags);
-                } catch {
-                    tagsArray = [];
-                }
-            }
-            tagsArray = tagsArray.map((t: any) => String(t).trim().toLowerCase());
-
-            let isMatch = false;
-            let tagPosition = 9999;
-
-            // Check tags first to identify keyword index position
-            const matchedTagIdx = tagsArray.findIndex((tag: string) => tag.includes(activeSearch));
-            if (matchedTagIdx !== -1) {
-                isMatch = true;
-                tagPosition = matchedTagIdx;
-            }
-
-            if (nameLower.includes(activeSearch) || descLower.includes(activeSearch)) {
-                isMatch = true;
-            }
-
-            if (!isMatch) return null;
-
-            const spellingScore = getLevenshteinDistance(activeSearch, nameLower);
-
-            return {
-                product: p,
-                tagPosition,
-                spellingScore
-            };
-        })
-        .filter(Boolean) as { product: any; tagPosition: number; spellingScore: number }[];
-
-    const results = scoredProducts
-        .sort((a, b) => {
-            if (sort === "price_asc") return Number(a.product.basePrice) - Number(b.product.basePrice);
-            if (sort === "price_desc") return Number(b.product.basePrice) - Number(a.product.basePrice);
-
-            // Priority sorting
-            if (a.tagPosition !== b.tagPosition) {
-                return a.tagPosition - b.tagPosition;
-            }
-            if (a.spellingScore !== b.spellingScore) {
-                return a.spellingScore - b.spellingScore;
-            }
-            return a.product.name.localeCompare(b.product.name);
-        })
-        .map(item => item.product);
-
-    const hasQuery = query.length > 0 || debouncedSearchQuery.length > 0;
-
-    if (!_hasHydrated) {
-        return (
-            <div className="min-h-screen bg-[#fafcfb] flex items-center justify-center">
-                <div className="w-10 h-10 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin" />
-            </div>
-        );
-    }
-
+    const results = (allProducts?.data ?? []).filter((product: any) => (!selectedCategory || product.categoryId === selectedCategory) && (!activeSearch || product.name.toLowerCase().includes(activeSearch) || (product.description || "").toLowerCase().includes(activeSearch) || product.tags?.some((tag: string) => tag.toLowerCase().includes(activeSearch)))).sort((a: any, b: any) => sort === "price_asc" ? Number(a.basePrice) - Number(b.basePrice) : sort === "price_desc" ? Number(b.basePrice) - Number(a.basePrice) : a.name.localeCompare(b.name));
+    const hasQuery = !!activeSearch || !!query;
+    const signedIn = _hasHydrated && user && user.name !== "Guest" && user.role !== "GUEST";
     return (
-        <div className="pb-28 bg-[#f8faf8] min-h-screen text-[#17251e]">
-            
-            {/* Header: Matching Mockup Image 2 */}
-            <div className="border-b border-[#e5ebe7] bg-white px-4 pt-5 pb-3 space-y-4 sm:px-6">
-                
-                {/* Search Input and Circular Back Button */}
-                <div className="max-w-7xl mx-auto flex items-center gap-3">
-                    <button
-                        aria-label="Go back" onClick={() => router.back()}
-                        className="w-11 h-11 rounded-xl bg-white flex items-center justify-center text-[#17251e] hover:bg-[#e8f7ef] shrink-0"
-                    >
-                        <ArrowLeft className="h-5 w-5" />
-                    </button>
-                    
-                    <div className={cn(
-                        "min-w-0 flex-1 relative flex items-center bg-[#f8faf8] rounded-xl border px-3 h-12 transition-colors",
-                        isFocused 
-                            ? "border-[#087f5b] ring-1 ring-[#087f5b]" 
-                            : "border-slate-200/80"
-                    )}>
-                        <Search className="h-5 w-5 mr-3 text-slate-400 shrink-0" />
-                        <input
-                            value={inputValue}
-                            onChange={(e) => setInputValue(e.target.value)}
-                            onKeyDown={handleKeyDown}
-                            onFocus={() => setIsFocused(true)}
-                            onBlur={() => setTimeout(() => setIsFocused(false), 200)}
-                            placeholder="Search vegetables, fruits and more"
-                            aria-label="Search products" className="bg-transparent border-none min-w-0 w-full text-slate-700 text-sm focus:outline-none flex-1 placeholder:text-slate-400 placeholder:normal-case"
-                        />
-                        {inputValue ? (
-                            <button 
-                                onClick={() => setInputValue("")} 
-                                aria-label="Clear search" className="ml-1 flex h-11 w-11 items-center justify-center text-[#64736b] shrink-0"
-                            >
-                                <X className="h-4 w-4" />
-                            </button>
-                        ) : null}
+        <div className="min-h-screen w-full bg-white pb-28 text-[#163c2c]">
+            <header className="bg-[#006c45] px-4 pb-5 pt-3 text-white sm:px-6">
+                <div className="mx-auto max-w-6xl">
+                    <div className="mb-4 flex items-center justify-between gap-3">
+                        <div className="flex min-w-0 items-center gap-2"><button onClick={() => router.back()} aria-label="Go back" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full hover:bg-white/10"><ArrowLeft className="h-5 w-5" /></button><h1 className="text-xl font-bold text-white">{hasQuery ? "Search results" : "Search"}</h1></div>
+                        <div className="flex gap-2"><Link href="/cart" aria-label={`Cart, ${totalItems} items`} className="relative flex h-11 w-11 items-center justify-center rounded-full bg-white/10"><ShoppingCart className="h-5 w-5" />{totalItems > 0 && <span className="absolute -right-1 -top-1 rounded-full bg-[#c5ef75] px-1.5 text-xs font-bold text-[#05452d]">{totalItems}</span>}</Link><Link href={signedIn ? "/account" : "/login"} aria-label={signedIn ? "My account" : "Log in"} className="flex h-11 w-11 items-center justify-center rounded-full border border-white/25 bg-white/10">{signedIn ? user.name?.charAt(0) : <UserRound className="h-5 w-5" />}</Link></div>
                     </div>
+                    <form onSubmit={event => { event.preventDefault(); handleSearch(inputValue); }} className="flex min-h-12 items-center gap-2 rounded-full bg-white pl-4 pr-1 text-[#163c2c]">
+                        <Search className="h-5 w-5 shrink-0 text-[#006c45]" aria-hidden="true" /><input aria-label="Search products" value={inputValue} onChange={event => setInputValue(event.target.value)} placeholder="Search vegetables, fruits and more" className="min-w-0 flex-1 bg-transparent py-3 text-sm text-[#163c2c] outline-none placeholder:text-[#73827a]" />{inputValue && <button type="button" aria-label="Clear search" onClick={() => { setInputValue(""); router.push("/search"); }} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full"><X className="h-4 w-4" /></button>}<button type="submit" aria-label="Search" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#eaf6dc] text-[#006c45]"><ArrowUpRight className="h-5 w-5" /></button>
+                    </form>
                 </div>
-
-                {/* Horizontal Category Chips with Green Line matching Mockup */}
-                <div className="flex overflow-x-auto gap-2 scrollbar-hide py-1 max-w-7xl mx-auto">
-                    <div className="flex flex-col items-center shrink-0">
-                        <button
-                            onClick={() => setActiveCategoryId(null)}
-                            className={cn(
-                                "flex min-h-11 items-center gap-2 text-xs font-medium px-4 py-2 rounded-full border transition-colors",
-                                !activeCategoryId
-                                    ? "bg-[#e8f7ef] text-[#056647] border-[#087f5b]"
-                                    : "bg-white text-slate-500 border-slate-200/80 hover:bg-slate-50"
-                            )}
-                        >
-                            All
-                        </button>
-                        {!activeCategoryId && (
-                            <div className="w-5 h-1 bg-[#0B7A53] rounded-full mt-2 animate-in fade-in duration-300" />
-                        )}
-                    </div>
-                    {categories?.map((cat: any) => {
-                        const active = activeCategoryId === cat.id;
-                        return (
-                            <div key={cat.id} className="flex flex-col items-center shrink-0">
-                                <button
-                                    onClick={() => setActiveCategoryId(active ? null : cat.id)}
-                                    className={cn(
-                                        "flex min-h-11 items-center gap-2 text-xs font-medium px-4 py-2 rounded-full border transition-colors",
-                                        active
-                                            ? "bg-[#e8f7ef] text-[#056647] border-[#087f5b]"
-                                            : "bg-white text-slate-500 border-slate-200/80 hover:bg-slate-50"
-                                    )}
-                                >
-                                    {getCategoryIcon(cat.name, active)}
-                                    <span>{cat.name}</span>
-                                </button>
-                                {active && (
-                                    <div className="w-5 h-1 bg-[#0B7A53] rounded-full mt-2 animate-in fade-in duration-300" />
-                                )}
-                            </div>
-                        );
-                    })}
-                </div>
-            </div>
-
-            {/* Main Content Area */}
-            <div className="px-4 py-6 max-w-7xl mx-auto sm:px-6">
-                
-                {isProductsError && <div role="alert" className="mb-5 rounded-2xl border border-[#e5ebe7] bg-white p-5"><h2 className="text-base font-semibold">We couldn’t load the products</h2><button onClick={() => refetchProducts()} className="mt-3 min-h-11 rounded-lg bg-[#087f5b] px-4 text-sm font-semibold text-white">Try again</button></div>}
-                {isLoadingProducts && <div role="status" className="mb-5 rounded-2xl bg-white p-5 text-sm text-[#64736b]">Loading products…</div>}
-                {/* 1. Default Landing State (No search term) */}
-                {!hasQuery && (
-                    <div className="space-y-7">
-                        
-                        {/* Recent Searches Block */}
-                        {recent.length > 0 && (
-                            <div className="space-y-4">
-                                <div className="flex items-center justify-between px-1">
-                                    <h3 className="text-base font-semibold text-[#17251e] flex items-center gap-2">
-                                        <History className="h-4 w-4 text-slate-350" /> 
-                                        Recent searches
-                                    </h3>
-                                    <button 
-                                        onClick={clear} 
-                                        className="text-[10px] font-black text-red-500 uppercase tracking-widest hover:text-red-650 transition-colors"
-                                    >
-                                        Clear All
-                                    </button>
-                                </div>
-                                <div className="flex flex-wrap gap-2.5">
-                                    {recent.slice(0, 5).map((term, i) => (
-                                        <div
-                                            key={i}
-                                            className="flex items-center bg-white border border-slate-200/60 text-slate-700 text-[10px] font-bold uppercase tracking-wider px-4.5 py-2.5 rounded-2xl shadow-sm hover:border-emerald-500/20 transition-all hover:scale-102 group relative overflow-hidden"
-                                        >
-                                            <button
-                                                onClick={() => handleSearch(term)}
-                                                className="flex items-center gap-2 pr-6"
-                                            >
-                                                <Search className="h-3 w-3 text-emerald-600/30" />
-                                                {term}
-                                            </button>
-                                            <button
-                                                aria-label={`Remove ${term} from recent searches`} onClick={() => removeRecentSearch(term)}
-                                                className="absolute right-2 text-slate-350 hover:text-red-500 p-0.5 rounded-md hover:bg-red-500/5 transition-colors"
-                                            >
-                                                <X className="h-3 w-3" />
-                                            </button>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Popular Keywords / Suggested Tags */}
-                        <div className="space-y-4">
-                            <h3 className="text-base font-semibold text-[#17251e] flex items-center gap-2 px-1">
-                                <Flame className="h-4 w-4 text-amber-500" />
-                                Try searching for
-                            </h3>
-                            <div className="flex flex-wrap gap-2.5">
-                                {SUGGESTED_TAGS.map((tag) => (
-                                    <button
-                                        key={tag}
-                                        onClick={() => handleSuggestedClick(tag)}
-                                        className="bg-white hover:bg-emerald-50 hover:text-[#0b5c3e] text-slate-600 text-[10px] font-bold uppercase tracking-wider px-4.5 py-3 rounded-2xl border border-slate-200/80 shadow-sm transition-all hover:scale-105 active:scale-95 flex items-center gap-1.5"
-                                    >
-                                        {tag}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-                        
-                        {/* Recommended Products Grid matching Mockup Image 2 */}
-                        <div className="space-y-6 pt-2">
-                            <div className="flex items-center justify-between px-1">
-                                <div className="flex items-center gap-3 flex-1">
-                                    <h3 className="text-lg font-bold text-[#17251e]">
-                                        Explore products
-                                    </h3>
-                                    <div className="h-px bg-slate-100 flex-1" />
-                                </div>
-                                <button 
-                                    onClick={() => router.push('/categories')}
-                                    className="text-[11px] font-black text-[#0B7A53] uppercase tracking-wider pl-4 shrink-0 hover:underline"
-                                >
-                                    View All &gt;
-                                </button>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6">
-                                {(allProducts?.data ?? []).slice(0, 4).map((p: any, idx: number) => (
-                                    <div 
-                                        key={p.id} 
-                                        className="animate-in fade-in slide-in-from-bottom-6 duration-500"
-                                        style={{ animationDelay: `${idx * 80}ms` }}
-                                    >
-                                        <ProductCard
-                                            id={p.id}
-                                            name={p.name}
-                                            images={p.images}
-                                            basePrice={Number(p.basePrice)}
-                                            weight={Number(p.weight)}
-                                            weightUnit={p.weightUnit}
-                                            inventory={p.inventory}
-                                            pricing={p.pricing}
-                                            variants={p.variants}
-                                        />
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                {/* 2. Results Screen (When query is active) */}
-                {hasQuery && (
-                    <div className="animate-in fade-in slide-in-from-bottom-6 duration-500">
-                        
-                        {/* Filter & Counter Row */}
-                        <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
-                            <div>
-                                <h2 className="text-lg font-bold text-[#17251e] leading-tight flex items-center gap-2">
-                                    <span>{results.length} Matches Found</span>
-                                </h2>
-                                <p className="text-xs font-medium text-[#64736b] mt-2">
-                                    Searching for &ldquo;{debouncedSearchQuery || query}&rdquo;
-                                </p>
-                            </div>
-                            
-                            {/* Sort select */}
-                            <div className="relative flex items-center">
-                                <SlidersHorizontal className="h-4 w-4 text-emerald-600 absolute left-4 pointer-events-none" />
-                                <select
-                                    value={sort}
-                                    onChange={(e) => setSort(e.target.value as typeof sort)}
-                                    aria-label="Sort search results" className="pl-11 pr-8 h-11 bg-white border border-slate-200 rounded-2xl text-xs font-medium appearance-none focus:outline-none cursor-pointer text-slate-655 hover:bg-[#f4f7f5] hover:border-emerald-500/20 transition-all shadow-sm focus:ring-2 focus:ring-emerald-500/25"
-                                >
-                                    <option value="default">Sort: Featured</option>
-                                    <option value="price_asc">Price: Low to High</option>
-                                    <option value="price_desc">Price: High to Low</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        {/* Results Grid / Empty state */}
-                        {!isLoadingProducts && !isProductsError && results.length === 0 ? (
-                            <div className="flex flex-col items-center justify-center py-20 gap-6 animate-in zoom-in-95 duration-500">
-                                <div className="w-24 h-24 bg-white rounded-[2rem] flex items-center justify-center border border-slate-100 shadow-sm">
-                                    <HelpCircle className="h-10 w-10 text-emerald-550/20" />
-                                </div>
-                                <div className="text-center space-y-2">
-                                    <p className="text-xl font-semibold text-[#17251e]">No Matches Found</p>
-                                    <p className="text-sm text-center px-4 text-[#64736b] leading-relaxed">
-                                        We couldn&apos;t find anything for &ldquo;{debouncedSearchQuery || query}&rdquo;. <br/>Try simple terms like &ldquo;Potato&rdquo;, &ldquo;Onion&rdquo;, or &ldquo;Fresh&rdquo;.
-                                    </p>
-                                </div>
-                                
-                                {/* Smart Alternative suggestions */}
-                                <div className="space-y-3 w-full max-w-sm pt-4">
-                                    <p className="text-[9px] font-black text-emerald-800 dark:text-emerald-400 uppercase tracking-[0.3em] text-center">
-                                        Suggested searches
-                                    </p>
-                                    <div className="flex flex-wrap justify-center gap-2">
-                                        {["Potato", "Onion", "Tomato", "Dairy"].map(tag => (
-                                            <button
-                                                key={tag}
-                                                onClick={() => handleSuggestedClick(tag)}
-                                                className="bg-white hover:bg-emerald-50 hover:text-[#0b5c3e] text-slate-655 text-[10px] font-bold uppercase tracking-wider px-3.5 py-2 rounded-xl border border-slate-200 shadow-sm transition-all"
-                                            >
-                                                {tag}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-                            </div>
-                        ) : (
-                            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6">
-                                {results.map((p: any, idx: number) => (
-                                    <div 
-                                        key={p.id}
-                                        className="animate-in fade-in slide-in-from-bottom-4 duration-500"
-                                        style={{ animationDelay: `${idx * 40}ms` }}
-                                    >
-                                        <ProductCard
-                                            id={p.id}
-                                            name={p.name}
-                                            images={p.images}
-                                            basePrice={Number(p.basePrice)}
-                                            weight={Number(p.weight)}
-                                            weightUnit={p.weightUnit}
-                                            inventory={p.inventory}
-                                            pricing={p.pricing}
-                                            variants={p.variants}
-                                        />
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                )}
-            </div>
+            </header>
+            <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6">
+                {!hasQuery ? <div className="max-w-3xl space-y-7">
+                    {_hasHydrated && recentSearches.length > 0 && <section><div className="mb-2 flex items-center justify-between"><h2 className="text-lg font-bold">Recent searches</h2><button onClick={clearRecentSearches} className="min-h-11 text-xs font-semibold text-[#006c45]">Clear all</button></div><div className="divide-y divide-[#e6eee8]">{recentSearches.slice(0, 5).map(term => <div key={term} className="flex items-center gap-3"><button onClick={() => { setInputValue(term); handleSearch(term); }} className="flex min-h-14 min-w-0 flex-1 items-center gap-3 text-left text-sm"><Clock className="h-4 w-4 shrink-0 text-[#73827a]" /><span className="truncate">{term}</span></button><button onClick={() => removeRecentSearch(term)} aria-label={`Remove ${term} from recent searches`} className="flex h-11 w-11 items-center justify-center text-[#73827a]"><X className="h-4 w-4" /></button></div>)}</div></section>}
+                    {popularSearches.length > 0 && <section><h2 className="mb-4 text-lg font-bold">Popular searches</h2><div className="flex flex-wrap gap-2">{popularSearches.map(term => <button key={term} onClick={() => { setInputValue(term); handleSearch(term); }} className="flex min-h-11 items-center gap-2 rounded-full bg-[#eff7e8] px-4 text-sm font-medium text-[#006c45]"><Search className="h-3.5 w-3.5" />{term}</button>)}</div></section>}
+                    <Link href="/categories" className="inline-flex min-h-12 items-center gap-3 rounded-xl bg-[#eaf6dc] px-5 text-sm font-semibold text-[#006c45]">Browse all categories<ArrowUpRight className="h-4 w-4" /></Link>
+                </div> : <section className="space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-sm text-[#63786b]">{isLoading ? "Searching products…" : `${results.length} results`} for <strong className="font-semibold text-[#006c45]">“{activeSearch || query}”</strong></p><div className="flex flex-wrap gap-2"><select aria-label="Filter by category" value={selectedCategory} onChange={event => setSelectedCategory(event.target.value)} className="min-h-11 max-w-[165px] rounded-full border border-[#dfe9e1] bg-white px-3 text-xs"><option value="">All categories</option>{(Array.isArray(categories) ? categories : []).map((category: any) => <option key={category.id} value={category.id}>{category.name}</option>)}</select><select aria-label="Sort products" value={sort} onChange={event => setSort(event.target.value)} className="min-h-11 rounded-full border border-[#dfe9e1] bg-white px-3 text-xs"><option value="relevance">Name: A to Z</option><option value="price_asc">Price: low to high</option><option value="price_desc">Price: high to low</option></select></div></div>
+                    {isLoading ? <div role="status" className="space-y-3">{Array.from({ length: 4 }, (_, index) => <div key={index} className="h-28 animate-pulse rounded-2xl bg-[#f0f5ef]" />)}</div> : isError ? <div role="alert" className="rounded-2xl border border-[#dfe9e1] p-6"><h2 className="font-semibold">We couldn’t load the products</h2><button onClick={() => refetch()} className="mt-3 min-h-11 rounded-full bg-[#006c45] px-5 text-sm font-semibold text-white">Try again</button></div> : results.length ? <div className="grid gap-3 xl:grid-cols-2">{results.map((product: any) => <ProductListItem key={product.id} id={product.id} name={product.name} images={product.images} basePrice={Number(product.basePrice)} weight={Number(product.weight)} weightUnit={product.weightUnit} inventory={product.inventory} pricing={product.pricing} variants={product.variants} category={product.category} minQuantity={product.minQuantity} maxQuantity={product.maxQuantity} tags={product.tags} />)}</div> : <div className="rounded-2xl border border-[#dfe9e1] px-5 py-12 text-center"><h2 className="text-lg font-semibold">No products found</h2><p className="mt-2 text-sm text-[#63786b]">Try another search or choose a different category.</p><button onClick={() => { setSelectedCategory(""); setInputValue(""); router.push("/search"); }} className="mt-4 min-h-11 rounded-full bg-[#006c45] px-5 text-sm font-semibold text-white">Clear search</button></div>}
+                </section>}
+            </main>
         </div>
     );
 }
 
 export default function SearchPage() {
-    return (
-        <Suspense fallback={
-            <div className="min-h-screen bg-[#fafcfb] flex items-center justify-center">
-                <div className="w-10 h-10 border-4 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin" />
-            </div>
-        }>
-            <SearchContent />
-        </Suspense>
-    );
+    return <Suspense fallback={<div role="status" className="min-h-screen bg-white"><div className="h-32 bg-[#006c45]" /><p className="p-6 text-sm text-[#63786b]">Loading search…</p></div>}><SearchContent /></Suspense>;
 }

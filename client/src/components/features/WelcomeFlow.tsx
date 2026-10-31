@@ -85,22 +85,22 @@ export default function WelcomeFlow() {
 
             {/* Bottom Sheet Card - Dark Emerald Theme */}
             <div className={cn(
-                "relative w-full max-w-xl bg-[#061512] rounded-t-[2rem] shadow-[0_-20px_80px_rgba(0,0,0,0.8)] overflow-hidden flex flex-col animate-in slide-in-from-bottom-full duration-700 cubic-bezier(0.16, 1, 0.3, 1)",
-                "max-h-[85vh] border-t border-white/5"
+                "bmv-theme relative w-full max-w-xl bg-white rounded-t-[2rem] shadow-[0_-20px_80px_rgba(0,0,0,0.8)] overflow-hidden flex flex-col animate-in slide-in-from-bottom-full duration-700 cubic-bezier(0.16, 1, 0.3, 1)",
+                "max-h-[85vh] border-t border-[#e0e9e2]"
             )}>
                 {/* Visual Header / Handle wrapper */}
-                <div className="relative pt-4 pb-3 border-b border-white/5 bg-[#0b2820]/30">
-                    <div className="w-10 h-1 bg-white/10 rounded-full mx-auto mb-3" />
+                <div className="relative pt-4 pb-3 border-b border-[#e0e9e2] bg-[#eef6ed]">
+                    <div className="w-10 h-1 bg-[#e0e9e2] rounded-full mx-auto mb-3" />
                     <div className="px-6 flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 bg-emerald-600 text-white rounded-xl flex items-center justify-center shadow-lg shadow-emerald-500/20">
+                            <div className="w-8 h-8 bg-[#006c45] text-white rounded-xl flex items-center justify-center shadow-lg shadow-emerald-500/20">
                                 <Sparkles className="h-4 w-4 fill-current" />
                             </div>
                             <div>
-                                <h1 className="text-lg font-black uppercase tracking-tighter leading-none text-white">
+                                <h1 className="text-lg font-black uppercase tracking-tighter leading-none text-[#14251c]">
                                     Welcome
                                 </h1>
-                                <p className="text-[9px] font-black uppercase tracking-[0.2em] text-emerald-500 mt-0.5">
+                                <p className="text-xs font-black uppercase tracking-normal text-emerald-500 mt-0.5">
                                     Step {step} of 2
                                 </p>
                             </div>
@@ -110,8 +110,8 @@ export default function WelcomeFlow() {
 
                 {/* Progress Indicators */}
                 <div className="flex gap-1.5 px-8 py-3">
-                    <div className={cn("h-1 flex-1 rounded-full transition-all duration-500", step >= 1 ? "bg-emerald-600 shadow-[0_0_10px_rgba(16,185,129,0.3)]" : "bg-white/5")} />
-                    <div className={cn("h-1 flex-1 rounded-full transition-all duration-500", step >= 2 ? "bg-emerald-600 shadow-[0_0_10px_rgba(16,185,129,0.3)]" : "bg-white/5")} />
+                    <div className={cn("h-1 flex-1 rounded-full transition-all duration-500", step >= 1 ? "bg-emerald-600 shadow-[0_0_10px_rgba(16,185,129,0.3)]" : "bg-[#f4f7f3]")} />
+                    <div className={cn("h-1 flex-1 rounded-full transition-all duration-500", step >= 2 ? "bg-emerald-600 shadow-[0_0_10px_rgba(16,185,129,0.3)]" : "bg-[#f4f7f3]")} />
                 </div>
 
                 {/* Step Content */}
@@ -119,24 +119,24 @@ export default function WelcomeFlow() {
                     {step === 1 ? (
                         <div className="space-y-5 animate-in fade-in slide-in-from-right-4 duration-500">
                             <div className="space-y-1 text-center">
-                                <h2 className="text-xl font-black text-white uppercase tracking-tight leading-none">Your Profile</h2>
-                                <p className="text-[9px] font-bold text-white/20 uppercase tracking-[0.2em] mt-1.5">Create your fresh account</p>
+                                <h2 className="text-xl font-black text-[#14251c] uppercase tracking-tight leading-none">Your Profile</h2>
+                                <p className="text-xs font-bold text-[#617166] uppercase tracking-normal mt-1.5">Create your fresh account</p>
                             </div>
 
                             <div className="space-y-3 pt-2">
                                 <div className="space-y-1.5 group">
-                                    <label className="flex items-center gap-2 text-[9px] font-black text-white/30 uppercase tracking-widest px-1 group-focus-within:text-emerald-500 transition-colors">
+                                    <label className="flex items-center gap-2 text-xs font-black text-[#617166] uppercase tracking-widest px-1 group-focus-within:text-emerald-500 transition-colors">
                                         <User className="h-3 w-3" /> Name
                                     </label>
                                     <input
                                         value={name}
                                         onChange={(e) => setName(e.target.value)}
                                         placeholder="KESHAV SHARMA"
-                                        className="w-full bg-white/5 border border-white/5 focus:border-emerald-500/20 focus:bg-white/10 rounded-xl h-12 px-5 text-[13px] font-black uppercase tracking-tight outline-none placeholder:text-white/10 transition-all text-white"
+                                        className="w-full bg-[#f4f7f3] border border-[#e0e9e2] focus:border-emerald-500/20 focus:bg-[#e0e9e2] rounded-xl h-12 px-5 text-[13px] font-black uppercase tracking-tight outline-none placeholder:text-[#95a39a] transition-all text-[#14251c]"
                                     />
                                 </div>
                                 <div className="space-y-1.5 group">
-                                    <label className="flex items-center gap-2 text-[9px] font-black text-white/30 uppercase tracking-widest px-1 group-focus-within:text-emerald-500 transition-colors">
+                                    <label className="flex items-center gap-2 text-xs font-black text-[#617166] uppercase tracking-widest px-1 group-focus-within:text-emerald-500 transition-colors">
                                         <Mail className="h-3 w-3" /> Email
                                     </label>
                                     <input
@@ -144,11 +144,11 @@ export default function WelcomeFlow() {
                                         value={email}
                                         onChange={(e) => setEmail(e.target.value)}
                                         placeholder="HELLO@EXAMPLE.COM"
-                                        className="w-full bg-white/5 border border-white/5 focus:border-emerald-500/20 focus:bg-white/10 rounded-xl h-12 px-5 text-[13px] font-black uppercase tracking-tight outline-none placeholder:text-white/10 transition-all text-white"
+                                        className="w-full bg-[#f4f7f3] border border-[#e0e9e2] focus:border-emerald-500/20 focus:bg-[#e0e9e2] rounded-xl h-12 px-5 text-[13px] font-black uppercase tracking-tight outline-none placeholder:text-[#95a39a] transition-all text-[#14251c]"
                                     />
                                 </div>
                                 <div className="space-y-1.5 group">
-                                    <label className="flex items-center gap-2 text-[9px] font-black text-white/30 uppercase tracking-widest px-1 group-focus-within:text-emerald-500 transition-colors">
+                                    <label className="flex items-center gap-2 text-xs font-black text-[#617166] uppercase tracking-widest px-1 group-focus-within:text-emerald-500 transition-colors">
                                         <CheckCircle2 className="h-3 w-3" /> Phone
                                     </label>
                                     <input
@@ -156,7 +156,7 @@ export default function WelcomeFlow() {
                                         value={phone}
                                         onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
                                         placeholder="+91 00000 00000"
-                                        className="w-full bg-white/5 border border-white/5 focus:border-emerald-500/20 focus:bg-white/10 rounded-xl h-12 px-5 text-[13px] font-black uppercase tracking-tight outline-none placeholder:text-white/10 transition-all text-white"
+                                        className="w-full bg-[#f4f7f3] border border-[#e0e9e2] focus:border-emerald-500/20 focus:bg-[#e0e9e2] rounded-xl h-12 px-5 text-[13px] font-black uppercase tracking-tight outline-none placeholder:text-[#95a39a] transition-all text-[#14251c]"
                                     />
                                 </div>
                             </div>
@@ -164,43 +164,43 @@ export default function WelcomeFlow() {
                     ) : (
                         <div className="space-y-5 animate-in fade-in slide-in-from-right-4 duration-500">
                             <div className="space-y-1 text-center">
-                                <h2 className="text-xl font-black text-white uppercase tracking-tight leading-none">Delivery Spot</h2>
-                                <p className="text-[9px] font-bold text-white/20 uppercase tracking-[0.2em] mt-1.5">Where veggies reach you</p>
+                                <h2 className="text-xl font-black text-[#14251c] uppercase tracking-tight leading-none">Delivery Spot</h2>
+                                <p className="text-xs font-bold text-[#617166] uppercase tracking-normal mt-1.5">Where veggies reach you</p>
                             </div>
 
                             <div className="space-y-3 pt-2">
                                 <div className="space-y-1.5 group">
-                                    <label className="flex items-center gap-2 text-[9px] font-black text-white/30 uppercase tracking-widest px-1 group-focus-within:text-emerald-500 transition-colors">
+                                    <label className="flex items-center gap-2 text-xs font-black text-[#617166] uppercase tracking-widest px-1 group-focus-within:text-emerald-500 transition-colors">
                                         <MapPinned className="h-3 w-3" /> Full Address
                                     </label>
                                     <textarea
                                         value={address}
                                         onChange={(e) => setAddress(e.target.value)}
                                         placeholder="FLAT 102, SAPPHIRE HEIGHTS"
-                                        className="w-full bg-white/5 border border-white/5 focus:border-emerald-500/20 focus:bg-white/10 rounded-xl min-h-[100px] p-5 text-[13px] font-black uppercase tracking-tight outline-none placeholder:text-white/10 transition-all resize-none text-white shadow-inner"
+                                        className="w-full bg-[#f4f7f3] border border-[#e0e9e2] focus:border-emerald-500/20 focus:bg-[#e0e9e2] rounded-xl min-h-[100px] p-5 text-[13px] font-black uppercase tracking-tight outline-none placeholder:text-[#95a39a] transition-all resize-none text-[#14251c] shadow-inner"
                                     />
                                 </div>
                                 <div className="grid grid-cols-2 gap-3">
                                     <div className="space-y-1.5 group">
-                                        <label className="flex items-center gap-2 text-[9px] font-black text-white/30 uppercase tracking-widest px-1 group-focus-within:text-emerald-500 transition-colors">
+                                        <label className="flex items-center gap-2 text-xs font-black text-[#617166] uppercase tracking-widest px-1 group-focus-within:text-emerald-500 transition-colors">
                                             <MapPin className="h-3 w-3" /> Pincode
                                         </label>
                                         <input
                                             value={pincode}
                                             onChange={(e) => setPincode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                                             placeholder="452001"
-                                            className="w-full bg-white/5 border border-white/5 focus:border-emerald-500/20 focus:bg-white/10 rounded-xl h-12 px-5 text-[13px] font-black uppercase tracking-tight outline-none placeholder:text-white/10 transition-all text-white"
+                                            className="w-full bg-[#f4f7f3] border border-[#e0e9e2] focus:border-emerald-500/20 focus:bg-[#e0e9e2] rounded-xl h-12 px-5 text-[13px] font-black uppercase tracking-tight outline-none placeholder:text-[#95a39a] transition-all text-[#14251c]"
                                         />
                                     </div>
                                     <div className="space-y-1.5 group">
-                                        <label className="flex items-center gap-2 text-[9px] font-black text-white/30 uppercase tracking-widest px-1 group-focus-within:text-emerald-500 transition-colors">
+                                        <label className="flex items-center gap-2 text-xs font-black text-[#617166] uppercase tracking-widest px-1 group-focus-within:text-emerald-500 transition-colors">
                                             Landmark
                                         </label>
                                         <input
                                             value={landmark}
                                             onChange={(e) => setLandmark(e.target.value)}
                                             placeholder="E.G. NEAR BANK"
-                                            className="w-full bg-white/5 border border-white/5 focus:border-emerald-500/20 focus:bg-white/10 rounded-xl h-12 px-5 text-[13px] font-black uppercase tracking-tight outline-none placeholder:text-white/10 transition-all text-white"
+                                            className="w-full bg-[#f4f7f3] border border-[#e0e9e2] focus:border-emerald-500/20 focus:bg-[#e0e9e2] rounded-xl h-12 px-5 text-[13px] font-black uppercase tracking-tight outline-none placeholder:text-[#95a39a] transition-all text-[#14251c]"
                                         />
                                     </div>
                                 </div>
@@ -210,11 +210,11 @@ export default function WelcomeFlow() {
                 </div>
 
                 {/* Fixed Footer with Button */}
-                <div className="px-6 pb-10 pt-4 bg-[#0b1c19] border-t border-white/5">
+                <div className="px-6 pb-10 pt-4 bg-white border-t border-[#e0e9e2]">
                     <div className="flex flex-col gap-3">
                         <button
                             onClick={handleNext}
-                            className="w-full bg-emerald-600 text-white h-14 rounded-xl font-black uppercase tracking-[0.2em] shadow-xl shadow-emerald-500/20 flex items-center justify-center gap-2 active:scale-95 transition-all group"
+                            className="w-full bg-[#006c45] text-white h-14 rounded-xl font-black uppercase tracking-normal shadow-xl shadow-emerald-500/20 flex items-center justify-center gap-2 active:scale-95 transition-all group"
                         >
                             <span className="italic text-sm">{step === 1 ? "Confirm Profile" : "Start Shopping Now"}</span>
                             <ChevronRight className={cn("h-4 w-4 transition-transform group-hover:translate-x-1", step === 2 && "rotate-[-45deg]")} />
@@ -225,14 +225,14 @@ export default function WelcomeFlow() {
                                 setHasSeenWelcome(true);
                                 setShow(false);
                             }}
-                            className="w-full h-10 text-[9px] font-black text-white/20 hover:text-white/40 uppercase tracking-[0.4em] transition-colors italic"
+                            className="w-full h-10 text-xs font-black text-[#617166] hover:text-[#006c45] uppercase tracking-normal transition-colors italic"
                         >
                             Skip for now
                         </button>
                     </div>
 
-                    <p className="text-[8px] text-center font-black text-white/5 uppercase tracking-[0.5em] mt-6">
-                        Freshness Protocol Enabled
+                    <p className="text-[8px] text-center font-black text-[#617166] uppercase tracking-[0.5em] mt-6">
+                        Book My Veg
                     </p>
                 </div>
             </div>

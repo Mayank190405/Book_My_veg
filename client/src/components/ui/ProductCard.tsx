@@ -227,7 +227,7 @@ export default function ProductCard({
         <DialogPrimitive.Root open={drawerOpen} onOpenChange={setDrawerOpen}>
             <DialogPrimitive.Portal>
                 <DialogPrimitive.Overlay className="fixed inset-0 z-[200] bg-black/40" />
-                <DialogPrimitive.Content className="fixed bottom-0 left-1/2 z-[210] max-h-[80dvh] w-full max-w-lg -translate-x-1/2 overflow-y-auto rounded-t-3xl bg-white p-5 pb-[calc(1.5rem+env(safe-area-inset-bottom))] text-[#17251e] shadow-xl sm:bottom-8 sm:rounded-2xl">
+                <DialogPrimitive.Content className="bmv-theme fixed bottom-0 left-1/2 z-[210] max-h-[80dvh] w-full max-w-lg -translate-x-1/2 overflow-y-auto rounded-t-3xl bg-white p-5 pb-[calc(1.5rem+env(safe-area-inset-bottom))] text-[#17251e] shadow-xl sm:bottom-8 sm:rounded-2xl">
                     <div className="mb-5 flex items-start justify-between gap-4"><div><DialogPrimitive.Title className="text-lg font-semibold">{name}</DialogPrimitive.Title><DialogPrimitive.Description className="mt-1 text-sm text-[#64736b]">Choose a pack size</DialogPrimitive.Description></div><DialogPrimitive.Close aria-label="Close pack sizes" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#f4f7f5]"><X className="h-5 w-5" /></DialogPrimitive.Close></div>
                     <div className="space-y-3">{variants.map((variant, index) => {
                         const variantInventory = activeStore?.id ? variant.inventory?.filter(row => row.locationId === activeStore.id) ?? [] : variant.inventory ?? [];
@@ -242,12 +242,12 @@ export default function ProductCard({
 
     return (
         <>
-            <article className={cn("bmv-product-card group relative flex h-full min-w-0 flex-col rounded-2xl border border-[#e5ebe7] bg-white p-2.5 transition-colors hover:border-[#b7d9c8]", compact ? "sm:p-3" : "sm:p-3.5")}>
+            <article className={cn("bmv-product-card group relative flex h-full min-w-0 flex-col rounded-3xl border border-[#e5ebe7] bg-white p-2.5 shadow-[0_2px_12px_rgba(15,55,33,0.04)] transition-colors hover:border-[#b7d9c8]", compact ? "sm:p-3" : "sm:p-3.5")}>
                 <div className="relative mb-2 aspect-square overflow-hidden rounded-xl bg-[#fafcfb]">
                     <Link href={`/products/${id}`} aria-label={`View ${name}`} className="absolute inset-0">
                         {images?.[0] ? <Image src={images[0]} alt={name} fill sizes="(max-width: 600px) 45vw, (max-width: 1024px) 28vw, 220px" className={cn("object-contain p-2 transition-transform group-hover:scale-105 motion-reduce:transform-none", isOutOfStock && "opacity-50")} /> : <div className="flex h-full items-center justify-center text-[#a8c7b7]"><Leaf className="h-10 w-10" /></div>}
                     </Link>
-                    {discount && <span className="pointer-events-none absolute left-1 top-1 rounded-md bg-[#c92a2a] px-2 py-1 text-[10px] font-bold text-white">{discount.pct}% OFF</span>}
+                    {discount && <span className="pointer-events-none absolute left-1 top-1 rounded-full bg-[#e5f5ce] px-2 py-1 text-[10px] font-bold text-[#006c45]">{discount.pct}% OFF</span>}
                     <button type="button" aria-label={`${inWishlist ? "Remove" : "Save"} ${name} ${inWishlist ? "from" : "to"} wishlist`} aria-pressed={inWishlist} onClick={() => toggleWishlist({ productId: id, name, price: finalPrice, image: images?.[0] ?? "" })} className="absolute right-0 top-0 flex h-11 w-11 items-center justify-center rounded-full bg-white/90 text-[#64736b] hover:text-rose-600">
                         <Heart className={cn("h-4 w-4", inWishlist && "fill-rose-500 text-rose-500")} />
                     </button>

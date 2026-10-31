@@ -81,18 +81,18 @@ export default function RecommendationSection() {
 
     return (
         <section className="space-y-3.5 px-4 sm:px-6 select-none pt-2">
-            {/* Header: Recommended for you + See All Link */}
-            <div className="flex items-center justify-between">
-                <h2 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white tracking-tight">
-                    Recommended for you
+            {/* Header: Recommended for You + See All Link */}
+            <div className="flex items-center justify-between mb-1">
+                <h2 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight">
+                    Recommended for You
                 </h2>
 
                 <Link
                     href="/products"
-                    className="text-xs font-bold text-[#0b5c3e] hover:text-emerald-700 dark:text-emerald-400 flex items-center gap-1 transition-all group pb-0.5"
+                    className="inline-flex items-center gap-1 text-xs sm:text-sm font-bold text-[#087f5b] hover:text-[#056647] transition-colors"
                 >
                     <span>See all</span>
-                    <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform stroke-[2.5]" />
+                    <ArrowRight className="h-4 w-4 stroke-[2.5]" />
                 </Link>
             </div>
 

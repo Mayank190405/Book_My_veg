@@ -956,10 +956,10 @@ export default function LocationSelector({ isCompact, variant = "default" }: Loc
                 role="button"
                 tabIndex={0}
                 aria-label="Choose delivery location"
-                className="min-h-11 cursor-pointer flex items-center"
+                className="min-h-11 min-w-0 max-w-full cursor-pointer flex items-center"
             >
                 {variant === "hero" ? (
-                    <div className="flex items-center gap-2.5 active:scale-95 transition-all duration-300 group select-none text-white max-w-[70vw] sm:max-w-md">
+                    <div className="flex items-center gap-2.5 active:scale-95 transition-all duration-300 group select-none text-white min-w-0 w-full max-w-full">
                         <div className="w-8 h-8 rounded-full bg-black/20 backdrop-blur-md flex items-center justify-center shrink-0 border border-white/15 shadow-xs">
                             <MapPin className="h-4 w-4 stroke-[2.5] text-[#bef264]" />
                         </div>
@@ -972,8 +972,8 @@ export default function LocationSelector({ isCompact, variant = "default" }: Loc
                                 <h2 className="font-black text-sm sm:text-base text-white leading-tight tracking-tight truncate">
                                     {location?.address === "Select Location" || !location?.address ? "Set Location" : location.address}
                                 </h2>
-                                <span className="text-white/60 font-semibold text-xs">-</span>
-                                <span className="text-xs text-white/80 font-medium truncate max-w-[130px] sm:max-w-xs">
+                                <span className="hidden sm:inline text-white/60 font-semibold text-xs">-</span>
+                                <span className="hidden sm:inline text-xs text-white/80 font-medium truncate max-w-[130px] sm:max-w-xs">
                                     {location?.secondary || "Nashik"}
                                 </span>
                                 <ChevronDown className="h-4 w-4 text-white/90 stroke-[3] shrink-0" />

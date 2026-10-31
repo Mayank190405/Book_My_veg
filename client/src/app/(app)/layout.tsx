@@ -268,7 +268,7 @@ export default function AppLayout({
     const showFloatingCart = !isChat && !isExcludedFromCartAndNav && isCatalogRoute;
 
     return (
-        <div className="customer-ui flex h-full min-h-0 flex-col">
+        <div className="customer-ui bmv-theme flex h-full min-h-0 flex-col">
             <PagePreloader />
             <TopProgressBar />
             {/* Out-of-range service area banner */}
@@ -307,7 +307,7 @@ export default function AppLayout({
                     key={pathname} 
                     className={cn(
                         "w-full min-h-full flex flex-col",
-                        showHeader ? "pt-[176px]" : "pt-0",
+                        showHeader ? (pathname === "/" ? "pt-0" : "pt-[176px]") : "pt-0",
                         !isChat && !isExcludedFromCartAndNav ? (showFloatingCart && totalItems > 0 ? "pb-44" : "pb-24") : "pb-0"
                     )}
                 >

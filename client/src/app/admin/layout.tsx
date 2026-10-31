@@ -11,8 +11,6 @@ import {
     Image as ImageIcon,
     Settings,
     LogOut,
-    Bell,
-    Search,
     ChevronRight,
     Menu,
     X,
@@ -26,17 +24,15 @@ import {
     FileText,
     Skull,
     Tag,
-    History,
     MessageSquare,
     Key,
     Truck,
-    Sparkles
+    Leaf
 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ThemeProvider } from "next-themes";
 import { Toaster } from "sonner";
 import { useUserStore } from "@/store/useUserStore";
 import { logout } from "@/services/authService";
@@ -76,7 +72,9 @@ import { useRouter } from "next/navigation";
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
     const pathname = usePathname();
     const router = useRouter();
-    const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+    const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+    const menuButtonRef = useRef<HTMLButtonElement>(null);
+    const sidebarRef = useRef<HTMLElement>(null);
     const { user, _hasHydrated } = useUserStore();
     const isAdminLogin = pathname === "/admin/login";
 
@@ -113,7 +111,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         }
         return true;
     }).map(item => {
-        const adminUser = user as any;
+        const adminUser = user as typeof user & { slug?: string };
         if (adminUser?.role === "STORE_ADMIN" && item.label === "Overview" && adminUser.slug) {
             // Re-route localized overview to the store's specific hub
             return { ...item, href: `/admin/stores/${adminUser.slug}` };
@@ -138,194 +136,74 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         }
     }, [user, _hasHydrated, pathname, router, isAdminLogin, isAuthorized]);
 
+    const currentPage = [...filteredNavItems].sort((a, b) => b.href.length - a.href.length).find(item => pathname === item.href || pathname.startsWith(`${item.href}/`))?.label || "Management";
+
+    useEffect(() => {
+        if (!isSidebarOpen) return;
+        const firstLink = sidebarRef.current?.querySelector<HTMLAnchorElement>("nav a");
+        firstLink?.focus();
+        const onKeyDown = (event: KeyboardEvent) => {
+            if (event.key === "Escape") {
+                setIsSidebarOpen(false);
+                menuButtonRef.current?.focus();
+            }
+            if (event.key === "Tab" && window.matchMedia("(max-width: 1023px)").matches) {
+                const focusable = sidebarRef.current?.querySelectorAll<HTMLElement>('a[href],button:not([disabled])');
+                if (!focusable?.length) return;
+                const first = focusable[0];
+                const last = focusable[focusable.length - 1];
+                if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+                else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+            }
+        };
+        document.addEventListener("keydown", onKeyDown);
+        return () => document.removeEventListener("keydown", onKeyDown);
+    }, [isSidebarOpen]);
+
     if (!_hasHydrated) {
-        return (
-            <div className="h-screen w-full bg-slate-50 flex items-center justify-center">
-                <div className="flex flex-col items-center gap-4">
-                    <div className="w-12 h-12 border-4 border-slate-200 border-t-emerald-600 rounded-full animate-spin" />
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest animate-pulse">Initializing Dashboard...</span>
-                </div>
-            </div>
-        );
+        return <div className="bmv-theme bmv-admin flex min-h-screen items-center justify-center"><div className="flex items-center gap-3 text-sm text-[var(--bmv-muted)]" role="status"><span className="h-5 w-5 animate-spin rounded-full border-2 border-[var(--bmv-border)] border-t-[var(--bmv-accent-strong)]" />Loading management workspace…</div></div>;
     }
-
-    // Special case: Login page doesn't get the sidebar/shell
-    if (isAdminLogin) {
-        return <div className="min-h-screen bg-gray-50">{children}</div>;
-    }
-
-    // Safety: Don't render content if user is definitely not authorized
-    if (!isAuthorized) {
-        return null;
-    }
+    if (isAdminLogin) return <div className="bmv-theme bmv-admin min-h-screen">{children}</div>;
+    if (!isAuthorized) return null;
 
     return (
-        <ThemeProvider attribute="class" forcedTheme="light" enableSystem={false}>
-            <div className="min-h-screen bg-slate-50 text-slate-900 selection:bg-emerald-500/30 selection:text-emerald-900">
-                <style jsx global>{`
-                    #admin-scroll-container::-webkit-scrollbar {
-                        width: 6px;
-                    }
-                    #admin-scroll-container::-webkit-scrollbar-track {
-                        background: transparent;
-                    }
-                    #admin-scroll-container::-webkit-scrollbar-thumb {
-                        background: #e2e8f0;
-                        border-radius: 10px;
-                    }
-                    #admin-scroll-container::-webkit-scrollbar-thumb:hover {
-                        background: #cbd5e1;
-                    }
-                `}</style>
-
-                {/* Mobile Backdrop */}
-                {isSidebarOpen && (
-                    <div 
-                        className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[45] md:hidden animate-in fade-in duration-300" 
-                        onClick={() => setIsSidebarOpen(false)}
-                    />
-                )}
-
-                {/* Sidebar */}
-                <aside className={cn(
-                    "fixed top-0 left-0 z-50 h-full bg-white border-r border-slate-200 transition-all duration-500 ease-in-out",
-                    isSidebarOpen ? "w-80 translate-x-0" : "w-24 -translate-x-full md:translate-x-0"
-                )}>
-                    {/* Sidebar Header */}
-                    <div className="h-20 flex items-center justify-between px-6 border-b border-slate-100 bg-white">
-                        <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 bg-slate-50 border border-slate-100 rounded-xl flex items-center justify-center p-1 shadow-sm overflow-hidden">
-                                <img src="/logo.png" alt="BookMyVeg" className="w-full h-full object-contain" />
-                            </div>
-                            <div className={cn(
-                                "flex flex-col transition-all duration-300 overflow-hidden",
-                                isSidebarOpen ? "w-auto opacity-100" : "w-0 opacity-0"
-                            )}>
-                                <span className="text-sm font-black tracking-tight text-slate-900 leading-none">BookMyVeg</span>
-                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Admin Panel</span>
-                            </div>
+        <div className="bmv-theme bmv-admin h-dvh min-h-0 overflow-hidden bg-[var(--bmv-bg)] text-[var(--bmv-text)]">
+            {isSidebarOpen && <button type="button" aria-label="Close navigation" className="fixed inset-0 z-[45] bg-black/40 lg:hidden" onClick={() => { setIsSidebarOpen(false); menuButtonRef.current?.focus(); }} />}
+            <aside ref={sidebarRef} id="admin-navigation" aria-label="Management navigation" className={cn("fixed inset-y-0 left-0 z-50 w-[min(18rem,85vw)] flex-col border-r border-white/10 bg-[#004b30] text-white lg:flex lg:w-64", isSidebarOpen ? "flex" : "hidden")}>
+                <div className="flex min-h-24 items-center justify-between gap-3 border-b border-white/10 px-5 py-5">
+                    <Link href="/admin" className="flex min-h-11 items-center gap-3" onClick={() => setIsSidebarOpen(false)}>
+                        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[var(--bmv-accent)] text-[#004b30]"><Leaf className="h-6 w-6" /></span>
+                        <span><span className="block text-base font-semibold tracking-tight">Book My Veg</span><span className="mt-1 block text-xs text-green-100/70">Management workspace</span></span>
+                    </Link>
+                    <button type="button" aria-label="Close navigation" onClick={() => { setIsSidebarOpen(false); menuButtonRef.current?.focus(); }} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl hover:bg-white/10 lg:hidden"><X className="h-5 w-5" /></button>
+                </div>
+                <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto px-3 py-5">
+                    <p className="mb-3 px-3 text-[10px] font-semibold uppercase tracking-[.14em] text-green-100/50">Workspace</p>
+                    {filteredNavItems.map(item => {
+                        const active = pathname === item.href || (pathname.startsWith(`${item.href}/`) && !filteredNavItems.some(other => other.href !== item.href && other.href.startsWith(`${item.href}/`) && (pathname === other.href || pathname.startsWith(`${other.href}/`))));
+                        const Icon = item.icon;
+                        return <Link key={item.href} href={item.href} aria-current={active ? "page" : undefined} onClick={() => setIsSidebarOpen(false)} className={cn("flex min-h-11 items-center gap-3 rounded-xl px-3 py-2.5 text-[13px] font-medium transition-colors", active ? "bg-[var(--bmv-accent)] text-[#004b30]" : "text-green-50/80 hover:bg-white/10 hover:text-white")}><Icon className="h-[18px] w-[18px] shrink-0" /><span className="leading-snug">{item.label}</span>{active && <ChevronRight className="ml-auto h-4 w-4 shrink-0" />}</Link>;
+                    })}
+                </nav>
+                <div className="border-t border-white/10 p-3"><button type="button" onClick={handleLogout} className="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm text-green-50/80 hover:bg-white/10 hover:text-white"><LogOut className="h-5 w-5" />Log out</button></div>
+            </aside>
+            <div className="flex h-full min-h-0 min-w-0 flex-col lg:pl-64">
+                <header className="bmv-topbar sticky top-0 z-40 shrink-0 border-b border-white/10">
+                    <div className="flex min-h-20 items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
+                        <div className="flex min-w-0 items-center gap-3">
+                            <button ref={menuButtonRef} type="button" aria-label="Open navigation" aria-controls="admin-navigation" aria-expanded={isSidebarOpen} onClick={() => setIsSidebarOpen(true)} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/20 hover:bg-white/10 lg:hidden"><Menu className="h-5 w-5" /></button>
+                            <div className="min-w-0"><p className="text-xs text-green-100/70">Book My Veg / Management</p><h1 className="truncate text-lg font-semibold sm:text-xl">{currentPage}</h1></div>
                         </div>
-
-                        {/* Mobile Close Button */}
-                        {isSidebarOpen && (
-                            <button 
-                                onClick={() => setIsSidebarOpen(false)}
-                                className="md:hidden w-8 h-8 rounded-lg bg-slate-50 flex items-center justify-center text-slate-400 hover:text-slate-900 transition-colors"
-                            >
-                                <X className="h-4 w-4" />
-                            </button>
-                        )}
-                    </div>
-
-                    {/* Nav Items */}
-                    <nav className="p-4 space-y-2 max-h-[calc(100vh-200px)] overflow-y-auto">
-                        {filteredNavItems.map((item) => {
-                            const isActive = pathname === item.href;
-                            const Icon = item.icon;
-                            return (
-                                <Link
-                                    key={item.href}
-                                    href={item.href}
-                                    className={cn(
-                                        "flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group relative",
-                                        isActive 
-                                            ? "bg-emerald-600 text-white shadow-md shadow-emerald-100" 
-                                            : "hover:bg-slate-50 text-slate-500 hover:text-slate-900"
-                                    )}
-                                >
-                                    <Icon className={cn(
-                                        "h-5 w-5 transition-transform duration-500 group-hover:scale-110",
-                                        isActive ? "rotate-3" : ""
-                                    )} />
-                                    <span className={cn(
-                                        "text-xs font-semibold tracking-wide transition-all duration-300",
-                                        isSidebarOpen ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-4 pointer-events-none"
-                                    )}>
-                                        {item.label}
-                                    </span>
-                                    {isActive && isSidebarOpen && (
-                                        <ChevronRight className="ml-auto h-4 w-4 opacity-50" />
-                                    )}
-                                </Link>
-                            );
-                        })}
-                    </nav>
-
-                    {/* Sidebar Footer */}
-                    <div className="absolute bottom-0 left-0 w-full p-4 border-t border-slate-100 bg-white">
-                        <button 
-                            onClick={handleLogout}
-                            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-slate-400 hover:text-red-600 hover:bg-red-50 transition-all group"
-                        >
-                            <LogOut className="h-5 w-5" />
-                            <span className={cn(
-                                "text-xs font-semibold tracking-wide transition-all duration-300",
-                                isSidebarOpen ? "opacity-100" : "opacity-0"
-                            )}>
-                                Logout Session
-                            </span>
-                        </button>
-                    </div>
-                </aside>
-
-                {/* Main Content */}
-                <main className={cn(
-                    "transition-all duration-500 ease-in-out min-h-screen",
-                    isSidebarOpen ? "md:pl-80" : "md:pl-24 pl-0"
-                )}>
-                    {/* Top Header */}
-                        <header className="h-24 border-b border-slate-200 bg-white/80 backdrop-blur-xl sticky top-0 z-40 flex items-center justify-between px-4 md:px-10">
-                        <div className="flex items-center gap-8">
-                            <button 
-                                onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                                className="w-12 h-12 rounded-2xl bg-white border border-slate-200 flex items-center justify-center text-slate-400 hover:text-slate-900 hover:bg-slate-50 transition-all shadow-sm active:scale-95"
-                            >
-                                {isSidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-                            </button>
-                            
-                            <div className="hidden lg:flex items-center gap-4 px-6 py-3 bg-slate-50 rounded-2xl border border-slate-200 group focus-within:border-emerald-500/40 transition-all focus-within:bg-white focus-within:shadow-sm focus-within:shadow-emerald-100/50">
-                                <Search className="h-4 w-4 text-slate-400 group-focus-within:text-emerald-600 transition-colors" />
-                                <input 
-                                    placeholder="Search management console..." 
-                                    className="bg-transparent border-none outline-none text-[10px] font-black uppercase tracking-widest w-64 placeholder:text-slate-400 text-slate-900"
-                                />
-                            </div>
+                        <div className="flex min-w-0 items-center gap-3">
+                            <div className="hidden min-w-0 text-right sm:block"><p className="max-w-48 truncate text-sm font-medium">{user?.name || "Administrator"}</p><p className="mt-1 text-xs text-green-100/70">{user?.role === "STORE_ADMIN" ? "Store manager" : user?.role === "SUPER_ADMIN" ? "Super admin" : user?.role === "PURCHASE_MANAGER" ? "Purchase manager" : "Administrator"}</p></div>
+                            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/20 bg-white/10 text-sm font-semibold">{user?.name?.[0]?.toUpperCase() || <UserCircle className="h-5 w-5" />}</span>
                         </div>
-
-                        <div className="flex items-center gap-6">
-                            <button className="relative w-12 h-12 rounded-2xl bg-white border border-slate-200 flex items-center justify-center text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 transition-all group">
-                                <Bell className="h-5 w-5 group-hover:rotate-12 transition-transform" />
-                                <span className="absolute top-3 right-3 w-2 h-2 bg-emerald-500 rounded-full ring-4 ring-white" />
-                            </button>
-
-                            <div className="h-10 w-px bg-slate-200 mx-2" />
-
-                            <div className="flex items-center gap-3 pl-2 cursor-pointer group">
-                                <div className="flex flex-col items-end text-right hidden sm:flex">
-                                    <span className="text-xs font-bold text-slate-900 group-hover:text-emerald-600 transition-colors uppercase tracking-tight">{user?.name || "Administrator"}</span>
-                                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-[0.15em]">
-                                        {user?.role === "STORE_ADMIN" ? "Regional Hub Manager" : user?.role === "SUPER_ADMIN" ? "Network Super Admin" : "Logistics Administrator"}
-                                    </span>
-                                </div>
-                                <div className="w-10 h-10 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-600 group-hover:bg-emerald-50 group-hover:text-emerald-600 transition-all">
-                                    {user?.name?.[0] ? <span className="font-bold">{user.name[0]}</span> : <UserCircle className="h-5 w-5" />}
-                                </div>
-                            </div>
-                        </div>
-                    </header>
-
-                    {/* Page Content */}
-                    <div 
-                        id="admin-scroll-container"
-                        className="p-4 md:p-10 max-h-[calc(100vh-6rem)] overflow-y-auto"
-                    >
-                        {children}
                     </div>
-                </main>
-
-                <Toaster richColors position="top-right" theme="light" />
-                <GlobalNotificationListener />
+                </header>
+                <main id="admin-scroll-container" className="min-h-0 min-w-0 flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">{children}</main>
             </div>
-        </ThemeProvider>
+            <Toaster richColors position="top-right" theme="light" />
+            <GlobalNotificationListener />
+        </div>
     );
 }
