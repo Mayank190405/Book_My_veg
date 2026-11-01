@@ -32,6 +32,9 @@ services:
       EASEBUZZ_KEY: ${EASEBUZZ_MERCHANT_KEY}
       EASEBUZZ_SALT: ${EASEBUZZ_SALT}
       EASEBUZZ_ENV: ${EASEBUZZ_ENV:-test}
+      MBGCARD_API_TOKEN: ${MBGCARD_API_TOKEN}
+      MBGCARD_API_URL: ${MBGCARD_API_URL:-https://chatbotbe.digitalmbg.com/api/whatsapp/send_meta_templet}
+      MBGCARD_TEMPLATES_URL: ${MBGCARD_TEMPLATES_URL:-https://chatbotbe.digitalmbg.com/api/whatsapp/get_my_meta_templets}
     depends_on:
       - db
       - redis
