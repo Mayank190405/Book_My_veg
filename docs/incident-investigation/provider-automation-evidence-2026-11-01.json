@@ -1,0 +1,264 @@
+{
+  "automationRules": {
+    "success": true,
+    "data": []
+  },
+  "broadcasts": {
+    "success": true,
+    "data": [
+      {
+        "id": 6754,
+        "broadcast_id": "vkoxcsnJwCJqAOYycsQQA5L0X6Nq36VV",
+        "title": "fresh vegetable",
+        "status": "FAILED",
+        "schedule": "2026-07-30T07:02:21.736Z",
+        "timezone": "Asia/Kolkata",
+        "createdAt": "2026-07-30T07:02:23.810Z",
+        "updatedAt": "2026-07-30T07:02:23.810Z",
+        "phonebook_id": 9125,
+        "phonebook": null,
+        "kind": "template",
+        "content": {
+          "kind": "template",
+          "id": "1395022896009561",
+          "name": "login",
+          "category": "AUTHENTICATION",
+          "language": "en",
+          "status": "APPROVED"
+        },
+        "templet": {
+          "id": "1395022896009561",
+          "name": "login",
+          "category": "AUTHENTICATION",
+          "language": "en",
+          "status": "APPROVED"
+        },
+        "metrics": {
+          "totalLogs": 2,
+          "totalSuccess": 0,
+          "totalSent": 0,
+          "totalDelivered": 0,
+          "totalRead": 0,
+          "totalFailed": 2,
+          "totalPending": 0,
+          "totalProcessing": 0
+        },
+        "latestError": {
+          "message": "(#131008) Required parameter is missing",
+          "updatedAt": "2026-07-30T07:02:23.814Z"
+        }
+      },
+      {
+        "id": 6753,
+        "broadcast_id": "CN1CnILYareovbA8G1Isa19XIpPDRN0K",
+        "title": "new",
+        "status": "FINISHED",
+        "schedule": "2026-07-30T07:01:01.679Z",
+        "timezone": "Asia/Kolkata",
+        "createdAt": "2026-07-30T07:01:03.746Z",
+        "updatedAt": "2026-07-30T07:01:03.746Z",
+        "phonebook_id": 9125,
+        "phonebook": null,
+        "kind": "template",
+        "content": {
+          "kind": "template",
+          "id": "2043890706505421",
+          "name": "fresh_order",
+          "category": "MARKETING",
+          "language": "hi",
+          "status": "APPROVED"
+        },
+        "templet": {
+          "id": "2043890706505421",
+          "name": "fresh_order",
+          "category": "MARKETING",
+          "language": "hi",
+          "status": "APPROVED"
+        },
+        "metrics": {
+          "totalLogs": 2,
+          "totalSuccess": 2,
+          "totalSent": 2,
+          "totalDelivered": 1,
+          "totalRead": 0,
+          "totalFailed": 0,
+          "totalPending": 0,
+          "totalProcessing": 0
+        },
+        "latestError": null
+      },
+      {
+        "id": 1596,
+        "broadcast_id": "Jw7PS1FbWpt0aHQouLMCpl1WIF6xEBa2",
+        "title": "fresh vegetable",
+        "status": "FINISHED",
+        "schedule": "2026-05-21T03:30:00.000Z",
+        "timezone": "Asia/Kolkata",
+        "createdAt": "2026-05-20T07:32:08.846Z",
+        "updatedAt": "2026-05-20T07:32:08.846Z",
+        "phonebook_id": 2297,
+        "phonebook": null,
+        "kind": "template",
+        "content": {
+          "kind": "template",
+          "id": "2043890706505421",
+          "name": "fresh_order",
+          "category": "MARKETING",
+          "language": "hi",
+          "status": "APPROVED"
+        },
+        "templet": {
+          "id": "2043890706505421",
+          "name": "fresh_order",
+          "category": "MARKETING",
+          "language": "hi",
+          "status": "APPROVED"
+        },
+        "metrics": {
+          "totalLogs": 2769,
+          "totalSuccess": 0,
+          "totalSent": 0,
+          "totalDelivered": 0,
+          "totalRead": 0,
+          "totalFailed": 2769,
+          "totalPending": 0,
+          "totalProcessing": 0
+        },
+        "latestError": {
+          "message": "Business eligibility payment issue",
+          "updatedAt": "2026-05-21T03:58:58.282Z"
+        }
+      }
+    ],
+    "pagination": {
+      "totalItems": 3,
+      "totalPages": 1,
+      "currentPage": 1,
+      "pageSize": 10
+    },
+    "summary": {
+      "totalLogs": 2773,
+      "totalSent": 2,
+      "totalDelivered": 1,
+      "totalRead": 0,
+      "totalFailed": 2771,
+      "totalPending": 0,
+      "totalProcessing": 0,
+      "totalSuccess": 2
+    }
+  },
+  "dripCampaigns": {
+    "success": true,
+    "data": [],
+    "pagination": {
+      "totalItems": 0,
+      "totalPages": 1,
+      "currentPage": 1,
+      "pageSize": 10
+    }
+  },
+  "reminderFlow": {
+    "success": true,
+    "id": 8899,
+    "uid": "AgmqRVyS2CNJxy5sUoqzVxVMQX0haFCH",
+    "flow_id": "flow_1787570675060",
+    "title": "reminder",
+    "start_node_id": "rete_1787570675060_1486cca07",
+    "prevent_list": null,
+    "ai_list": null,
+    "is_default": false,
+    "channel": "whatsapp",
+    "createdAt": "2026-08-24T11:24:35.061Z",
+    "updatedAt": "2026-11-01T08:00:03.292Z",
+    "nodes": [
+      {
+        "id": "rete_1787570675060_02207b6ba",
+        "type": "buttonMessageNode",
+        "data": {
+          "msgContent": {
+            "type": "interactive",
+            "interactive": {
+              "type": "cta_url",
+              "body": {
+                "text": "View WhatsApp More Product"
+              },
+              "action": {
+                "name": "cta_url",
+                "parameters": {
+                  "display_text": "View Now",
+                  "url": "https://wa.me/c/918380833633"
+                }
+              }
+            }
+          },
+          "keyword": [
+            ""
+          ],
+          "label": "Button Message"
+        },
+        "position": {
+          "x": 1322.0695396661758,
+          "y": 539.2378997802734
+        },
+        "position_absolute": {
+          "x": 1322.0695396661758,
+          "y": 539.2378997802734
+        },
+        "nodeType": "buttonMessageNode"
+      },
+      {
+        "id": "rete_1787570675060_1486cca07",
+        "type": "templateMessageNode",
+        "data": {
+          "msgContent": {
+            "type": "template",
+            "template": {
+              "name": "payment_due_reminder",
+              "language": {
+                "code": "en"
+              },
+              "components": [
+                {
+                  "type": "body",
+                  "parameters": [
+                    {
+                      "type": "text",
+                      "text": "{{__contact_name}}"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "templatePreview": {
+            "body": "Hi {{__contact_name}}, your [Variable 2] bill of [Variable 3] is due on [Variable 4]. Pay now to avoid service disruption.",
+            "buttons": [
+              {
+                "text": "Pay now",
+                "type": "QUICK_REPLY"
+              }
+            ]
+          },
+          "label": "Template Message"
+        },
+        "position": {
+          "x": 907.8125,
+          "y": 376.5538330078125
+        },
+        "position_absolute": {
+          "x": 907.8125,
+          "y": 376.5538330078125
+        },
+        "nodeType": "templateMessageNode"
+      }
+    ],
+    "edges": [
+      {
+        "id": "54b3e2cdc76b48c7",
+        "source": "rete_1787570675060_1486cca07",
+        "target": "rete_1787570675060_02207b6ba",
+        "sourceHandle": "Pay now"
+      }
+    ]
+  }
+}

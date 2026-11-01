@@ -1,0 +1,91 @@
+{
+  "scope": "Local checkout only, NOT production /app/dist",
+  "commit": "7515f939dda5d7063405916a0b946757899ce61b",
+  "typescript": "5.5.4",
+  "records": [
+    {
+      "source": "server/src/services/dueCalculationService.ts",
+      "compiled": "server/dist/src/services/dueCalculationService.js",
+      "exactEmitMatch": true,
+      "sourceSha256": "4f049767f10d8536f80bf32b12c9ea54365f4d6819e4ef637082c2a474701545",
+      "compiledSha256": "87f17ea3df2ce2b639762ad5c8a712ab4c7ad6ec38d2ebc91027a028da339fb7"
+    },
+    {
+      "source": "server/src/services/mbgcard.ts",
+      "compiled": "server/dist/src/services/mbgcard.js",
+      "exactEmitMatch": true,
+      "sourceSha256": "146a967237cf3a8303037550cae15531a84b2072c9e5977ebe6c0b3df533ed8c",
+      "compiledSha256": "aa076ad712f6e4ccfb1cf54990e4f4b638550af1e3a0ae8ac36445b42413f9cd"
+    },
+    {
+      "source": "server/src/modules/messaging/application/reminder.service.ts",
+      "compiled": "server/dist/src/modules/messaging/application/reminder.service.js",
+      "exactEmitMatch": true,
+      "sourceSha256": "a5aea33899ff18b424e1bcf23cdf7db8d24bc8ba5aab502109580c74ec624190",
+      "compiledSha256": "c5d03b2a9bd70df6c5eb59366524c9584fcacbbcccfc1afa96d80197c53e3003"
+    },
+    {
+      "source": "server/src/modules/messaging/application/notification-dispatcher.service.ts",
+      "compiled": "server/dist/src/modules/messaging/application/notification-dispatcher.service.js",
+      "exactEmitMatch": true,
+      "sourceSha256": "816d2be6de19957946dad7b790598fe51cc528989a997c1e315b7043350da39e",
+      "compiledSha256": "d080c6878223a4bf5875d03f7157d1ce19340f947ae9a428f195c8b23df4fa94"
+    },
+    {
+      "source": "server/src/modules/messaging/application/template.service.ts",
+      "compiled": "server/dist/src/modules/messaging/application/template.service.js",
+      "exactEmitMatch": true,
+      "sourceSha256": "e70135d71491dc236ce79022e6af75867b0be7c92cf5388dc82f8def0105be8e",
+      "compiledSha256": "32899393417587c7f4391ae265693c98731ef5ab690626f17078cde0d6834828"
+    },
+    {
+      "source": "server/src/modules/messaging/application/notification.service.ts",
+      "compiled": "server/dist/src/modules/messaging/application/notification.service.js",
+      "exactEmitMatch": true,
+      "sourceSha256": "741e915f2d55334f6d74395abe663e5de54737438ee459a5369e9424e26ee1a3",
+      "compiledSha256": "f281aeb7c11f6d68246ffda0df0f0df326300698e9916d30c204a404edc22171"
+    },
+    {
+      "source": "server/src/modules/messaging/infrastructure/repositories/notification.repository.ts",
+      "compiled": "server/dist/src/modules/messaging/infrastructure/repositories/notification.repository.js",
+      "exactEmitMatch": true,
+      "sourceSha256": "e7e21db73b3e781251772d652d7a7944ee88b00f4db93613cd3e32321c70b844",
+      "compiledSha256": "cb7201ff9e47805cd9d4809251bea7261e8f9c6927ab03c272accaf048bf3732"
+    },
+    {
+      "source": "server/src/modules/messaging/infrastructure/providers/mbg-whatsapp.provider.ts",
+      "compiled": "server/dist/src/modules/messaging/infrastructure/providers/mbg-whatsapp.provider.js",
+      "exactEmitMatch": true,
+      "sourceSha256": "cd95a0a69ffe5c859abf14499879642dddf896d6ceb209ca269d29be3b50e24f",
+      "compiledSha256": "a24e02da71c9201b4d0746657dad8c32a03e2ec783faf77f3d8ac6def0ed5cd7"
+    },
+    {
+      "source": "server/src/controllers/posController.ts",
+      "compiled": "server/dist/src/controllers/posController.js",
+      "exactEmitMatch": true,
+      "sourceSha256": "e5cf267c4371f3eaa806b4a9bd5b7f7ba408cde15d440a46c163be50b94ce820",
+      "compiledSha256": "c750121ebfbaf8d13b80259520ed51140cbfaec0ac5a4893c4dcb47eea7d0aa7"
+    },
+    {
+      "source": "server/src/controllers/paymentController.ts",
+      "compiled": "server/dist/src/controllers/paymentController.js",
+      "exactEmitMatch": true,
+      "sourceSha256": "b8450794d176110a4b6a8e12553bcfc676138f8bc990f8b2149dcb6ce8ab797a",
+      "compiledSha256": "9759483a129c2e2628d650b526f163d581cd1e67214fee6aef61d3f277316fb1"
+    },
+    {
+      "source": "server/src/controllers/templateController.ts",
+      "compiled": "server/dist/src/controllers/templateController.js",
+      "exactEmitMatch": true,
+      "sourceSha256": "a0ba0aada40719b441d6e538fbf356ebadf50a3e6560ae13e0203d7ea688db52",
+      "compiledSha256": "5ba7bbbfe43c449d575b7f24e8bd3bd74e0cd1b21b3d63cc770777499a5a1af9"
+    },
+    {
+      "source": "server/src/controllers/chatHubController.ts",
+      "compiled": "server/dist/src/controllers/chatHubController.js",
+      "exactEmitMatch": true,
+      "sourceSha256": "c29919f0e332d98f919b39adff85c6f659cf9b692a724618bfc0556ac8d8f537",
+      "compiledSha256": "efe498fb71f1528167312a8fb6fea7b466c1d8bdb120bba1add1b11c5962ffaf"
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+PASS: two sequential custom reminders preserve supplied 9-bill / ₹3807.20 variables and both submit; audits are SYSTEM/NOTIFICATION_DISPATCH.
+PASS: successful provider submission is returned despite failed dispatch audit.
+PASS: flow submits supplied custom fields without a dispatch audit. No external flow definition is simulated.
+PASS: standalone CooldownPolicy allows send after query error (not the canonical claim path).
+PASS: ambiguous timeouts trigger three POST attempts with 1s and 2s backoff, without provider idempotency key.
+PASS: HTTP 200 with success:false is classified as ACCEPTED_BY_PROVIDER.
+All six offline probes passed; no production services contacted.

@@ -1,0 +1,88 @@
+186: /**
+187:  * Generic helper to send a WhatsApp template via ChatHub.
+188:  * Strictly enforces UTILITY-only templates.
+189:  */
+190: export const sendTemplateViaChatHub = async (
+191:     phone: string,
+192:     templateName: string,
+193:     variables?: { header?: string[]; body?: string[] },
+194:     dynamicMedia?: string
+195: ) => {
+196:     // ── STRICT UTILITY MESSAGE POLICY ENFORCEMENT ──────────────────
+197:     if (!APPROVED_UTILITY_TEMPLATES.has(templateName)) {
+198:         console.warn(`[MBG WhatsApp Template] BLOCKED non-utility template '${templateName}'. Strict utility policy is active.`);
+199:         return {
+200:             success: false,
+201:             blocked: true,
+202:             message: `Template '${templateName}' was blocked because only approved UTILITY templates are permitted.`
+203:         };
+204:     }
+205: 
+206:     const cleanPhone = phone.replace(/\D/g, "");
+207:     const formattedPhone = cleanPhone.length === 10 ? `91${cleanPhone}` : (cleanPhone.startsWith("91") ? cleanPhone : `91${cleanPhone}`);
+208: 
+209:     const payload: any = {
+210:         templateName,
+211:         to: formattedPhone,
+212:         variables: {
+213:             body: variables?.body || []
+214:         }
+215:     };
+216:     if (variables?.header && variables.header.length > 0) {
+217:         payload.variables.header = variables.header;
+218:     }
+219:     if (dynamicMedia) {
+220:         payload.dynamicMedia = dynamicMedia;
+221:     }
+222: 
+223:     const url = process.env.MBGCARD_API_URL || "https://chatbotbe.digitalmbg.com/api/whatsapp/send_meta_templet";
+224: 
+225:     try {
+226:         console.log(`[MBG WhatsApp Utility Template] Sending ${templateName} (UTILITY) to ${formattedPhone} via ${url}`);
+227: 
+228:         const response = await axios.post(url, payload, {
+229:             timeout: 10000,
+230:             headers: {
+231:                 'Content-Type': 'application/json',
+232:                 'accept': '*/*',
+233:                 'x-api-key': MBGCARD_API_TOKEN,
+234:                 'User-Agent': 'BookMyVeg-Server/1.0'
+235:             }
+236:         });
+237: 
+238:         console.log("[MBG WhatsApp Template] Response:", response.data);
+239:         return response.data;
+240:     } catch (error: any) {
+241:         console.error("Error sending utility template via ChatHub:", {
+242:             message: error.message,
+243:             response: error.response?.data
+244:         });
+245:         throw error;
+307: /**
+308:  * Payment due reminder via approved UTILITY template 'payment_due_reminder'.
+309:  */
+310: export const sendPaymentReminderViaWhatsapp = async (
+311:     phone: string,
+312:     customerName: string,
+313:     dueAmount: number,
+314:     invoiceNo: string,
+315:     userId?: string,
+316:     orderId?: string
+317: ) => {
+318:     const origin = process.env.CLIENT_URL || "https://bookmyveg.co.in";
+319:     const cleanPhone = phone.replace(/\D/g, "");
+320:     
+321:     let payLink = `${origin}/pay?number=${cleanPhone}`;
+322:     if (userId) {
+323:         payLink += `&userid=${userId}`;
+324:     }
+325:     if (orderId && !invoiceNo.startsWith("All Dues")) {
+326:         payLink += `&billid=${orderId}`;
+327:     }
+328: 
+329:     const dueTiming = `Immediate. Pay online: ${payLink}`;
+330: 
+331:     return sendTemplateViaChatHub(phone, "payment_due_reminder", {
+332:         body: [customerName, invoiceNo, `₹${dueAmount}`, dueTiming]
+333:     });
+334: };

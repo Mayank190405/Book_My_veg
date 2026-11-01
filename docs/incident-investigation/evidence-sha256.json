@@ -1,0 +1,19 @@
+{
+  "createdAt": "2026-11-01T08:58:56.759034+00:00",
+  "checkoutCommit": "7515f939dda5d7063405916a0b946757899ce61b",
+  "historicalCandidateCommit": "ffe60f9ddf7bec798f4c0ecca2065eab4d90ccab",
+  "files": {
+    "historical-hourly-probe-results.txt": "dfed99da119e7a26fee3b714ef8e74e9be59ec32aaefe76ef8ae2cbba53f0a70",
+    "historical-hourly-probe.cjs": "66d59bb7de328096e8993c34c086bcdb1cfa3f13e693e0b771ade7609d5ce4f1",
+    "historical-mbg-excerpts-ffe60f9.txt": "baa4173f049c378ed7aaafbc219495e24910d0841472383a3f4ea1bb15ed1ace",
+    "historical-worker-compiled-ffe60f9.txt": "164039a61df65d01476c0795cd4c6fd3b4e9943ab83b1af851dec64cb3e985f4",
+    "historical-worker-ffe60f9.txt": "97ca9c58943e8c5ace01fbb728de7286d7fe62acc81dab51e843c967bd58e8ef",
+    "hourly-reminders-provider-findings-2026-11-01.md": "759d8a0eb2f750cd3dc4def6e2861b3ce76b1e06b7a9a00bbd281ce69aaf11af",
+    "local-compiled-comparison.json": "40580c7c6bf0961ee0c8d339368f7f8628fd98faff53429c9b14d86567f4dceb",
+    "provider-automation-evidence-2026-11-01.json": "69ef6777be3a750e85f8bb650758f26614bd46e51dc6b6e5ba2e68bf9f7f9818",
+    "provider-reminder-evidence-2026-11-01.json": "b85a55b2e3d233b5ae99e8e3030ab8361f34323477b3d7a0e6cf7e081b3c3ee3",
+    "reminder-probes-results.txt": "40d9b7f70d0549255964bb998f440db7bf6543ed3fd64e67684ca70216a96756",
+    "reminder-probes.cjs": "f342cc5466ae025acdfe68d941b3850eb2aaae584beccaec8ddd85ae09270fd7",
+    "whatsapp-reminders-2026-11-01.md": "9ff3a02ce99f3553fa065b0727d8b1e321676ef775e520dcc836f9921c3a09d9"
+  }
+}
