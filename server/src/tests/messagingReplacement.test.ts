@@ -21,6 +21,7 @@ import { IdempotencyPolicy } from "../modules/messaging/policies/idempotency.pol
 import { RecipientService } from "../modules/messaging/application/recipient.service";
 import { MbgWhatsAppProvider } from "../modules/messaging/infrastructure/providers/mbg-whatsapp.provider";
 import { NotificationService } from "../modules/messaging/application/notification.service";
+import { TemplateService } from "../modules/messaging/application/template.service";
 import { UNIVERSAL_REMINDER_COOLDOWN_MS } from "../modules/messaging/domain/notification.policies";
 import * as fs from "fs";
 import * as path from "path";
@@ -170,6 +171,26 @@ async function runTests() {
     const ns1 = NotificationService.getInstance();
     const ns2 = NotificationService.getInstance();
     assert(ns1 === ns2, "NotificationService is a strict singleton");
+
+    // -------------------------------------------------------------------------
+    // TEST 10: Custom Template Endpoint Security (Blocks Unvalidated Reminders)
+    // -------------------------------------------------------------------------
+    console.log("\n[Test 10] Verifying Custom Template Endpoint Security (Blocks Reminders)...");
+    const templateService = TemplateService.getInstance();
+    const blockedRes1 = await templateService.sendCustomTemplate({
+        phone: "919876543210",
+        templateName: "payment_due_reminder",
+        variables: ["Customer", "Bill 1", "₹500", "Immediate"]
+    });
+    assert(!blockedRes1.success, "payment_due_reminder strictly blocked from custom template dispatch");
+    assert(Boolean(blockedRes1.error && blockedRes1.error.includes("ReminderService")), "Clear guidance error returned");
+
+    const blockedRes2 = await templateService.sendCustomTemplate({
+        phone: "919876543210",
+        templateName: "due_payment_reminder",
+        variables: ["Customer", "₹500", "Bill 1", "https://link"]
+    });
+    assert(!blockedRes2.success, "due_payment_reminder strictly blocked from custom template dispatch");
 
     console.log("\n================================================================================");
     console.log(`TEST SUMMARY: All ${passed} tests passed. (${failed} failed)`);

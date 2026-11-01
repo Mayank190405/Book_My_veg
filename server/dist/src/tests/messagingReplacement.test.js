@@ -53,6 +53,7 @@ const authorization_policy_1 = require("../modules/messaging/policies/authorizat
 const idempotency_policy_1 = require("../modules/messaging/policies/idempotency.policy");
 const recipient_service_1 = require("../modules/messaging/application/recipient.service");
 const notification_service_1 = require("../modules/messaging/application/notification.service");
+const template_service_1 = require("../modules/messaging/application/template.service");
 const notification_policies_1 = require("../modules/messaging/domain/notification.policies");
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
@@ -186,6 +187,24 @@ function runTests() {
         const ns1 = notification_service_1.NotificationService.getInstance();
         const ns2 = notification_service_1.NotificationService.getInstance();
         assert(ns1 === ns2, "NotificationService is a strict singleton");
+        // -------------------------------------------------------------------------
+        // TEST 10: Custom Template Endpoint Security (Blocks Unvalidated Reminders)
+        // -------------------------------------------------------------------------
+        console.log("\n[Test 10] Verifying Custom Template Endpoint Security (Blocks Reminders)...");
+        const templateService = template_service_1.TemplateService.getInstance();
+        const blockedRes1 = yield templateService.sendCustomTemplate({
+            phone: "919876543210",
+            templateName: "payment_due_reminder",
+            variables: ["Customer", "Bill 1", "₹500", "Immediate"]
+        });
+        assert(!blockedRes1.success, "payment_due_reminder strictly blocked from custom template dispatch");
+        assert(Boolean(blockedRes1.error && blockedRes1.error.includes("ReminderService")), "Clear guidance error returned");
+        const blockedRes2 = yield templateService.sendCustomTemplate({
+            phone: "919876543210",
+            templateName: "due_payment_reminder",
+            variables: ["Customer", "₹500", "Bill 1", "https://link"]
+        });
+        assert(!blockedRes2.success, "due_payment_reminder strictly blocked from custom template dispatch");
         console.log("\n================================================================================");
         console.log(`TEST SUMMARY: All ${passed} tests passed. (${failed} failed)`);
         console.log("================================================================================\n");

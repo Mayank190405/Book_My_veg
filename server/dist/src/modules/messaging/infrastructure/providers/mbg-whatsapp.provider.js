@@ -20,13 +20,12 @@ const axios_1 = __importDefault(require("axios"));
 const logger_1 = __importDefault(require("../../../../utils/logger"));
 const MAX_RETRIES = 3;
 const INITIAL_BACKOFF_MS = 1000;
-const DEFAULT_MBGCARD_API_TOKEN = "d423777128fdc8a29bef4fb719f3d3c9";
 class MbgWhatsAppProvider {
     constructor() {
         this.apiUrl = process.env.MBGCARD_API_URL || "https://chatbotbe.digitalmbg.com/api/whatsapp/send_meta_templet";
         this.templatesUrl = process.env.MBGCARD_TEMPLATES_URL || "https://chatbotbe.digitalmbg.com/api/whatsapp/get_my_meta_templets";
         this.flowUrl = process.env.MBGCARD_FLOW_URL || "https://chatbot.digitalmbg.com/v1/contacts/send_flow";
-        this.apiToken = process.env.MBGCARD_API_TOKEN || DEFAULT_MBGCARD_API_TOKEN;
+        this.apiToken = process.env.MBGCARD_API_TOKEN || "";
     }
     /**
      * Formats phone number into standard 91XXXXXXXXXX format for Meta WhatsApp API.
@@ -48,6 +47,18 @@ class MbgWhatsAppProvider {
         return __awaiter(this, void 0, void 0, function* () {
             var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k;
             const formattedPhone = this.formatPhone(request.recipientPhone);
+            // Security / Sandbox Guard: In non-production or when running locally/tests with mock token,
+            // NEVER dispatch to live WhatsApp. Safely simulate acceptance to avoid sending real messages.
+            const isNonProdOrMock = process.env.NODE_ENV !== "production" || !this.apiToken || this.apiToken.startsWith("mock");
+            if (isNonProdOrMock) {
+                logger_1.default.info(`[MbgWhatsAppProvider] Non-production mock dispatch for '${request.templateName}' to ${formattedPhone}.`);
+                return {
+                    success: true,
+                    status: "ACCEPTED_BY_PROVIDER",
+                    providerMessageId: `mock-msg-${Date.now()}`,
+                    rawResponse: { mock: true, template: request.templateName, to: formattedPhone }
+                };
+            }
             const payload = {
                 templateName: request.templateName,
                 to: formattedPhone,
@@ -61,13 +72,13 @@ class MbgWhatsAppProvider {
             if (request.dynamicMedia) {
                 payload.dynamicMedia = request.dynamicMedia;
             }
-            // Failsafe if token is missing
+            // Failsafe in production if token is missing
             if (!this.apiToken) {
-                logger_1.default.error(`[MbgWhatsAppProvider] Missing MBGCARD_API_TOKEN. Cannot dispatch '${request.templateName}' to ${formattedPhone}.`);
+                logger_1.default.error(`[MbgWhatsAppProvider] Missing MBGCARD_API_TOKEN in production! Cannot dispatch '${request.templateName}' to ${formattedPhone}.`);
                 return {
                     success: false,
                     status: "FAILED",
-                    error: "MBGCARD_API_TOKEN is not configured"
+                    error: "MBGCARD_API_TOKEN is not configured in production environment"
                 };
             }
             let lastError;
@@ -203,6 +214,15 @@ class MbgWhatsAppProvider {
                 name: name || "Customer",
                 actions
             };
+            const isNonProdOrMock = process.env.NODE_ENV !== "production" || !this.apiToken || this.apiToken.startsWith("mock");
+            if (isNonProdOrMock) {
+                logger_1.default.info(`[MbgWhatsAppProvider] Non-production mock flow dispatched to ${formattedPhone}.`);
+                return {
+                    success: true,
+                    status: "ACCEPTED_BY_PROVIDER",
+                    providerMessageId: `mock-flow-${Date.now()}`
+                };
+            }
             if (!this.apiToken) {
                 logger_1.default.error(`[MbgWhatsAppProvider] Missing MBGCARD_API_TOKEN. Cannot dispatch flow to ${formattedPhone}.`);
                 return {

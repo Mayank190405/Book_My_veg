@@ -6,6 +6,7 @@ import { TemplateRegistry } from "../templates/template-registry";
 import { NotificationDispatcherService } from "./notification-dispatcher.service";
 import { ProviderSendResult, TemplateDefinition } from "../domain/notification.types";
 import { RecipientService } from "./recipient.service";
+import logger from "../../../utils/logger";
 
 export class TemplateService {
     private static instance: TemplateService;
@@ -53,6 +54,18 @@ export class TemplateService {
     }): Promise<ProviderSendResult> {
         const { phone, templateName, dynamicMedia, actorId, triggerSource = "ADMIN_CUSTOM" } = options;
         const cleanPhone = RecipientService.sanitizePhone(phone);
+
+        // Security / Ledger Integrity Guard: Payment due reminders must NEVER be sent via arbitrary custom template dispatch.
+        // Reminders must strictly flow through ReminderService.sendDueReminders() or sendSingleOrderReminder()
+        // to enforce authoritative database balance calculation (Decimal.js) and 24-hour duplicate cooldown.
+        if (templateName === "payment_due_reminder" || templateName === "due_payment_reminder") {
+            logger.warn(`[TemplateService] Blocked custom template dispatch for '${templateName}'. Reminders must use ReminderService.`);
+            return {
+                success: false,
+                status: "FAILED",
+                error: `Template '${templateName}' cannot be dispatched via custom template endpoint. Use the authoritative ReminderService to guarantee real-time balance validation and 24h cooldown.`
+            };
+        }
 
         // Normalize variables structure
         let structuredVars: { header?: string[]; body?: string[] } = {};

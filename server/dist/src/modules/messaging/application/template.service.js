@@ -11,11 +11,15 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.TemplateService = void 0;
 const template_registry_1 = require("../templates/template-registry");
 const notification_dispatcher_service_1 = require("./notification-dispatcher.service");
 const recipient_service_1 = require("./recipient.service");
+const logger_1 = __importDefault(require("../../../utils/logger"));
 class TemplateService {
     constructor() {
         this.registry = template_registry_1.TemplateRegistry.getInstance();
@@ -53,6 +57,17 @@ class TemplateService {
             var _a, _b;
             const { phone, templateName, dynamicMedia, actorId, triggerSource = "ADMIN_CUSTOM" } = options;
             const cleanPhone = recipient_service_1.RecipientService.sanitizePhone(phone);
+            // Security / Ledger Integrity Guard: Payment due reminders must NEVER be sent via arbitrary custom template dispatch.
+            // Reminders must strictly flow through ReminderService.sendDueReminders() or sendSingleOrderReminder()
+            // to enforce authoritative database balance calculation (Decimal.js) and 24-hour duplicate cooldown.
+            if (templateName === "payment_due_reminder" || templateName === "due_payment_reminder") {
+                logger_1.default.warn(`[TemplateService] Blocked custom template dispatch for '${templateName}'. Reminders must use ReminderService.`);
+                return {
+                    success: false,
+                    status: "FAILED",
+                    error: `Template '${templateName}' cannot be dispatched via custom template endpoint. Use the authoritative ReminderService to guarantee real-time balance validation and 24h cooldown.`
+                };
+            }
             // Normalize variables structure
             let structuredVars = {};
             if (Array.isArray(options.variables)) {
