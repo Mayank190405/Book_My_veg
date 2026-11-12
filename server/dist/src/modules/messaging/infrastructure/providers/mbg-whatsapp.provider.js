@@ -41,22 +41,34 @@ class MbgWhatsAppProvider {
         return `91${clean}`;
     }
     /**
+     * Returns a reason string when outbound WhatsApp calls must be mocked instead of dispatched live.
+     */
+    getMockReason() {
+        if (process.env.NODE_ENV !== "production") {
+            return `NODE_ENV=${process.env.NODE_ENV || "unset"}`;
+        }
+        if (this.apiToken.startsWith("mock")) {
+            return "mock token configured";
+        }
+        return null;
+    }
+    /**
      * Submits a WhatsApp template message to the MBG Card / Meta Cloud API proxy.
      */
     sendTemplate(request) {
         return __awaiter(this, void 0, void 0, function* () {
             var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k;
             const formattedPhone = this.formatPhone(request.recipientPhone);
-            // Security / Sandbox Guard: In non-production or when running locally/tests with mock token,
+            // Security / Sandbox Guard: In non-production or when using a mock token,
             // NEVER dispatch to live WhatsApp. Safely simulate acceptance to avoid sending real messages.
-            const isNonProdOrMock = process.env.NODE_ENV !== "production" || !this.apiToken || this.apiToken.startsWith("mock");
-            if (isNonProdOrMock) {
-                logger_1.default.info(`[MbgWhatsAppProvider] Non-production mock dispatch for '${request.templateName}' to ${formattedPhone}.`);
+            const mockReason = this.getMockReason();
+            if (mockReason) {
+                logger_1.default.info(`[MbgWhatsAppProvider] Non-production mock dispatch for '${request.templateName}' to ${formattedPhone} (${mockReason}).`);
                 return {
                     success: true,
                     status: "ACCEPTED_BY_PROVIDER",
                     providerMessageId: `mock-msg-${Date.now()}`,
-                    rawResponse: { mock: true, template: request.templateName, to: formattedPhone }
+                    rawResponse: { mock: true, reason: mockReason, template: request.templateName, to: formattedPhone }
                 };
             }
             const payload = {
@@ -214,9 +226,9 @@ class MbgWhatsAppProvider {
                 name: name || "Customer",
                 actions
             };
-            const isNonProdOrMock = process.env.NODE_ENV !== "production" || !this.apiToken || this.apiToken.startsWith("mock");
-            if (isNonProdOrMock) {
-                logger_1.default.info(`[MbgWhatsAppProvider] Non-production mock flow dispatched to ${formattedPhone}.`);
+            const mockReason = this.getMockReason();
+            if (mockReason) {
+                logger_1.default.info(`[MbgWhatsAppProvider] Non-production mock flow dispatched to ${formattedPhone} (${mockReason}).`);
                 return {
                     success: true,
                     status: "ACCEPTED_BY_PROVIDER",

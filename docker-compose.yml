@@ -24,6 +24,7 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       PORT: 5000
+      NODE_ENV: ${NODE_ENV:-production}
       JWT_ACCESS_EXPIRY: 7d
       JWT_REFRESH_EXPIRY: 30d
       CLIENT_URL: ${CLIENT_URL:-https://bookmyveg.co.in}

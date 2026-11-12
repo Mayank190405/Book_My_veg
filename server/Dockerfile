@@ -20,6 +20,9 @@ RUN DATABASE_URL="postgresql://placeholder:placeholder@localhost:5432/db" npx pr
 # Build TypeScript
 RUN npm run build
 
+# Default runtime mode to production inside the container
+ENV NODE_ENV=production
+
 # Expose port
 EXPOSE 5000
 
