@@ -17,8 +17,8 @@ export class MbgWhatsAppProvider implements IWhatsAppProvider {
     private readonly apiToken: string;
 
     constructor() {
-        this.apiUrl = process.env.MBGCARD_API_URL || "https://chatbotbe.digitalmbg.com/api/whatsapp/send_meta_templet";
-        this.templatesUrl = process.env.MBGCARD_TEMPLATES_URL || "https://chatbotbe.digitalmbg.com/api/whatsapp/get_my_meta_templets";
+        this.apiUrl = process.env.MBGCARD_API_URL || "https://consolewebwhatsapp.digitalmbg.com/api/whatsapp/send_meta_templet";
+        this.templatesUrl = process.env.MBGCARD_TEMPLATES_URL || "https://consolewebwhatsapp.digitalmbg.com/api/whatsapp/get_my_meta_templets";
         this.flowUrl = process.env.MBGCARD_FLOW_URL || "https://chatbot.digitalmbg.com/v1/contacts/send_flow";
         this.apiToken = process.env.MBGCARD_API_TOKEN || "";
     }

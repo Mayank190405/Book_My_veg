@@ -504,7 +504,7 @@ export default function WhatsAppTemplatesPage() {
                                     DigitalMBG Live Meta WhatsApp Templates ({templates.length})
                                 </h3>
                                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                                    Direct integration with <code className="font-mono text-[11px] bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded">chatbotbe.digitalmbg.com</code> using official Meta Cloud API.
+                                    Direct integration with <code className="font-mono text-[11px] bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded">consolewebwhatsapp.digitalmbg.com</code> using official Meta Cloud API.
                                 </p>
                             </div>
                         </div>

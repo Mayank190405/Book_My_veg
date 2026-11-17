@@ -52,7 +52,8 @@ services:
       NODE_ENV: ${NODE_ENV:-production}
       CLIENT_URL: https://bookmyveg.co.in
       # WhatsApp
-      MBGCARD_API_URL: "${MBGCARD_API_URL:-https://chatbotbe.digitalmbg.com/api/whatsapp/send_meta_templet}"
+      MBGCARD_API_URL: "${MBGCARD_API_URL:-https://consolewebwhatsapp.digitalmbg.com/api/whatsapp/send_meta_templet}"
+      MBGCARD_TEMPLATES_URL: "${MBGCARD_TEMPLATES_URL:-https://consolewebwhatsapp.digitalmbg.com/api/whatsapp/get_my_meta_templets}"
       MBGCARD_API_TOKEN: "${MBGCARD_API_TOKEN}"
       MBGCARD_PHONE_NUMBER_ID: "1584781019502734"
       MBGCARD_TEMPLATE_ID: "login"

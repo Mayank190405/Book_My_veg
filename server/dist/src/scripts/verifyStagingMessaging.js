@@ -39,9 +39,9 @@ function runStagingVerification() {
         console.log("================================================================================");
         console.log("BOOKMYVEG — ISOLATED STAGING MESSAGING VERIFICATION");
         console.log("================================================================================\n");
-        const apiUrl = process.env.MBGCARD_API_URL || "https://chatbotbe.digitalmbg.com/api/whatsapp/send_meta_templet";
-        const apiToken = process.env.MBGCARD_API_TOKEN || "d423777128fdc8a29bef4fb719f3d3c9";
-        const templatesUrl = process.env.MBGCARD_TEMPLATES_URL || "https://chatbotbe.digitalmbg.com/api/whatsapp/get_my_meta_templets";
+        const apiUrl = process.env.MBGCARD_API_URL || "https://consolewebwhatsapp.digitalmbg.com/api/whatsapp/send_meta_templet";
+        const apiToken = process.env.MBGCARD_API_TOKEN || "";
+        const templatesUrl = process.env.MBGCARD_TEMPLATES_URL || "https://consolewebwhatsapp.digitalmbg.com/api/whatsapp/get_my_meta_templets";
         console.log(`[Config Check] Provider Endpoint: ${apiUrl}`);
         console.log(`[Config Check] Templates URL:     ${templatesUrl}`);
         console.log(`[Config Check] API Token Masked:  ${apiToken.slice(0, 4)}...${apiToken.slice(-4)}\n`);
