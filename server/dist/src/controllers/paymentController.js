@@ -95,6 +95,7 @@ const callEasebuzzInitiateApi = (params) => __awaiter(void 0, void 0, void 0, fu
     if (!key) {
         throw new Error("Easebuzz Key / Merchant Key not configured in environment variables");
     }
+    const showPaymentMode = process.env.EASEBUZZ_SHOW_PAYMENT_MODE || "UPI";
     if (serviceUrl) {
         try {
             const apiName = "initiate_payment_iframe";
@@ -107,6 +108,8 @@ const callEasebuzzInitiateApi = (params) => __awaiter(void 0, void 0, void 0, fu
                 productinfo: params.productinfo,
                 surl: params.callbackUrl,
                 furl: params.callbackUrl,
+                show_payment_mode: showPaymentMode,
+                payment_mode: showPaymentMode,
             }, {
                 headers: { "Accept": "application/json", "Content-Type": "application/json" },
                 timeout: 10000
@@ -149,7 +152,9 @@ const callEasebuzzInitiateApi = (params) => __awaiter(void 0, void 0, void 0, fu
             phone,
             surl,
             furl,
-            hash
+            hash,
+            show_payment_mode: showPaymentMode,
+            payment_mode: showPaymentMode
         });
         const directRes = yield axios_1.default.post(`${baseUrl}/payment/initiateLink`, formData.toString(), {
             headers: { "Content-Type": "application/x-www-form-urlencoded" },

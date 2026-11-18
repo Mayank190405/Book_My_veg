@@ -82,6 +82,8 @@ const callEasebuzzInitiateApi = async (params: EasebuzzInitiateParams) => {
         throw new Error("Easebuzz Key / Merchant Key not configured in environment variables");
     }
 
+    const showPaymentMode = process.env.EASEBUZZ_SHOW_PAYMENT_MODE || "UPI";
+
     if (serviceUrl) {
         try {
             const apiName = "initiate_payment_iframe";
@@ -96,6 +98,8 @@ const callEasebuzzInitiateApi = async (params: EasebuzzInitiateParams) => {
                     productinfo: params.productinfo,
                     surl: params.callbackUrl,
                     furl: params.callbackUrl,
+                    show_payment_mode: showPaymentMode,
+                    payment_mode: showPaymentMode,
                 },
                 {
                     headers: { "Accept": "application/json", "Content-Type": "application/json" },
@@ -143,7 +147,9 @@ const callEasebuzzInitiateApi = async (params: EasebuzzInitiateParams) => {
             phone,
             surl,
             furl,
-            hash
+            hash,
+            show_payment_mode: showPaymentMode,
+            payment_mode: showPaymentMode
         });
 
         const directRes = await axios.post(

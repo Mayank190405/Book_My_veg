@@ -1,35 +1,88 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
-import { ArrowRight, Leaf, MessageCircle, ShoppingBag } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import RecommendationSection from "@/components/widgets/RecommendationSection";
 import EditorialCategoryGrid from "@/components/widgets/EditorialCategoryGrid";
 import AllProductsSection from "@/components/widgets/AllProductsSection";
+import { useCategoryThemeStore, CATEGORY_THEMES } from "@/store/useCategoryThemeStore";
 
 export default function Home() {
+    const selectedCategory = useCategoryThemeStore((state) => state.selectedCategory);
+    const activeTheme = CATEGORY_THEMES[selectedCategory] || CATEGORY_THEMES.all;
+
     return (
-        <div className="mx-auto w-full max-w-[1280px] space-y-7 pb-8">
-            <section className="mx-4 mt-4 grid min-h-[180px] grid-cols-[1.15fr_1fr] overflow-hidden rounded-2xl bg-[#e8f7ef] sm:mx-6 sm:min-h-[280px]">
-                <div className="relative z-10 flex flex-col items-start justify-center px-4 py-4 sm:px-10 sm:py-8">
-                    <span className="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#056647] sm:text-xs">Everyday essentials</span>
-                    <h1 className="text-[25px] font-bold leading-[1.12] tracking-tight text-[#17251e] sm:text-4xl lg:text-5xl">Fresh picks.<br />For you.</h1>
-                    <p className="mb-4 mt-3 max-w-xs text-xs leading-relaxed text-[#486052] sm:text-base">Vegetables, fruits and more.</p>
-                    <Link href="/categories" className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-[#087f5b] px-4 text-sm font-semibold text-white hover:bg-[#056647]">Shop now <ArrowRight className="h-4 w-4" /></Link>
+        <div 
+            style={{ backgroundColor: activeTheme.lightBg || "#e9f6ef" }}
+            className="w-full space-y-6 pb-12 transition-colors duration-500 min-h-screen"
+        >
+            {/* Seamless Header-to-Hero Canopy - Matches User Mockup */}
+            <section
+                style={{ backgroundColor: activeTheme.themeColor }}
+                className="relative w-full text-white pt-2 sm:pt-4 pb-4 px-4 sm:px-8 shadow-xs transition-colors duration-500"
+            >
+                <div className="mx-auto max-w-[1280px]">
+                    <div className="flex flex-col items-start justify-center py-3 sm:py-5 max-w-2xl min-h-[140px] sm:min-h-[170px]">
+                        {/* Eyebrow Pill */}
+                        <div className="inline-flex items-center gap-2 rounded-full bg-white/15 backdrop-blur-md px-3.5 py-1 text-xs font-semibold text-white shadow-xs mb-2.5 border border-white/20">
+                            {activeTheme.icon ? <span className="text-sm">{activeTheme.icon}</span> : null}
+                            <span>{activeTheme.tagline || "Everyday essentials"}</span>
+                        </div>
+
+                        {/* Main Headline */}
+                        <h1 className="text-3xl sm:text-4xl md:text-5xl font-black text-white tracking-tight leading-[1.08] whitespace-pre-line">
+                            {activeTheme.heroTitle}
+                        </h1>
+
+                        {/* Subtitle */}
+                        <p className="mt-2 mb-4 max-w-xl text-xs sm:text-sm md:text-base text-white/90 font-medium leading-relaxed">
+                            {activeTheme.heroSubtitle}
+                        </p>
+
+                        {/* Shop Now Button */}
+                        <Link
+                            href={selectedCategory === "all" ? "/categories" : `/products?category=${selectedCategory}`}
+                            style={{ color: activeTheme.themeColor }}
+                            className="inline-flex min-h-10 items-center gap-2 rounded-full bg-white px-6 py-2.5 text-xs sm:text-sm font-black shadow-md transition-all duration-300 hover:bg-slate-50 active:scale-95"
+                        >
+                            <span>Shop now</span>
+                            <ArrowRight className="h-4 w-4 stroke-[2.5]" />
+                        </Link>
+                    </div>
+
+                    {/* Integrated Today's Deal Bar (Soft, Less Dense Glassmorphism) */}
+                    <div className="pt-3">
+                        <Link
+                            href={selectedCategory === "all" ? "/categories" : `/products?category=${selectedCategory}`}
+                            className="group flex w-full items-center justify-between gap-3 rounded-full bg-black/15 hover:bg-black/20 backdrop-blur-md px-4 py-2 text-xs sm:text-sm text-white transition-all shadow-xs border border-white/15"
+                        >
+                            <div className="flex items-center gap-2 min-w-0">
+                                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#f59e0b] text-[#78350f] font-black text-[10px]">
+                                    %
+                                </span>
+                                <span className="font-black text-[#fcd34d] shrink-0">TODAY&apos;S DEAL:</span>
+                                <span className="truncate text-white/95 font-medium text-xs">
+                                    {activeTheme.dealText}
+                                </span>
+                            </div>
+                            <ArrowRight className="h-4 w-4 shrink-0 transition-transform group-hover:translate-x-1 text-white/80" />
+                        </Link>
+                    </div>
                 </div>
-                <div className="relative min-h-full"><Image src="/images/hero_grocery_bag.jpg" alt="A grocery bag filled with vegetables" fill priority sizes="(max-width: 640px) 45vw, 600px" className="object-cover" /></div>
             </section>
-            <EditorialCategoryGrid />
-            <RecommendationSection />
-            <section className="mx-4 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-[#e5ebe7] bg-white p-4 sm:mx-6 sm:p-6">
-                <div className="flex items-center gap-3"><span className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#e8f7ef] text-[#087f5b]"><ShoppingBag className="h-5 w-5" /></span><div><h2 className="text-base font-semibold">Everything for your next meal</h2><p className="text-xs text-[#64736b]">Explore the full grocery collection.</p></div></div>
-                <Link href="/products" className="inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-[#087f5b]">Browse all <ArrowRight className="h-4 w-4" /></Link>
-            </section>
-            <AllProductsSection />
-            <footer className="mx-4 border-t border-[#e5ebe7] pt-6 sm:mx-6">
-                <div className="flex flex-wrap items-center justify-between gap-4"><span className="flex items-center gap-2 font-semibold text-[#087f5b]"><Leaf className="h-5 w-5" /> Book My Veg</span><Link href="/chat" className="flex min-h-11 items-center gap-2 text-sm text-[#64736b]"><MessageCircle className="h-4 w-4" />Need a hand? Talk to us</Link></div>
-                <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-xs text-[#64736b]">{[["Privacy", "/privacy"], ["Terms", "/terms"], ["Exchange policy", "/exchange-policy"], ["Contact", "/contact"]].map(([label, href]) => <Link key={href} href={href} className="inline-flex min-h-11 items-center">{label}</Link>)}</div>
-            </footer>
+
+            {/* Main Content Area on clean background */}
+            <div className="mx-auto w-full max-w-[1280px] space-y-6 px-4 sm:px-6">
+                {selectedCategory === "all" ? (
+                    <>
+                        <EditorialCategoryGrid />
+                        <RecommendationSection />
+                        <AllProductsSection />
+                    </>
+                ) : (
+                    <AllProductsSection />
+                )}
+            </div>
         </div>
     );
 }

@@ -33,7 +33,7 @@ import { getBaseURL } from "@/services/api";
 
 interface LocationSelectorProps {
     isCompact?: boolean;
-    variant?: "default" | "hero";
+    variant?: "default" | "hero" | "green-header" | "blinkit";
 }
 
 export default function LocationSelector({ isCompact, variant = "default" }: LocationSelectorProps) {
@@ -958,7 +958,31 @@ export default function LocationSelector({ isCompact, variant = "default" }: Loc
                 aria-label="Choose delivery location"
                 className="min-h-11 cursor-pointer flex items-center"
             >
-                {variant === "hero" ? (
+                {variant === "blinkit" ? (
+                    <div className="flex items-center gap-1 active:scale-95 transition-all duration-300 group select-none text-slate-800 max-w-[85vw] sm:max-w-md">
+                        <span className="font-black text-xs uppercase tracking-wider text-slate-900">
+                            {location?.address === "Select Location" || !location?.address ? "HOME" : location.address}
+                        </span>
+                        <span className="text-slate-400 font-bold text-xs">-</span>
+                        <span className="text-xs text-slate-600 font-semibold truncate max-w-[200px] sm:max-w-xs">
+                            {location?.secondary || "Govind Nagar, Nashik, Maharashtra"}
+                        </span>
+                        <ChevronDown className="h-3.5 w-3.5 text-slate-700 stroke-[3] shrink-0 ml-0.5" />
+                    </div>
+                ) : variant === "green-header" ? (
+                    <div className="flex items-center gap-2.5 active:scale-95 transition-all duration-300 group select-none text-white max-w-[75vw] sm:max-w-md">
+                        <MapPin className="h-5 w-5 text-white shrink-0" />
+                        <div className="flex flex-col text-left min-w-0">
+                            <div className="flex items-center gap-1 font-bold text-sm text-white leading-tight">
+                                <span>{location?.address === "Select Location" || !location?.address ? "Home" : location.address}</span>
+                                <ChevronDown className="h-4 w-4 text-white stroke-[2.5]" />
+                            </div>
+                            <span className="text-xs text-white/80 font-normal truncate max-w-[220px] sm:max-w-xs leading-tight mt-0.5">
+                                {location?.secondary || "Govind Nagar, Nashik, Maharashtra"}
+                            </span>
+                        </div>
+                    </div>
+                ) : variant === "hero" ? (
                     <div className="flex items-center gap-2.5 active:scale-95 transition-all duration-300 group select-none text-white max-w-[70vw] sm:max-w-md">
                         <div className="w-8 h-8 rounded-full bg-black/20 backdrop-blur-md flex items-center justify-center shrink-0 border border-white/15 shadow-xs">
                             <MapPin className="h-4 w-4 stroke-[2.5] text-[#bef264]" />

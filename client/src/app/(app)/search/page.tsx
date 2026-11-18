@@ -6,22 +6,25 @@ import { useQuery } from "@tanstack/react-query";
 import { getProducts } from "@/services/productService";
 import { getCategories } from "@/services/categoryService";
 import ProductCard from "@/components/ui/ProductCard";
-import { Search, SlidersHorizontal, ArrowLeft, History, X, Sparkles, HelpCircle, Flame, Droplet, Milk, ShoppingBag, Leaf } from "lucide-react";
+import { Search, SlidersHorizontal, ArrowLeft, History, X, HelpCircle, Flame, Mic } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUserStore } from "@/store/useUserStore";
 import { Suspense } from "react";
+import { toast } from "sonner";
 
-const getCategoryIcon = (name: string, active: boolean) => {
-    const n = name.toLowerCase();
-    const iconClass = cn("h-4 w-4 shrink-0 transition-colors", active ? "text-[#056647]" : "text-slate-400");
-    if (n.includes("oil") || n.includes("ghee")) return <Droplet className={iconClass} />;
-    if (n.includes("dairy") || n.includes("milk")) return <Milk className={iconClass} />;
-    if (n.includes("exo")) return <ShoppingBag className={iconClass} />;
-    if (n.includes("leaf") || n.includes("veg") || n.includes("greens")) return <Leaf className={iconClass} />;
-    return <Sparkles className={iconClass} />;
-};
+// Custom category pills with the user's pastel palette
+const SEARCH_CATEGORY_PILLS = [
+    { key: "all", label: "All", pillBg: "bg-[#DCF4E9]", pillText: "text-[#055b35]", match: () => true },
+    { key: "vegetables", label: "Vegetables", pillBg: "bg-[#DCF4E9]", pillText: "text-[#0f5127]", match: (n: string) => /veg/i.test(n) && !/leaf/i.test(n) && !/exotic/i.test(n) },
+    { key: "fruits", label: "Fruits", pillBg: "bg-[#FFE5DF]", pillText: "text-[#8e1b1b]", match: (n: string) => /fruit/i.test(n) && !/exotic/i.test(n) },
+    { key: "dairy", label: "Dairy", pillBg: "bg-[#E0F0FF]", pillText: "text-[#13497d]", match: (n: string) => /dairy|milk|egg/i.test(n) },
+    { key: "leafy", label: "Leafy Veg", pillBg: "bg-[#D8F3E6]", pillText: "text-[#065f46]", match: (n: string) => /leaf/i.test(n) },
+    { key: "exotic", label: "Exotics", pillBg: "bg-[#EBE6FF]", pillText: "text-[#5e2296]", match: (n: string) => /exotic/i.test(n) },
+    { key: "grains", label: "Grains", pillBg: "bg-[#FFF0D2]", pillText: "text-[#92400e]", match: (n: string) => /grain|pulse|flour/i.test(n) },
+    { key: "oil", label: "Oils", pillBg: "bg-[#FCE9D4]", pillText: "text-[#854d0e]", match: (n: string) => /oil|ghee/i.test(n) },
+];
 
-const SUGGESTED_TAGS = ["Carrot", "Potato", "Tomato", "Onion", "Dairy", "Mango"];
+const SUGGESTED_TAGS = ["Tomato", "Potato", "Onion", "Spinach", "Apple", "Banana", "Milk", "Butter"];
 
 function SearchContent() {
     const router = useRouter();
@@ -30,9 +33,10 @@ function SearchContent() {
 
     const [inputValue, setInputValue] = useState(query);
     const [debouncedSearchQuery, setDebouncedSearchQuery] = useState(query);
-    const [activeCategoryId, setActiveCategoryId] = useState<string | null>(null);
+    const [selectedPillKey, setSelectedPillKey] = useState("all");
     const [sort, setSort] = useState<"default" | "price_asc" | "price_desc">("default");
     const [isFocused, setIsFocused] = useState(false);
+    const [isListening, setIsListening] = useState(false);
 
     // Keep input in sync when URL changes
     useEffect(() => {
@@ -40,11 +44,11 @@ function SearchContent() {
         setDebouncedSearchQuery(query);
     }, [query]);
 
-    // 300ms Debounce for typing
+    // 250ms Debounce for typing
     useEffect(() => {
         const handler = setTimeout(() => {
             setDebouncedSearchQuery(inputValue);
-        }, 300);
+        }, 250);
         return () => clearTimeout(handler);
     }, [inputValue]);
 
@@ -74,10 +78,52 @@ function SearchContent() {
     };
 
     const handleSuggestedClick = (tag: string) => {
-        // Strip emoji
-        const cleanTag = tag.replace(/[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD00-\uDFFF]/g, "").trim();
-        setInputValue(cleanTag);
-        handleSearch(cleanTag);
+        setInputValue(tag);
+        handleSearch(tag);
+    };
+
+    const handleVoiceSearch = () => {
+        if (typeof window === "undefined") return;
+        const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+        if (!SpeechRecognition) {
+            toast.error("Voice search is not supported on this browser.");
+            return;
+        }
+
+        try {
+            const recognition = new SpeechRecognition();
+            recognition.lang = "en-IN";
+            recognition.continuous = false;
+            recognition.interimResults = false;
+
+            recognition.onstart = () => {
+                setIsListening(true);
+                toast.info("Listening... speak product name");
+            };
+
+            recognition.onresult = (event: any) => {
+                const speechResult = event.results[0][0].transcript;
+                if (speechResult) {
+                    setInputValue(speechResult);
+                    handleSearch(speechResult);
+                    toast.success(`Searching for "${speechResult}"`);
+                }
+            };
+
+            recognition.onerror = () => {
+                setIsListening(false);
+                toast.error("Could not recognize voice. Please type your search.");
+            };
+
+            recognition.onend = () => {
+                setIsListening(false);
+            };
+
+            recognition.start();
+        } catch {
+            setIsListening(false);
+            toast.error("Could not start microphone.");
+        }
     };
 
     const { data: allProducts, isLoading: isLoadingProducts, isError: isProductsError, refetch: refetchProducts } = useQuery({
@@ -86,11 +132,13 @@ function SearchContent() {
         staleTime: 5 * 60 * 1000,
     });
 
-    const { data: categories } = useQuery({
+    const { data: categoriesData } = useQuery({
         queryKey: ["categories"],
         queryFn: getCategories,
+        staleTime: 5 * 60 * 1000,
     });
 
+    const categories: any[] = Array.isArray(categoriesData) ? categoriesData : (categoriesData?.data || []);
     const activeSearch = debouncedSearchQuery.trim().toLowerCase();
 
     // Helper for Levenshtein Distance (spelling matching)
@@ -118,10 +166,17 @@ function SearchContent() {
         return matrix[b.length][a.length];
     };
 
+    const currentPill = SEARCH_CATEGORY_PILLS.find((p) => p.key === selectedPillKey) || SEARCH_CATEGORY_PILLS[0];
+
     const scoredProducts = (allProducts?.data ?? [])
         .map((p: any) => {
-            const matchesCategory = !activeCategoryId || p.categoryId === activeCategoryId;
-            if (!matchesCategory) return null;
+            // Category filter
+            if (selectedPillKey !== "all") {
+                const catName = p.category?.name || "";
+                if (!currentPill.match(catName) && !currentPill.match(p.name)) {
+                    return null;
+                }
+            }
 
             if (!activeSearch) {
                 return { product: p, tagPosition: 0, spellingScore: 0 };
@@ -146,7 +201,6 @@ function SearchContent() {
             let isMatch = false;
             let tagPosition = 9999;
 
-            // Check tags first to identify keyword index position
             const matchedTagIdx = tagsArray.findIndex((tag: string) => tag.includes(activeSearch));
             if (matchedTagIdx !== -1) {
                 isMatch = true;
@@ -164,7 +218,7 @@ function SearchContent() {
             return {
                 product: p,
                 tagPosition,
-                spellingScore
+                spellingScore,
             };
         })
         .filter(Boolean) as { product: any; tagPosition: number; spellingScore: number }[];
@@ -174,7 +228,6 @@ function SearchContent() {
             if (sort === "price_asc") return Number(a.product.basePrice) - Number(b.product.basePrice);
             if (sort === "price_desc") return Number(b.product.basePrice) - Number(a.product.basePrice);
 
-            // Priority sorting
             if (a.tagPosition !== b.tagPosition) {
                 return a.tagPosition - b.tagPosition;
             }
@@ -183,7 +236,7 @@ function SearchContent() {
             }
             return a.product.name.localeCompare(b.product.name);
         })
-        .map(item => item.product);
+        .map((item) => item.product);
 
     const hasQuery = query.length > 0 || debouncedSearchQuery.length > 0;
 
@@ -196,83 +249,84 @@ function SearchContent() {
     }
 
     return (
-        <div className="pb-28 bg-[#f8faf8] min-h-screen text-[#17251e]">
-            
-            {/* Header: Matching Mockup Image 2 */}
-            <div className="border-b border-[#e5ebe7] bg-white px-4 pt-5 pb-3 space-y-4 sm:px-6">
-                
-                {/* Search Input and Circular Back Button */}
-                <div className="max-w-7xl mx-auto flex items-center gap-3">
+        <div className="pb-28 bg-[#f8faf8] min-h-screen text-[#17251e] select-none">
+            {/* Search Top Bar */}
+            <div className="border-b border-slate-200/80 bg-white px-3 sm:px-6 pt-4 pb-3 space-y-3 sticky top-0 z-40 shadow-xs">
+                {/* Search Input Box */}
+                <div className="max-w-7xl mx-auto flex items-center gap-2.5">
                     <button
-                        aria-label="Go back" onClick={() => router.back()}
-                        className="w-11 h-11 rounded-xl bg-white flex items-center justify-center text-[#17251e] hover:bg-[#e8f7ef] shrink-0"
+                        aria-label="Go back"
+                        onClick={() => router.back()}
+                        className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-700 hover:bg-slate-200 active:scale-95 transition-all shrink-0"
                     >
                         <ArrowLeft className="h-5 w-5" />
                     </button>
                     
                     <div className={cn(
-                        "min-w-0 flex-1 relative flex items-center bg-[#f8faf8] rounded-xl border px-3 h-12 transition-colors",
+                        "min-w-0 flex-1 relative flex items-center bg-slate-50 rounded-2xl border px-3 h-11 sm:h-12 transition-all",
                         isFocused 
-                            ? "border-[#087f5b] ring-1 ring-[#087f5b]" 
-                            : "border-slate-200/80"
+                            ? "border-[#017649] bg-white ring-2 ring-[#017649]/20" 
+                            : "border-slate-200 hover:border-slate-300"
                     )}>
-                        <Search className="h-5 w-5 mr-3 text-slate-400 shrink-0" />
+                        <Search className="h-4.5 w-4.5 mr-2.5 text-slate-400 shrink-0" />
                         <input
                             value={inputValue}
                             onChange={(e) => setInputValue(e.target.value)}
                             onKeyDown={handleKeyDown}
                             onFocus={() => setIsFocused(true)}
                             onBlur={() => setTimeout(() => setIsFocused(false), 200)}
-                            placeholder="Search vegetables, fruits and more"
-                            aria-label="Search products" className="bg-transparent border-none min-w-0 w-full text-slate-700 text-sm focus:outline-none flex-1 placeholder:text-slate-400 placeholder:normal-case"
+                            placeholder="Search fresh vegetables, fruits and more..."
+                            aria-label="Search products"
+                            className="bg-transparent border-none min-w-0 w-full text-slate-900 text-xs sm:text-sm font-medium focus:outline-none flex-1 placeholder:text-slate-400"
                         />
                         {inputValue ? (
                             <button 
-                                onClick={() => setInputValue("")} 
-                                aria-label="Clear search" className="ml-1 flex h-11 w-11 items-center justify-center text-[#64736b] shrink-0"
+                                onClick={() => {
+                                    setInputValue("");
+                                    setDebouncedSearchQuery("");
+                                    router.push("/search");
+                                }} 
+                                aria-label="Clear search"
+                                className="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 shrink-0"
                             >
                                 <X className="h-4 w-4" />
                             </button>
                         ) : null}
+
+                        {/* Mic Voice Search */}
+                        <button
+                            type="button"
+                            onClick={handleVoiceSearch}
+                            aria-label="Voice search"
+                            className={cn(
+                                "flex h-8 w-8 items-center justify-center rounded-full shrink-0 transition-colors ml-1",
+                                isListening ? "bg-rose-50 text-rose-600 animate-pulse" : "text-[#017649] hover:bg-emerald-50"
+                            )}
+                        >
+                            <Mic className="h-4 w-4" />
+                        </button>
                     </div>
                 </div>
 
-                {/* Horizontal Category Chips with Green Line matching Mockup */}
-                <div className="flex overflow-x-auto gap-2 scrollbar-hide py-1 max-w-7xl mx-auto">
-                    <div className="flex flex-col items-center shrink-0">
-                        <button
-                            onClick={() => setActiveCategoryId(null)}
-                            className={cn(
-                                "flex min-h-11 items-center gap-2 text-xs font-medium px-4 py-2 rounded-full border transition-colors",
-                                !activeCategoryId
-                                    ? "bg-[#e8f7ef] text-[#056647] border-[#087f5b]"
-                                    : "bg-white text-slate-500 border-slate-200/80 hover:bg-slate-50"
-                            )}
-                        >
-                            All
-                        </button>
-                        {!activeCategoryId && (
-                            <div className="w-5 h-1 bg-[#0B7A53] rounded-full mt-2 animate-in fade-in duration-300" />
-                        )}
-                    </div>
-                    {categories?.map((cat: any) => {
-                        const active = activeCategoryId === cat.id;
+                {/* Pastel Category Filter Pills Strip */}
+                <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide py-1 max-w-7xl mx-auto">
+                    {SEARCH_CATEGORY_PILLS.map((pill) => {
+                        const isSelected = selectedPillKey === pill.key;
                         return (
-                            <div key={cat.id} className="flex flex-col items-center shrink-0">
+                            <div key={pill.key} className="relative flex flex-col items-center shrink-0">
                                 <button
-                                    onClick={() => setActiveCategoryId(active ? null : cat.id)}
+                                    type="button"
+                                    onClick={() => setSelectedPillKey(pill.key)}
                                     className={cn(
-                                        "flex min-h-11 items-center gap-2 text-xs font-medium px-4 py-2 rounded-full border transition-colors",
-                                        active
-                                            ? "bg-[#e8f7ef] text-[#056647] border-[#087f5b]"
-                                            : "bg-white text-slate-500 border-slate-200/80 hover:bg-slate-50"
+                                        "flex items-center justify-center rounded-full px-3.5 py-1.5 text-xs font-bold transition-all cursor-pointer whitespace-nowrap active:scale-95 shadow-xs border border-white/30",
+                                        pill.pillBg,
+                                        pill.pillText
                                     )}
                                 >
-                                    {getCategoryIcon(cat.name, active)}
-                                    <span>{cat.name}</span>
+                                    <span>{pill.label}</span>
                                 </button>
-                                {active && (
-                                    <div className="w-5 h-1 bg-[#0B7A53] rounded-full mt-2 animate-in fade-in duration-300" />
+                                {isSelected && (
+                                    <span className="absolute -bottom-1 h-[2.5px] w-6 rounded-full bg-[#017649] shadow-xs" />
                                 )}
                             </div>
                         );
@@ -281,45 +335,62 @@ function SearchContent() {
             </div>
 
             {/* Main Content Area */}
-            <div className="px-4 py-6 max-w-7xl mx-auto sm:px-6">
-                
-                {isProductsError && <div role="alert" className="mb-5 rounded-2xl border border-[#e5ebe7] bg-white p-5"><h2 className="text-base font-semibold">We couldn’t load the products</h2><button onClick={() => refetchProducts()} className="mt-3 min-h-11 rounded-lg bg-[#087f5b] px-4 text-sm font-semibold text-white">Try again</button></div>}
-                {isLoadingProducts && <div role="status" className="mb-5 rounded-2xl bg-white p-5 text-sm text-[#64736b]">Loading products…</div>}
+            <div className="px-3 sm:px-6 py-5 max-w-7xl mx-auto">
+                {isProductsError && (
+                    <div role="alert" className="mb-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-center">
+                        <p className="font-bold text-amber-900 text-xs">Could not load products</p>
+                        <button
+                            onClick={() => refetchProducts()}
+                            className="mt-2 rounded-lg bg-[#017649] px-3 py-1 text-xs font-bold text-white hover:bg-[#015f3b]"
+                        >
+                            Try again
+                        </button>
+                    </div>
+                )}
+
+                {isLoadingProducts && (
+                    <div className="grid grid-cols-3 gap-2 sm:gap-3.5">
+                        {Array.from({ length: 9 }, (_, i) => (
+                            <div key={i} className="aspect-square rounded-2xl bg-slate-200/60 animate-pulse" />
+                        ))}
+                    </div>
+                )}
+
                 {/* 1. Default Landing State (No search term) */}
                 {!hasQuery && (
-                    <div className="space-y-7">
-                        
-                        {/* Recent Searches Block */}
+                    <div className="space-y-6">
+                        {/* Recent Searches */}
                         {recent.length > 0 && (
-                            <div className="space-y-4">
+                            <div className="space-y-3">
                                 <div className="flex items-center justify-between px-1">
-                                    <h3 className="text-base font-semibold text-[#17251e] flex items-center gap-2">
-                                        <History className="h-4 w-4 text-slate-350" /> 
-                                        Recent searches
-                                    </h3>
+                                    <h2 className="text-xs sm:text-sm font-bold text-slate-800 flex items-center gap-1.5">
+                                        <History className="h-3.5 w-3.5 text-slate-400" />
+                                        <span>Recent searches</span>
+                                    </h2>
                                     <button 
                                         onClick={clear} 
-                                        className="text-[10px] font-black text-red-500 uppercase tracking-widest hover:text-red-650 transition-colors"
+                                        className="text-[10px] font-bold text-rose-600 hover:text-rose-700 uppercase tracking-wider"
                                     >
                                         Clear All
                                     </button>
                                 </div>
-                                <div className="flex flex-wrap gap-2.5">
-                                    {recent.slice(0, 5).map((term, i) => (
+                                <div className="flex flex-wrap gap-2">
+                                    {recent.slice(0, 6).map((term, i) => (
                                         <div
                                             key={i}
-                                            className="flex items-center bg-white border border-slate-200/60 text-slate-700 text-[10px] font-bold uppercase tracking-wider px-4.5 py-2.5 rounded-2xl shadow-sm hover:border-emerald-500/20 transition-all hover:scale-102 group relative overflow-hidden"
+                                            className="flex items-center bg-white border border-slate-200 text-slate-700 text-xs font-semibold px-3 py-1.5 rounded-full shadow-2xs hover:border-[#017649] transition-all"
                                         >
                                             <button
                                                 onClick={() => handleSearch(term)}
-                                                className="flex items-center gap-2 pr-6"
+                                                className="flex items-center gap-1.5 pr-2"
                                             >
-                                                <Search className="h-3 w-3 text-emerald-600/30" />
-                                                {term}
+                                                <Search className="h-3 w-3 text-slate-400" />
+                                                <span>{term}</span>
                                             </button>
                                             <button
-                                                aria-label={`Remove ${term} from recent searches`} onClick={() => removeRecentSearch(term)}
-                                                className="absolute right-2 text-slate-350 hover:text-red-500 p-0.5 rounded-md hover:bg-red-500/5 transition-colors"
+                                                aria-label={`Remove ${term}`}
+                                                onClick={() => removeRecentSearch(term)}
+                                                className="text-slate-400 hover:text-rose-600"
                                             >
                                                 <X className="h-3 w-3" />
                                             </button>
@@ -330,58 +401,56 @@ function SearchContent() {
                         )}
 
                         {/* Popular Keywords / Suggested Tags */}
-                        <div className="space-y-4">
-                            <h3 className="text-base font-semibold text-[#17251e] flex items-center gap-2 px-1">
-                                <Flame className="h-4 w-4 text-amber-500" />
-                                Try searching for
-                            </h3>
-                            <div className="flex flex-wrap gap-2.5">
+                        <div className="space-y-3">
+                            <h2 className="text-xs sm:text-sm font-bold text-slate-800 flex items-center gap-1.5 px-1">
+                                <Flame className="h-3.5 w-3.5 text-amber-500" />
+                                <span>Trending searches</span>
+                            </h2>
+                            <div className="flex flex-wrap gap-2">
                                 {SUGGESTED_TAGS.map((tag) => (
                                     <button
                                         key={tag}
                                         onClick={() => handleSuggestedClick(tag)}
-                                        className="bg-white hover:bg-emerald-50 hover:text-[#0b5c3e] text-slate-600 text-[10px] font-bold uppercase tracking-wider px-4.5 py-3 rounded-2xl border border-slate-200/80 shadow-sm transition-all hover:scale-105 active:scale-95 flex items-center gap-1.5"
+                                        className="bg-white hover:bg-emerald-50 hover:text-[#017649] hover:border-[#017649] text-slate-700 text-xs font-semibold px-3.5 py-1.5 rounded-full border border-slate-200 shadow-2xs transition-all active:scale-95"
                                     >
                                         {tag}
                                     </button>
                                 ))}
                             </div>
                         </div>
-                        
-                        {/* Recommended Products Grid matching Mockup Image 2 */}
-                        <div className="space-y-6 pt-2">
+
+                        {/* Explore Products Grid in 3x3 layout */}
+                        <div className="space-y-3 pt-2">
                             <div className="flex items-center justify-between px-1">
-                                <div className="flex items-center gap-3 flex-1">
-                                    <h3 className="text-lg font-bold text-[#17251e]">
-                                        Explore products
-                                    </h3>
-                                    <div className="h-px bg-slate-100 flex-1" />
-                                </div>
+                                <h2 className="text-base sm:text-lg font-black text-slate-900 tracking-tight">
+                                    {selectedPillKey === "all" ? "Recommended picks" : `${currentPill.label} collection`}
+                                </h2>
                                 <button 
                                     onClick={() => router.push('/categories')}
-                                    className="text-[11px] font-black text-[#0B7A53] uppercase tracking-wider pl-4 shrink-0 hover:underline"
+                                    className="text-xs font-bold text-[#017649] hover:underline"
                                 >
-                                    View All &gt;
+                                    View all categories →
                                 </button>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6">
-                                {(allProducts?.data ?? []).slice(0, 4).map((p: any, idx: number) => (
+                            <div className="grid grid-cols-3 gap-2 sm:gap-3.5">
+                                {results.slice(0, 9).map((p: any, idx: number) => (
                                     <div 
                                         key={p.id} 
-                                        className="animate-in fade-in slide-in-from-bottom-6 duration-500"
-                                        style={{ animationDelay: `${idx * 80}ms` }}
+                                        className="animate-fade-in"
+                                        style={{ animationDelay: `${idx * 25}ms` }}
                                     >
                                         <ProductCard
                                             id={p.id}
                                             name={p.name}
-                                            images={p.images}
-                                            basePrice={Number(p.basePrice)}
-                                            weight={Number(p.weight)}
+                                            images={p.images || []}
+                                            basePrice={Number(p.basePrice || 0)}
+                                            weight={p.weight}
                                             weightUnit={p.weightUnit}
-                                            inventory={p.inventory}
-                                            pricing={p.pricing}
-                                            variants={p.variants}
+                                            inventory={p.inventory || []}
+                                            pricing={p.pricing || []}
+                                            variants={p.variants || []}
+                                            compact
                                         />
                                     </div>
                                 ))}
@@ -392,83 +461,78 @@ function SearchContent() {
 
                 {/* 2. Results Screen (When query is active) */}
                 {hasQuery && (
-                    <div className="animate-in fade-in slide-in-from-bottom-6 duration-500">
-                        
+                    <div className="space-y-4">
                         {/* Filter & Counter Row */}
-                        <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
+                        <div className="flex items-center justify-between gap-3 px-1">
                             <div>
-                                <h2 className="text-lg font-bold text-[#17251e] leading-tight flex items-center gap-2">
-                                    <span>{results.length} Matches Found</span>
+                                <h2 className="text-sm sm:text-base font-black text-slate-900 leading-tight">
+                                    {results.length} {results.length === 1 ? "product" : "products"} found
                                 </h2>
-                                <p className="text-xs font-medium text-[#64736b] mt-2">
-                                    Searching for &ldquo;{debouncedSearchQuery || query}&rdquo;
+                                <p className="text-[11px] font-medium text-slate-500 mt-0.5">
+                                    Results for &ldquo;{debouncedSearchQuery || query}&rdquo;
                                 </p>
                             </div>
                             
                             {/* Sort select */}
                             <div className="relative flex items-center">
-                                <SlidersHorizontal className="h-4 w-4 text-emerald-600 absolute left-4 pointer-events-none" />
+                                <SlidersHorizontal className="h-3.5 w-3.5 text-[#017649] absolute left-3 pointer-events-none" />
                                 <select
                                     value={sort}
                                     onChange={(e) => setSort(e.target.value as typeof sort)}
-                                    aria-label="Sort search results" className="pl-11 pr-8 h-11 bg-white border border-slate-200 rounded-2xl text-xs font-medium appearance-none focus:outline-none cursor-pointer text-slate-655 hover:bg-[#f4f7f5] hover:border-emerald-500/20 transition-all shadow-sm focus:ring-2 focus:ring-emerald-500/25"
+                                    aria-label="Sort search results"
+                                    className="pl-8 pr-6 h-9 bg-white border border-slate-200 rounded-xl text-xs font-bold appearance-none focus:outline-none cursor-pointer text-slate-700 hover:border-[#017649] transition-all shadow-2xs"
                                 >
-                                    <option value="default">Sort: Featured</option>
+                                    <option value="default">Featured</option>
                                     <option value="price_asc">Price: Low to High</option>
                                     <option value="price_desc">Price: High to Low</option>
                                 </select>
                             </div>
                         </div>
 
-                        {/* Results Grid / Empty state */}
+                        {/* 3x3 Results Grid or Empty State */}
                         {!isLoadingProducts && !isProductsError && results.length === 0 ? (
-                            <div className="flex flex-col items-center justify-center py-20 gap-6 animate-in zoom-in-95 duration-500">
-                                <div className="w-24 h-24 bg-white rounded-[2rem] flex items-center justify-center border border-slate-100 shadow-sm">
-                                    <HelpCircle className="h-10 w-10 text-emerald-550/20" />
+                            <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
+                                <div className="w-16 h-16 bg-emerald-50 rounded-full flex items-center justify-center text-[#017649]">
+                                    <HelpCircle className="h-8 w-8" />
                                 </div>
-                                <div className="text-center space-y-2">
-                                    <p className="text-xl font-semibold text-[#17251e]">No Matches Found</p>
-                                    <p className="text-sm text-center px-4 text-[#64736b] leading-relaxed">
-                                        We couldn&apos;t find anything for &ldquo;{debouncedSearchQuery || query}&rdquo;. <br/>Try simple terms like &ldquo;Potato&rdquo;, &ldquo;Onion&rdquo;, or &ldquo;Fresh&rdquo;.
+                                <div className="space-y-1">
+                                    <p className="text-base font-bold text-slate-900">No products found</p>
+                                    <p className="text-xs text-slate-500 max-w-xs mx-auto">
+                                        We couldn&apos;t find anything matching &ldquo;{debouncedSearchQuery || query}&rdquo;. Try simple terms like Tomato, Onion, or Potato.
                                     </p>
                                 </div>
                                 
-                                {/* Smart Alternative suggestions */}
-                                <div className="space-y-3 w-full max-w-sm pt-4">
-                                    <p className="text-[9px] font-black text-emerald-800 dark:text-emerald-400 uppercase tracking-[0.3em] text-center">
-                                        Suggested searches
-                                    </p>
-                                    <div className="flex flex-wrap justify-center gap-2">
-                                        {["Potato", "Onion", "Tomato", "Dairy"].map(tag => (
-                                            <button
-                                                key={tag}
-                                                onClick={() => handleSuggestedClick(tag)}
-                                                className="bg-white hover:bg-emerald-50 hover:text-[#0b5c3e] text-slate-655 text-[10px] font-bold uppercase tracking-wider px-3.5 py-2 rounded-xl border border-slate-200 shadow-sm transition-all"
-                                            >
-                                                {tag}
-                                            </button>
-                                        ))}
-                                    </div>
+                                <div className="flex flex-wrap justify-center gap-2 pt-2">
+                                    {["Tomato", "Potato", "Onion", "Milk"].map((tag) => (
+                                        <button
+                                            key={tag}
+                                            onClick={() => handleSuggestedClick(tag)}
+                                            className="bg-white text-xs font-semibold px-3 py-1.5 rounded-full border border-slate-200 shadow-2xs hover:border-[#017649] text-[#017649]"
+                                        >
+                                            {tag}
+                                        </button>
+                                    ))}
                                 </div>
                             </div>
                         ) : (
-                            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6">
+                            <div className="grid grid-cols-3 gap-2 sm:gap-3.5">
                                 {results.map((p: any, idx: number) => (
                                     <div 
                                         key={p.id}
-                                        className="animate-in fade-in slide-in-from-bottom-4 duration-500"
-                                        style={{ animationDelay: `${idx * 40}ms` }}
+                                        className="animate-fade-in"
+                                        style={{ animationDelay: `${idx * 25}ms` }}
                                     >
                                         <ProductCard
                                             id={p.id}
                                             name={p.name}
-                                            images={p.images}
-                                            basePrice={Number(p.basePrice)}
-                                            weight={Number(p.weight)}
+                                            images={p.images || []}
+                                            basePrice={Number(p.basePrice || 0)}
+                                            weight={p.weight}
                                             weightUnit={p.weightUnit}
-                                            inventory={p.inventory}
-                                            pricing={p.pricing}
-                                            variants={p.variants}
+                                            inventory={p.inventory || []}
+                                            pricing={p.pricing || []}
+                                            variants={p.variants || []}
+                                            compact
                                         />
                                     </div>
                                 ))}

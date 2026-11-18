@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { usePathname } from "next/navigation";
 import { useCartStore } from "@/store/useCartStore";
+import { useCategoryThemeStore, CATEGORY_THEMES } from "@/store/useCategoryThemeStore";
 import { ShoppingBag, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import CartDrawer from "./CartDrawer";
@@ -11,6 +12,8 @@ export default function FloatingCart() {
     const pathname = usePathname();
     const { totalItems, totalPrice } = useCartStore();
     const [drawerOpen, setDrawerOpen] = useState(false);
+    const selectedCategory = useCategoryThemeStore((state) => state.selectedCategory);
+    const activeTheme = CATEGORY_THEMES[selectedCategory] || CATEGORY_THEMES.all;
 
     if (totalItems === 0 || pathname.startsWith("/products/")) return null;
 
@@ -19,9 +22,10 @@ export default function FloatingCart() {
             {/* Floating centered oval badge */}
             <button
                 onClick={() => setDrawerOpen(true)}
+                style={{ backgroundColor: activeTheme.themeColor }}
                 className={cn(
-                    "fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-50 bg-[#087f5b] text-white w-[calc(100%-2rem)] max-w-lg h-14 shadow-sm",
-                    "flex items-center justify-between px-4 py-2 rounded-xl border border-white/20 transition-colors hover:bg-[#056647]"
+                    "fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-50 text-white w-[calc(100%-2rem)] max-w-lg h-14 shadow-md",
+                    "flex items-center justify-between px-4 py-2 rounded-xl border border-white/20 transition-all duration-500 hover:brightness-105 active:scale-[0.99]"
                 )}
                 aria-label="Open cart"
             >

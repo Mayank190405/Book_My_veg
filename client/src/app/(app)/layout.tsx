@@ -17,6 +17,7 @@ import { getBaseURL } from "@/services/api";
 
 import PagePreloader from "@/components/ui/PagePreloader";
 import TopProgressBar from "@/components/ui/TopProgressBar";
+import { useCategoryThemeStore, CATEGORY_THEMES } from "@/store/useCategoryThemeStore";
 
 import ShareModal from "@/components/ui/ShareModal";
 
@@ -28,6 +29,8 @@ export default function AppLayout({
     const { totalItems, syncWithBackend } = useCartStore();
     const pathname = usePathname();
     const router = useRouter();
+    const selectedCategory = useCategoryThemeStore((state) => state.selectedCategory);
+    const activeTheme = CATEGORY_THEMES[selectedCategory] || CATEGORY_THEMES.all;
     const { user, _hasHydrated, location, setLocation, activeStore, setActiveStore, setServiceArea, serviceArea, nearbyStoreWithStock, setNearbyStoreWithStock } = useUserStore();
 
     useEffect(() => {
@@ -301,15 +304,20 @@ export default function AppLayout({
             <WelcomeFlow />
             <main 
                 id="main-scroll-container"
-                className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-hide bg-[#f8faf8] overscroll-contain"
+                style={{ backgroundColor: activeTheme.lightBg || "#f8faf8" }}
+                className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-hide overscroll-contain transition-colors duration-500"
             >
                 <div 
                     key={pathname} 
                     className={cn(
-                        "w-full min-h-full flex flex-col",
-                        showHeader ? "pt-[176px]" : "pt-0",
+                        "w-full min-h-full flex flex-col transition-colors duration-500",
+                        showHeader ? "pt-[164px] sm:pt-[172px]" : "pt-0",
                         !isChat && !isExcludedFromCartAndNav ? (showFloatingCart && totalItems > 0 ? "pb-44" : "pb-24") : "pb-0"
                     )}
+                    style={{
+                        paddingTop: showHeader ? "var(--bmv-header-height, 164px)" : undefined,
+                        backgroundColor: activeTheme.lightBg || "#f8faf8",
+                    }}
                 >
                     {children}
                 </div>

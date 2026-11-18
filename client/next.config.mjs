@@ -14,9 +14,6 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
   reactCompiler: true,
   output: "standalone",
   webpack: (config) => {
