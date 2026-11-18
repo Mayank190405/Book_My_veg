@@ -249,7 +249,7 @@ function SearchContent() {
     }
 
     return (
-        <div className="pb-28 bg-[#f8faf8] min-h-screen text-[#17251e] select-none">
+        <div className="pb-36 sm:pb-40 bg-[#f8faf8] min-h-screen text-[#17251e] select-none">
             {/* Search Top Bar */}
             <div className="border-b border-slate-200/80 bg-white px-3 sm:px-6 pt-4 pb-3 space-y-3 sticky top-0 z-40 shadow-xs">
                 {/* Search Input Box */}

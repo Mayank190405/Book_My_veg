@@ -14,7 +14,7 @@ export default function Home() {
     return (
         <div 
             style={{ backgroundColor: activeTheme.lightBg || "#e9f6ef" }}
-            className="w-full space-y-6 pb-12 transition-colors duration-500 min-h-screen"
+            className="w-full space-y-6 pb-36 sm:pb-40 transition-colors duration-500 min-h-screen"
         >
             {/* Seamless Header-to-Hero Canopy - Matches User Mockup */}
             <section

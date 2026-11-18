@@ -283,22 +283,21 @@ export default function ProductCard({
                     {currentWeight}
                 </span>
 
-                {/* Bottom Row: Price on Left + Action Button on Right */}
-                <div className="mt-auto pt-1.5 flex items-center justify-between gap-1">
-                    <div className="flex flex-col min-w-0">
-                        <div className="flex items-baseline gap-1">
-                            <span className="text-xs sm:text-sm font-black tabular-nums text-slate-950">
-                                ₹{finalPrice.toFixed(0)}
+                {/* Bottom Area: Price Row on top, Action Button below (prevents any overlapping in 3-column layout) */}
+                <div className="mt-auto pt-2 space-y-1.5">
+                    {/* Price Row */}
+                    <div className="flex items-baseline gap-1 min-w-0">
+                        <span className="text-xs sm:text-sm font-black tabular-nums text-slate-950">
+                            ₹{finalPrice.toFixed(0)}
+                        </span>
+                        {discount && (
+                            <span className="text-[9px] sm:text-[10px] font-semibold text-slate-400 line-through">
+                                ₹{currentPrice.toFixed(0)}
                             </span>
-                            {discount && (
-                                <span className="text-[9px] sm:text-[10px] font-semibold text-slate-400 line-through">
-                                    ₹{currentPrice.toFixed(0)}
-                                </span>
-                            )}
-                        </div>
+                        )}
                     </div>
 
-                    {/* ADD / Stepper / Notify Button matching user reference */}
+                    {/* Action Button: Full width of the card */}
                     {activeQty === 0 ? (
                         isOutOfStock ? (
                             <button
@@ -306,9 +305,9 @@ export default function ProductCard({
                                 onClick={handleNotify}
                                 disabled={isNotified}
                                 className={cn(
-                                    "flex h-6 sm:h-7 items-center gap-1 rounded-lg px-1.5 sm:px-2 text-[9px] sm:text-[10px] font-bold whitespace-nowrap transition-all shadow-2xs active:scale-95",
+                                    "w-full flex h-6 sm:h-7 items-center justify-center gap-1 rounded-lg px-1 text-[9px] sm:text-[10px] font-bold whitespace-nowrap transition-all shadow-2xs active:scale-95",
                                     isNotified
-                                        ? "border border-emerald-200 bg-emerald-50/70 text-emerald-700"
+                                        ? "border border-emerald-200 bg-emerald-50/80 text-emerald-700"
                                         : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                                 )}
                             >
@@ -335,29 +334,29 @@ export default function ProductCard({
                                         handleAdd(e, v.id, v.name, Number(v.price), v.inventory);
                                     } else handleAdd(e);
                                 }}
-                                className="flex h-6 sm:h-7 min-w-[46px] sm:min-w-[56px] items-center justify-center rounded-lg border border-[#3da872]/60 bg-[#e8f7ef] hover:bg-[#d5f3e2] hover:border-[#017649] px-2.5 text-[10px] sm:text-xs font-bold uppercase tracking-wider text-[#017649] transition-all duration-200 active:scale-95 shadow-2xs"
+                                className="w-full flex h-6 sm:h-7 items-center justify-center rounded-lg border border-[#3da872]/60 bg-[#e8f7ef] hover:bg-[#d5f3e2] hover:border-[#017649] text-[10px] sm:text-xs font-bold uppercase tracking-wider text-[#017649] transition-all duration-200 active:scale-95 shadow-2xs"
                             >
                                 <span>ADD</span>
                             </button>
                         )
                     ) : (
-                        <div className="flex items-center rounded-lg bg-[#017649] text-white shadow-xs overflow-hidden h-6 sm:h-7">
+                        <div className="w-full flex items-center justify-between rounded-lg bg-[#017649] text-white shadow-xs overflow-hidden h-6 sm:h-7">
                             <button
                                 type="button"
                                 aria-label="Decrease quantity"
                                 onClick={(e) => handleQty(e, -1)}
-                                className="flex h-full w-5 sm:w-6 items-center justify-center hover:bg-[#015f3b] active:scale-95 transition-colors"
+                                className="flex h-full w-6 sm:w-7 items-center justify-center hover:bg-[#015f3b] active:scale-95 transition-colors"
                             >
                                 <Minus className="h-2.5 w-2.5 stroke-[3]" />
                             </button>
-                            <span className="min-w-3 text-center text-[10px] sm:text-xs font-black tabular-nums">
+                            <span className="flex-1 text-center text-[10px] sm:text-xs font-black tabular-nums">
                                 {activeQty}
                             </span>
                             <button
                                 type="button"
                                 aria-label="Increase quantity"
                                 onClick={(e) => handleQty(e, 1)}
-                                className="flex h-full w-5 sm:w-6 items-center justify-center hover:bg-[#015f3b] active:scale-95 transition-colors"
+                                className="flex h-full w-6 sm:w-7 items-center justify-center hover:bg-[#015f3b] active:scale-95 transition-colors"
                             >
                                 <Plus className="h-2.5 w-2.5 stroke-[3]" />
                             </button>
