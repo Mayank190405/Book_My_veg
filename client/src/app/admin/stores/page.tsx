@@ -35,7 +35,15 @@ import {
     Tag,
     ChevronDown,
     PlusCircle,
-    MinusCircle
+    MinusCircle,
+    Truck,
+    ShoppingBag,
+    Copy,
+    CheckCircle2,
+    XCircle,
+    Zap,
+    ToggleLeft,
+    ToggleRight
 } from "lucide-react";
 import { useState, useEffect, useMemo, useRef } from "react";
 import { cn } from "@/lib/utils";
@@ -45,6 +53,41 @@ import { toast } from "sonner";
 import Image from "next/image";
 
 const WEIGHT_UNITS = ["GM", "KG", "PIECE", "PACK", "LITRE", "ML"];
+
+const WEIGHT_PRESETS = [
+    { label: "250g", weight: "250", unit: "GM", name: "250 gm", factor: 0.28 },
+    { label: "500g", weight: "500", unit: "GM", name: "500 gm", factor: 0.52 },
+    { label: "1kg", weight: "1", unit: "KG", name: "1 kg", factor: 1.0 },
+    { label: "2kg", weight: "2", unit: "KG", name: "2 kg", factor: 1.95 },
+    { label: "5kg", weight: "5", unit: "KG", name: "5 kg", factor: 4.8 },
+    { label: "1 Pc", weight: "1", unit: "PIECE", name: "1 pc", factor: 1.0 },
+    { label: "1 Pkt", weight: "1", unit: "PACK", name: "1 packet", factor: 1.0 },
+    { label: "1 Bunch", weight: "1", unit: "PIECE", name: "1 bunch", factor: 1.0 },
+    { label: "250ml", weight: "250", unit: "ML", name: "250 ml", factor: 0.28 },
+    { label: "500ml", weight: "500", unit: "ML", name: "500 ml", factor: 0.52 },
+    { label: "1L", weight: "1", unit: "LITRE", name: "1 litre", factor: 1.0 },
+];
+
+const defaultStoreForm = {
+    name: "",
+    slug: "",
+    address: "",
+    contactNumber: "",
+    gstNumber: "",
+    password: "",
+    latitude: "",
+    longitude: "",
+    deliveryRadius: "10.0",
+    isOpen: true,
+    isDeliveryEnabled: true,
+    isWebsiteEnabled: true,
+    isPickupEnabled: true,
+    minOrderValue: "0",
+    deliveryFee: "0",
+    freeDeliveryAbove: "0",
+    upiId: "",
+    purchaseManagerId: ""
+};
 
 export default function AdminStores() {
     // Primary Tab: "network" (Hubs) or "variants_stock" (Store Variants, Stock & Ordering)
@@ -94,19 +137,7 @@ export default function AdminStores() {
         isActive: true
     });
 
-    const [formData, setFormData] = useState({
-        name: "",
-        slug: "",
-        address: "",
-        contactNumber: "",
-        gstNumber: "",
-        password: "",
-        latitude: "",
-        longitude: "",
-        deliveryRadius: "10.0",
-        upiId: "",
-        purchaseManagerId: ""
-    });
+    const [formData, setFormData] = useState(defaultStoreForm);
     const [showPassword, setShowPassword] = useState(false);
 
     // Fetch Stores
@@ -210,19 +241,7 @@ export default function AdminStores() {
                 toast.success("New store location added successfully");
             }
             setIsAddOpen(false);
-            setFormData({ 
-                name: "", 
-                slug: "", 
-                address: "", 
-                contactNumber: "", 
-                gstNumber: "", 
-                password: "", 
-                latitude: "", 
-                longitude: "", 
-                deliveryRadius: "10.0", 
-                upiId: "", 
-                purchaseManagerId: "" 
-            });
+            setFormData(defaultStoreForm);
             setEditingStore(null);
             fetchStores();
         } catch (error) {
@@ -238,6 +257,28 @@ export default function AdminStores() {
             fetchStores();
         } catch (error) {
             toast.error("Failed to delete store");
+        }
+    };
+
+    // Instant Store Feature Toggles (Sell on Website, Deliver Orders, Pickup, Open)
+    const handleToggleStoreFeature = async (
+        storeId: string, 
+        feature: "isDeliveryEnabled" | "isWebsiteEnabled" | "isPickupEnabled" | "isOpen", 
+        currentVal: boolean
+    ) => {
+        const nextVal = !currentVal;
+        try {
+            await api.patch(`/locations/${storeId}`, { [feature]: nextVal });
+            setStores(prev => prev.map(s => s.id === storeId ? { ...s, [feature]: nextVal } : s));
+            const labels: Record<string, string> = {
+                isDeliveryEnabled: "Home Delivery",
+                isWebsiteEnabled: "Sell on Website",
+                isPickupEnabled: "Store Pickup",
+                isOpen: "Store Status"
+            };
+            toast.success(`${labels[feature] || feature} set to ${nextVal ? "Enabled" : "Disabled"}`);
+        } catch (err: any) {
+            toast.error("Failed to update store option");
         }
     };
 
@@ -297,20 +338,133 @@ export default function AdminStores() {
     };
 
     // Open Add Variant Modal
-    const handleOpenAddVariant = (product?: any) => {
+    const handleOpenAddVariant = (product?: any, cloneData?: any) => {
         const targetProd = product || products[0];
         setSelectedProductForVariant(targetProd);
-        setVariantForm({
-            productId: targetProd?.id || "",
-            name: "",
-            price: targetProd?.basePrice ? String(targetProd.basePrice) : "",
-            weight: "500",
-            weightUnit: "GM",
-            initialStock: "25",
-            thresholdStock: "5",
-            isActive: true
-        });
+        if (cloneData) {
+            setVariantForm({
+                productId: targetProd?.id || "",
+                name: cloneData.name || "",
+                price: cloneData.price ? String(cloneData.price) : "",
+                weight: cloneData.weight ? String(cloneData.weight) : "",
+                weightUnit: cloneData.weightUnit || "GM",
+                initialStock: cloneData.initialStock ? String(cloneData.initialStock) : "25",
+                thresholdStock: "5",
+                isActive: true
+            });
+        } else {
+            const baseP = Number(targetProd?.basePrice || 0);
+            setVariantForm({
+                productId: targetProd?.id || "",
+                name: "500 gm",
+                price: baseP > 0 ? String(Math.max(1, Math.round(baseP * 0.52))) : "",
+                weight: "500",
+                weightUnit: "GM",
+                initialStock: "25",
+                thresholdStock: "5",
+                isActive: true
+            });
+        }
         setIsVariantModalOpen(true);
+    };
+
+    // Apply quick preset to variant form
+    const handleApplyWeightPreset = (preset: typeof WEIGHT_PRESETS[0]) => {
+        const baseP = Number(selectedProductForVariant?.basePrice || 0);
+        const suggestedP = baseP > 0 ? String(Math.max(1, Math.round(baseP * preset.factor))) : variantForm.price;
+        setVariantForm(prev => ({
+            ...prev,
+            name: preset.name,
+            weight: preset.weight,
+            weightUnit: preset.unit,
+            price: suggestedP || prev.price
+        }));
+    };
+
+    // 1-Click Fast Standard Packs Creator (250g, 500g, 1kg)
+    const handleBatchCreateStandardVariants = async (product: any) => {
+        if (!product || !selectedStoreId) {
+            toast.error("Please select a store and target product");
+            return;
+        }
+        const baseP = Number(product.basePrice || 40);
+        const standardPacks = [
+            { name: "250 gm", weight: 250, weightUnit: "GM", price: Math.max(1, Math.round(baseP * 0.28)), initialStock: 25 },
+            { name: "500 gm", weight: 500, weightUnit: "GM", price: Math.max(1, Math.round(baseP * 0.52)), initialStock: 30 },
+            { name: "1 kg", weight: 1, weightUnit: "KG", price: Math.max(1, Math.round(baseP * 1.0)), initialStock: 40 }
+        ];
+
+        setVariantSubmitting(true);
+        let createdCount = 0;
+        try {
+            for (const pack of standardPacks) {
+                const alreadyExists = (product.variants || []).some(
+                    (v: any) => v.name.toLowerCase().trim() === pack.name.toLowerCase().trim()
+                );
+                if (alreadyExists) continue;
+
+                await api.post("/variants", {
+                    productId: product.id,
+                    name: pack.name,
+                    price: pack.price,
+                    weight: pack.weight,
+                    weightUnit: pack.weightUnit,
+                    locationId: selectedStoreId,
+                    initialStock: pack.initialStock,
+                    thresholdStock: 5,
+                    isActive: true
+                });
+                createdCount++;
+            }
+
+            if (createdCount > 0) {
+                toast.success(`Created ${createdCount} standard website variants for ${product.name}!`);
+            } else {
+                toast.info(`Standard variants (250g, 500g, 1kg) already exist for ${product.name}.`);
+            }
+            setIsVariantModalOpen(false);
+            await fetchProducts();
+            if (selectedStoreId) await fetchStoreInventory(selectedStoreId);
+        } catch (err: any) {
+            toast.error(err.response?.data?.message || "Failed to batch create variants");
+        } finally {
+            setVariantSubmitting(false);
+        }
+    };
+
+    // Clone Variant helper
+    const handleCloneVariant = (product: any, variant: any) => {
+        handleOpenAddVariant(product, {
+            name: `${variant.name} (Copy)`,
+            price: variant.price,
+            weight: variant.weight,
+            weightUnit: variant.weightUnit,
+            initialStock: getVariantStock(product.id, variant.id) || 25
+        });
+    };
+
+    // Delete Variant
+    const handleDeleteVariant = async (variantId: string, variantName: string) => {
+        if (!confirm(`Are you sure you want to delete variant "${variantName}"? This will also remove its store inventory.`)) return;
+        try {
+            await api.delete(`/variants/${variantId}`);
+            toast.success(`Variant "${variantName}" deleted`);
+            fetchProducts();
+            if (selectedStoreId) fetchStoreInventory(selectedStoreId);
+        } catch (err: any) {
+            toast.error(err.response?.data?.message || "Failed to delete variant");
+        }
+    };
+
+    // Toggle Variant Active Status
+    const handleToggleVariant = async (variantId: string) => {
+        try {
+            await api.patch(`/variants/${variantId}/toggle`);
+            toast.success("Variant status toggled");
+            fetchProducts();
+        } catch (err: any) {
+            toast.error("Failed to toggle variant status");
+        }
     };
 
     // Save Variant for this Store
@@ -704,6 +858,192 @@ export default function AdminStores() {
                                     </div>
                                 </div>
 
+                                {/* SECTION: WEBSITE SELLING & DELIVERY FULFILLMENT CONTROLS */}
+                                <div className="px-6 md:px-8 pb-8 pt-2 space-y-5 border-t border-slate-100">
+                                    <div className="flex items-center justify-between">
+                                        <div>
+                                            <h4 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                                                <Globe className="h-4 w-4 text-emerald-600" />
+                                                <span>Fulfillment & Website Channels</span>
+                                            </h4>
+                                            <p className="text-xs text-slate-500">
+                                                Decide if this store accepts website orders, offers home delivery, or in-store pickup.
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    {/* 4 Interactive Channel Toggle Switches */}
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                                        {/* 1. Sell on Website */}
+                                        <div 
+                                            onClick={() => setFormData({ ...formData, isWebsiteEnabled: !formData.isWebsiteEnabled })}
+                                            className={cn(
+                                                "p-4 rounded-xl border transition-all cursor-pointer select-none flex flex-col justify-between gap-3",
+                                                formData.isWebsiteEnabled 
+                                                    ? "bg-emerald-50/60 border-emerald-300 ring-2 ring-emerald-500/10" 
+                                                    : "bg-slate-50 border-slate-200 opacity-70"
+                                            )}
+                                        >
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                                                    <Globe className="h-3.5 w-3.5 text-emerald-600" /> Sell on Website
+                                                </span>
+                                                {formData.isWebsiteEnabled ? (
+                                                    <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-600 text-white">
+                                                        Active
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-slate-300 text-slate-700">
+                                                        Off
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <p className="text-[11px] text-slate-500 leading-tight">
+                                                Show store catalog and allow online customer orders.
+                                            </p>
+                                        </div>
+
+                                        {/* 2. Deliver Orders */}
+                                        <div 
+                                            onClick={() => setFormData({ ...formData, isDeliveryEnabled: !formData.isDeliveryEnabled })}
+                                            className={cn(
+                                                "p-4 rounded-xl border transition-all cursor-pointer select-none flex flex-col justify-between gap-3",
+                                                formData.isDeliveryEnabled 
+                                                    ? "bg-teal-50/60 border-teal-300 ring-2 ring-teal-500/10" 
+                                                    : "bg-slate-50 border-slate-200 opacity-70"
+                                            )}
+                                        >
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                                                    <Truck className="h-3.5 w-3.5 text-teal-600" /> Deliver Orders
+                                                </span>
+                                                {formData.isDeliveryEnabled ? (
+                                                    <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-teal-600 text-white">
+                                                        Active
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-slate-300 text-slate-700">
+                                                        Off
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <p className="text-[11px] text-slate-500 leading-tight">
+                                                Store team / riders deliver orders directly to customers.
+                                            </p>
+                                        </div>
+
+                                        {/* 3. Customer Pickup */}
+                                        <div 
+                                            onClick={() => setFormData({ ...formData, isPickupEnabled: !formData.isPickupEnabled })}
+                                            className={cn(
+                                                "p-4 rounded-xl border transition-all cursor-pointer select-none flex flex-col justify-between gap-3",
+                                                formData.isPickupEnabled 
+                                                    ? "bg-blue-50/60 border-blue-300 ring-2 ring-blue-500/10" 
+                                                    : "bg-slate-50 border-slate-200 opacity-70"
+                                            )}
+                                        >
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                                                    <ShoppingBag className="h-3.5 w-3.5 text-blue-600" /> Store Pickup
+                                                </span>
+                                                {formData.isPickupEnabled ? (
+                                                    <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-blue-600 text-white">
+                                                        Active
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-slate-300 text-slate-700">
+                                                        Off
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <p className="text-[11px] text-slate-500 leading-tight">
+                                                Allow customers to self-collect orders at the store.
+                                            </p>
+                                        </div>
+
+                                        {/* 4. Store Operating Status */}
+                                        <div 
+                                            onClick={() => setFormData({ ...formData, isOpen: !formData.isOpen })}
+                                            className={cn(
+                                                "p-4 rounded-xl border transition-all cursor-pointer select-none flex flex-col justify-between gap-3",
+                                                formData.isOpen 
+                                                    ? "bg-emerald-50/60 border-emerald-300 ring-2 ring-emerald-500/10" 
+                                                    : "bg-rose-50/60 border-rose-300 ring-2 ring-rose-500/10"
+                                            )}
+                                        >
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                                                    <Activity className="h-3.5 w-3.5 text-emerald-600" /> Store Status
+                                                </span>
+                                                {formData.isOpen ? (
+                                                    <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-600 text-white">
+                                                        Open
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-rose-600 text-white">
+                                                        Closed
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <p className="text-[11px] text-slate-500 leading-tight">
+                                                Toggle accepting new customer orders right now.
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    {/* Order Minimums & Delivery Radius */}
+                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
+                                        <div className="space-y-1.5">
+                                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">
+                                                Min Order (₹)
+                                            </label>
+                                            <input 
+                                                type="number"
+                                                className="w-full h-11 bg-white rounded-xl border border-slate-200 px-3 text-xs font-bold text-slate-900 outline-none focus:border-emerald-500" 
+                                                placeholder="0"
+                                                value={formData.minOrderValue}
+                                                onChange={(e) => setFormData({...formData, minOrderValue: e.target.value})}
+                                            />
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">
+                                                Delivery Radius (km)
+                                            </label>
+                                            <input 
+                                                type="number"
+                                                className="w-full h-11 bg-white rounded-xl border border-slate-200 px-3 text-xs font-bold text-slate-900 outline-none focus:border-emerald-500" 
+                                                placeholder="10.0"
+                                                value={formData.deliveryRadius}
+                                                onChange={(e) => setFormData({...formData, deliveryRadius: e.target.value})}
+                                            />
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">
+                                                Delivery Fee (₹)
+                                            </label>
+                                            <input 
+                                                type="number"
+                                                className="w-full h-11 bg-white rounded-xl border border-slate-200 px-3 text-xs font-bold text-slate-900 outline-none focus:border-emerald-500" 
+                                                placeholder="40"
+                                                value={formData.deliveryFee}
+                                                onChange={(e) => setFormData({...formData, deliveryFee: e.target.value})}
+                                            />
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">
+                                                Free Delivery Above (₹)
+                                            </label>
+                                            <input 
+                                                type="number"
+                                                className="w-full h-11 bg-white rounded-xl border border-slate-200 px-3 text-xs font-bold text-slate-900 outline-none focus:border-emerald-500" 
+                                                placeholder="249"
+                                                value={formData.freeDeliveryAbove}
+                                                onChange={(e) => setFormData({...formData, freeDeliveryAbove: e.target.value})}
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+
                                 <div className="p-6 md:p-8 border-t border-slate-100 bg-slate-50/50 flex items-center justify-end gap-3">
                                     <button onClick={() => { setIsAddOpen(false); setEditingStore(null); }} className="px-5 py-2.5 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-100 cursor-pointer">
                                         Cancel
@@ -762,23 +1102,130 @@ export default function AdminStores() {
                                                             password: "",
                                                             latitude: store.latitude || "",
                                                             longitude: store.longitude || "",
-                                                            deliveryRadius: store.deliveryRadius || "10.0",
+                                                            deliveryRadius: store.deliveryRadius ? String(store.deliveryRadius) : "10.0",
+                                                            isOpen: store.isOpen !== undefined ? Boolean(store.isOpen) : true,
+                                                            isDeliveryEnabled: store.isDeliveryEnabled !== undefined ? Boolean(store.isDeliveryEnabled) : true,
+                                                            isWebsiteEnabled: store.isWebsiteEnabled !== undefined ? Boolean(store.isWebsiteEnabled) : true,
+                                                            isPickupEnabled: store.isPickupEnabled !== undefined ? Boolean(store.isPickupEnabled) : true,
+                                                            minOrderValue: store.minOrderValue !== undefined ? String(store.minOrderValue) : "0",
+                                                            deliveryFee: store.deliveryFee !== undefined ? String(store.deliveryFee) : "0",
+                                                            freeDeliveryAbove: store.freeDeliveryAbove !== undefined ? String(store.freeDeliveryAbove) : "0",
                                                             upiId: store.upiId || "",
                                                             purchaseManagerId: store.purchaseManagerId || ""
                                                         });
                                                         setIsAddOpen(true);
                                                     }}
                                                     className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 flex items-center justify-center cursor-pointer"
+                                                    title="Edit Store Configuration"
                                                 >
                                                     <Edit2 className="h-3.5 w-3.5" />
                                                 </button>
                                                 <button 
                                                     onClick={() => handleDeleteStore(store.id)}
                                                     className="w-8 h-8 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 flex items-center justify-center cursor-pointer"
+                                                    title="Delete Store"
                                                 >
                                                     <Trash2 className="h-3.5 w-3.5" />
                                                 </button>
                                             </div>
+                                        </div>
+
+                                        {/* Quick 1-Click Interactive Toggles */}
+                                        <div className="grid grid-cols-2 gap-2 mb-4 p-2.5 rounded-xl bg-slate-50 border border-slate-100 text-[11px]">
+                                            {/* Website Selling Toggle */}
+                                            <button
+                                                type="button"
+                                                onClick={() => handleToggleStoreFeature(store.id, "isWebsiteEnabled", store.isWebsiteEnabled !== false)}
+                                                className={cn(
+                                                    "px-2.5 py-1.5 rounded-lg font-bold flex items-center justify-between transition-all cursor-pointer",
+                                                    store.isWebsiteEnabled !== false 
+                                                        ? "bg-emerald-100/80 text-emerald-800 hover:bg-emerald-200" 
+                                                        : "bg-slate-200/80 text-slate-600 hover:bg-slate-300"
+                                                )}
+                                                title="Click to toggle selling on website"
+                                            >
+                                                <span className="flex items-center gap-1.5">
+                                                    <Globe className="h-3 w-3" /> Website
+                                                </span>
+                                                <span className="font-black text-[9px] uppercase">
+                                                    {store.isWebsiteEnabled !== false ? "Live" : "Off"}
+                                                </span>
+                                            </button>
+
+                                            {/* Home Delivery Toggle */}
+                                            <button
+                                                type="button"
+                                                onClick={() => handleToggleStoreFeature(store.id, "isDeliveryEnabled", store.isDeliveryEnabled !== false)}
+                                                className={cn(
+                                                    "px-2.5 py-1.5 rounded-lg font-bold flex items-center justify-between transition-all cursor-pointer",
+                                                    store.isDeliveryEnabled !== false 
+                                                        ? "bg-teal-100/80 text-teal-800 hover:bg-teal-200" 
+                                                        : "bg-slate-200/80 text-slate-600 hover:bg-slate-300"
+                                                )}
+                                                title="Click to toggle home delivery"
+                                            >
+                                                <span className="flex items-center gap-1.5">
+                                                    <Truck className="h-3 w-3" /> Delivery
+                                                </span>
+                                                <span className="font-black text-[9px] uppercase">
+                                                    {store.isDeliveryEnabled !== false ? "Active" : "Off"}
+                                                </span>
+                                            </button>
+
+                                            {/* Store Pickup Toggle */}
+                                            <button
+                                                type="button"
+                                                onClick={() => handleToggleStoreFeature(store.id, "isPickupEnabled", store.isPickupEnabled !== false)}
+                                                className={cn(
+                                                    "px-2.5 py-1.5 rounded-lg font-bold flex items-center justify-between transition-all cursor-pointer",
+                                                    store.isPickupEnabled !== false 
+                                                        ? "bg-blue-100/80 text-blue-800 hover:bg-blue-200" 
+                                                        : "bg-slate-200/80 text-slate-600 hover:bg-slate-300"
+                                                )}
+                                                title="Click to toggle customer pickup"
+                                            >
+                                                <span className="flex items-center gap-1.5">
+                                                    <ShoppingBag className="h-3 w-3" /> Pickup
+                                                </span>
+                                                <span className="font-black text-[9px] uppercase">
+                                                    {store.isPickupEnabled !== false ? "Active" : "Off"}
+                                                </span>
+                                            </button>
+
+                                            {/* Store Open Status */}
+                                            <button
+                                                type="button"
+                                                onClick={() => handleToggleStoreFeature(store.id, "isOpen", store.isOpen !== false)}
+                                                className={cn(
+                                                    "px-2.5 py-1.5 rounded-lg font-bold flex items-center justify-between transition-all cursor-pointer",
+                                                    store.isOpen !== false 
+                                                        ? "bg-emerald-100/80 text-emerald-800 hover:bg-emerald-200" 
+                                                        : "bg-rose-100/80 text-rose-800 hover:bg-rose-200"
+                                                )}
+                                                title="Click to toggle store open/closed status"
+                                            >
+                                                <span className="flex items-center gap-1.5">
+                                                    <Activity className="h-3 w-3" /> Status
+                                                </span>
+                                                <span className="font-black text-[9px] uppercase">
+                                                    {store.isOpen !== false ? "Open" : "Closed"}
+                                                </span>
+                                            </button>
+                                        </div>
+
+                                        {/* Store Attributes Badges */}
+                                        <div className="flex flex-wrap items-center gap-2 mb-3">
+                                            <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 text-[10px] font-bold">
+                                                Min Order: ₹{store.minOrderValue || 0}
+                                            </span>
+                                            <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 text-[10px] font-bold">
+                                                Radius: {store.deliveryRadius || 10} km
+                                            </span>
+                                            {Number(store.deliveryFee || 0) > 0 && (
+                                                <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 text-[10px] font-bold">
+                                                    Fee: ₹{store.deliveryFee}
+                                                </span>
+                                            )}
                                         </div>
 
                                         <div className="space-y-2 text-xs text-slate-600 mb-4">
@@ -1092,7 +1539,18 @@ export default function AdminStores() {
                                             </div>
 
                                             {/* Action: Add Variant specifically for this product */}
-                                            <div className="flex items-center gap-2 self-end sm:self-center">
+                                            <div className="flex items-center gap-2 self-end sm:self-center flex-wrap">
+                                                <button
+                                                    type="button"
+                                                    disabled={variantSubmitting}
+                                                    onClick={() => handleBatchCreateStandardVariants(product)}
+                                                    className="h-8 px-3 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-slate-950 hover:text-white font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-xs disabled:opacity-50"
+                                                    title="1-Click create 250g, 500g, and 1kg website packs"
+                                                >
+                                                    <Zap className="w-3.5 h-3.5 fill-current" />
+                                                    <span className="hidden sm:inline">1-Click</span> <span>Packs (250g, 500g, 1kg)</span>
+                                                </button>
+
                                                 <button
                                                     type="button"
                                                     onClick={() => handleOpenAddVariant(product)}
@@ -1181,6 +1639,19 @@ export default function AdminStores() {
                                                                 <div className="col-span-4 sm:col-span-3 font-bold text-slate-800 flex items-center gap-2">
                                                                     <Tag className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                                                                     <span className="truncate">{v.name}</span>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleToggleVariant(v.id)}
+                                                                        className={cn(
+                                                                            "px-1.5 py-0.5 rounded text-[9px] font-black uppercase transition-all cursor-pointer",
+                                                                            v.isActive 
+                                                                                ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-200" 
+                                                                                : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                                                                        )}
+                                                                        title="Toggle website visibility"
+                                                                    >
+                                                                        {v.isActive ? "Live" : "Off"}
+                                                                    </button>
                                                                 </div>
 
                                                                 <div className="col-span-2 hidden sm:block text-slate-500 font-medium">
@@ -1227,7 +1698,8 @@ export default function AdminStores() {
                                                                         type="button"
                                                                         disabled={savingStockKey === varStockKey}
                                                                         onClick={() => handleSaveStock(product.id, v.id)}
-                                                                        className="h-7 px-2.5 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold flex items-center gap-1 shadow-xs cursor-pointer active:scale-95"
+                                                                        className="h-7 px-2 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold flex items-center gap-1 shadow-xs cursor-pointer active:scale-95"
+                                                                        title="Save Stock for this store"
                                                                     >
                                                                         {savingStockKey === varStockKey ? (
                                                                             <RefreshCw className="w-3 h-3 animate-spin" />
@@ -1235,6 +1707,26 @@ export default function AdminStores() {
                                                                             <Check className="w-3 h-3" />
                                                                         )}
                                                                         <span>Save</span>
+                                                                    </button>
+
+                                                                    {/* Quick Duplicate Variant */}
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleCloneVariant(product, v)}
+                                                                        className="p-1 rounded-md text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 transition-all cursor-pointer"
+                                                                        title="Duplicate this variant"
+                                                                    >
+                                                                        <Copy className="w-3.5 h-3.5" />
+                                                                    </button>
+
+                                                                    {/* Delete Variant */}
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleDeleteVariant(v.id, v.name)}
+                                                                        className="p-1 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-all cursor-pointer"
+                                                                        title="Delete variant"
+                                                                    >
+                                                                        <Trash2 className="w-3.5 h-3.5" />
                                                                     </button>
                                                                 </div>
                                                             </div>
@@ -1253,7 +1745,7 @@ export default function AdminStores() {
 
             {/* CREATE VARIANT DIALOG MODAL */}
             <Dialog open={isVariantModalOpen} onOpenChange={setIsVariantModalOpen}>
-                <DialogContent className="bg-white border-slate-200 border rounded-2xl w-[95vw] md:w-full max-w-lg p-0 overflow-y-auto max-h-[90vh] shadow-2xl animate-in zoom-in-95 duration-200">
+                <DialogContent className="bg-white border-slate-200 border rounded-2xl w-[95vw] md:w-full max-w-xl p-0 overflow-y-auto max-h-[90vh] shadow-2xl animate-in zoom-in-95 duration-200">
                     <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/60">
                         <div className="flex items-center gap-3">
                             <div className="w-10 h-10 rounded-xl bg-emerald-100/80 text-emerald-800 flex items-center justify-center font-bold">
@@ -1277,29 +1769,84 @@ export default function AdminStores() {
                         </button>
                     </div>
 
-                    <div className="p-6 space-y-4">
+                    <div className="p-6 space-y-5">
+                        {/* 1-Click Fast Standard Packs Banner */}
+                        {selectedProductForVariant && (
+                            <div className="p-3.5 rounded-xl bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-100/50 border border-emerald-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+                                <div>
+                                    <h4 className="text-xs font-black text-emerald-950 flex items-center gap-1.5">
+                                        <Zap className="w-4 h-4 text-emerald-600 fill-current" />
+                                        <span>1-Click Auto-Generate Standard Packs</span>
+                                    </h4>
+                                    <p className="text-[11px] text-emerald-800 mt-0.5">
+                                        Instantly creates and stocks 250g, 500g, and 1kg website packs for <span className="font-bold">{selectedProductForVariant.name}</span>.
+                                    </p>
+                                </div>
+                                <button
+                                    type="button"
+                                    disabled={variantSubmitting}
+                                    onClick={() => handleBatchCreateStandardVariants(selectedProductForVariant)}
+                                    className="px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer shrink-0 disabled:opacity-50"
+                                >
+                                    <Zap className="w-3.5 h-3.5 fill-current" />
+                                    <span>Create All 3 Packs</span>
+                                </button>
+                            </div>
+                        )}
+
                         {/* Target Product */}
                         <div className="space-y-1.5">
-                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                                Target Product
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center justify-between">
+                                <span>Target Product</span>
+                                {selectedProductForVariant?.basePrice && (
+                                    <span className="text-emerald-700 font-bold">Base Price: ₹{selectedProductForVariant.basePrice}</span>
+                                )}
                             </label>
                             <select
                                 value={variantForm.productId}
                                 onChange={(e) => {
                                     const p = products.find(prod => prod.id === e.target.value);
                                     setSelectedProductForVariant(p);
+                                    const baseP = Number(p?.basePrice || 0);
                                     setVariantForm(prev => ({ 
                                         ...prev, 
                                         productId: e.target.value,
-                                        price: p?.basePrice ? String(p.basePrice) : prev.price
+                                        price: baseP > 0 ? String(Math.max(1, Math.round(baseP * 0.52))) : prev.price
                                     }));
                                 }}
                                 className="w-full h-11 bg-slate-50 rounded-xl border border-slate-200 px-3 text-xs font-bold text-slate-800 outline-none focus:border-emerald-500 cursor-pointer"
                             >
                                 {products.map(p => (
-                                    <option key={p.id} value={p.id}>{p.name} ({p.sku || "No SKU"})</option>
+                                    <option key={p.id} value={p.id}>{p.name} (Base: ₹{p.basePrice || 0} / {p.weightUnit || "KG"})</option>
                                 ))}
                             </select>
+                        </div>
+
+                        {/* Quick Presets Bar */}
+                        <div className="space-y-2">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center justify-between">
+                                <span>Quick Presets (1-Click Auto-Fill & Price Calculation)</span>
+                            </label>
+                            <div className="flex flex-wrap gap-1.5">
+                                {WEIGHT_PRESETS.map((preset) => {
+                                    const isSelected = variantForm.name === preset.name || (variantForm.weight === preset.weight && variantForm.weightUnit === preset.unit);
+                                    return (
+                                        <button
+                                            key={preset.label}
+                                            type="button"
+                                            onClick={() => handleApplyWeightPreset(preset)}
+                                            className={cn(
+                                                "px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer border",
+                                                isSelected 
+                                                    ? "bg-emerald-600 text-white border-emerald-600 shadow-xs" 
+                                                    : "bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200"
+                                            )}
+                                        >
+                                            {preset.label}
+                                        </button>
+                                    );
+                                })}
+                            </div>
                         </div>
 
                         {/* Variant Name */}
@@ -1350,8 +1897,11 @@ export default function AdminStores() {
                         {/* Selling Price & Initial Store Stock */}
                         <div className="grid grid-cols-2 gap-3">
                             <div className="space-y-1.5">
-                                <label className="text-[10px] font-bold text-emerald-700 uppercase tracking-widest">
-                                    Selling Price (₹)
+                                <label className="text-[10px] font-bold text-emerald-700 uppercase tracking-widest flex items-center justify-between">
+                                    <span>Selling Price (₹)</span>
+                                    {selectedProductForVariant?.basePrice && (
+                                        <span className="text-[9px] font-normal text-slate-400">Calculated</span>
+                                    )}
                                 </label>
                                 <input
                                     type="number"
@@ -1374,6 +1924,50 @@ export default function AdminStores() {
                                     className="w-full h-11 rounded-xl border border-blue-300 bg-blue-50/20 px-4 text-xs font-black text-blue-900 outline-none focus:border-blue-500"
                                 />
                             </div>
+                        </div>
+
+                        {/* Initial Stock Quick Pills */}
+                        <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Quick Stock:</span>
+                            {["10", "25", "50", "100", "200"].map((qty) => (
+                                <button
+                                    key={qty}
+                                    type="button"
+                                    onClick={() => setVariantForm(prev => ({ ...prev, initialStock: qty }))}
+                                    className={cn(
+                                        "px-2.5 py-0.5 rounded text-[11px] font-bold transition-all cursor-pointer border",
+                                        variantForm.initialStock === qty 
+                                            ? "bg-blue-600 text-white border-blue-600" 
+                                            : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
+                                    )}
+                                >
+                                    {qty}
+                                </button>
+                            ))}
+                        </div>
+
+                        {/* Publish on Website Toggle */}
+                        <div 
+                            onClick={() => setVariantForm(prev => ({ ...prev, isActive: !prev.isActive }))}
+                            className={cn(
+                                "p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-between",
+                                variantForm.isActive ? "bg-emerald-50/60 border-emerald-300" : "bg-slate-50 border-slate-200"
+                            )}
+                        >
+                            <div>
+                                <h5 className="text-xs font-bold text-slate-800">
+                                    Publish to Website Immediately
+                                </h5>
+                                <p className="text-[11px] text-slate-500">
+                                    Variant will appear instantly on the BookMyVeg website for {currentStore?.name}
+                                </p>
+                            </div>
+                            <span className={cn(
+                                "text-[10px] font-black uppercase px-2.5 py-1 rounded-full",
+                                variantForm.isActive ? "bg-emerald-600 text-white" : "bg-slate-300 text-slate-700"
+                            )}>
+                                {variantForm.isActive ? "Live" : "Draft"}
+                            </span>
                         </div>
                     </div>
 

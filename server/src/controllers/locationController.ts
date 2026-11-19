@@ -8,6 +8,7 @@ export const getLocationById = async (req: Request, res: Response) => {
         if (!id || id === "null" || id === "undefined") {
             return res.json(null);
         }
+        await ensureLocationSchema();
         const location = await (prisma.location as any).findUnique({
             where: { id },
             select: {
@@ -23,6 +24,12 @@ export const getLocationById = async (req: Request, res: Response) => {
                 longitude: true,
                 deliveryRadius: true,
                 isOpen: true,
+                isDeliveryEnabled: true,
+                isWebsiteEnabled: true,
+                isPickupEnabled: true,
+                minOrderValue: true,
+                deliveryFee: true,
+                freeDeliveryAbove: true,
                 upiId: true
             }
         });
@@ -39,6 +46,12 @@ const ensureLocationSchema = async () => {
     try {
         await prisma.$executeRawUnsafe(`
             ALTER TABLE "Location" ADD COLUMN IF NOT EXISTS "purchaseManagerId" TEXT;
+            ALTER TABLE "Location" ADD COLUMN IF NOT EXISTS "isDeliveryEnabled" BOOLEAN DEFAULT true;
+            ALTER TABLE "Location" ADD COLUMN IF NOT EXISTS "isWebsiteEnabled" BOOLEAN DEFAULT true;
+            ALTER TABLE "Location" ADD COLUMN IF NOT EXISTS "isPickupEnabled" BOOLEAN DEFAULT true;
+            ALTER TABLE "Location" ADD COLUMN IF NOT EXISTS "minOrderValue" DECIMAL(10, 2) DEFAULT 0;
+            ALTER TABLE "Location" ADD COLUMN IF NOT EXISTS "deliveryFee" DECIMAL(10, 2) DEFAULT 0;
+            ALTER TABLE "Location" ADD COLUMN IF NOT EXISTS "freeDeliveryAbove" DECIMAL(10, 2) DEFAULT 0;
         `);
         locationSchemaEnsured = true;
     } catch (e) {
@@ -50,7 +63,7 @@ export const getLocations = async (_req: Request, res: Response) => {
     try {
         await ensureLocationSchema();
         try {
-            const locations = await prisma.location.findMany({
+            const locations = await (prisma.location as any).findMany({
                 orderBy: { name: "asc" },
                 select: {
                     id: true,
@@ -65,6 +78,12 @@ export const getLocations = async (_req: Request, res: Response) => {
                     longitude: true,
                     deliveryRadius: true,
                     isOpen: true,
+                    isDeliveryEnabled: true,
+                    isWebsiteEnabled: true,
+                    isPickupEnabled: true,
+                    minOrderValue: true,
+                    deliveryFee: true,
+                    freeDeliveryAbove: true,
                     upiId: true,
                     purchaseManagerId: true,
                     purchaseManager: { select: { id: true, name: true, phone: true, email: true } }
@@ -73,7 +92,7 @@ export const getLocations = async (_req: Request, res: Response) => {
             return res.status(200).json(locations);
         } catch (queryErr) {
             console.warn("[getLocations fallback]:", queryErr);
-            const fallbackLocations = await prisma.location.findMany({
+            const fallbackLocations = await (prisma.location as any).findMany({
                 orderBy: { name: "asc" },
                 select: {
                     id: true,
@@ -88,6 +107,12 @@ export const getLocations = async (_req: Request, res: Response) => {
                     longitude: true,
                     deliveryRadius: true,
                     isOpen: true,
+                    isDeliveryEnabled: true,
+                    isWebsiteEnabled: true,
+                    isPickupEnabled: true,
+                    minOrderValue: true,
+                    deliveryFee: true,
+                    freeDeliveryAbove: true,
                     upiId: true
                 }
             });
@@ -101,6 +126,7 @@ export const getLocations = async (_req: Request, res: Response) => {
 export const getLocationBySlug = async (req: Request, res: Response) => {
     try {
         const { slug } = req.params;
+        await ensureLocationSchema();
         const location = await (prisma.location as any).findFirst({
             where: { slug: slug as string },
             select: {
@@ -114,7 +140,14 @@ export const getLocationBySlug = async (req: Request, res: Response) => {
                 receiptFooter: true,
                 latitude: true,
                 longitude: true,
-                deliveryRadius: true
+                deliveryRadius: true,
+                isOpen: true,
+                isDeliveryEnabled: true,
+                isWebsiteEnabled: true,
+                isPickupEnabled: true,
+                minOrderValue: true,
+                deliveryFee: true,
+                freeDeliveryAbove: true
             }
         });
         if (!location) return res.status(404).json({ message: "Location not found" });
@@ -145,6 +178,7 @@ export const createLocation = async (req: Request, res: Response) => {
 
         const locationId = req.params.id; // For update logic mostly, but let's focus on create first
         
+        await ensureLocationSchema();
         // Data Sanitation & Typal Alignment (Strings to Floats)
         const sanitizedData: any = {
             address: rest.address || null,
@@ -161,6 +195,21 @@ export const createLocation = async (req: Request, res: Response) => {
             deliveryRadius: (rest.deliveryRadius !== undefined && rest.deliveryRadius !== null && rest.deliveryRadius !== "") 
                 ? parseFloat(rest.deliveryRadius) 
                 : 15.0,
+            isOpen: rest.isOpen !== undefined ? Boolean(rest.isOpen) : true,
+            isDeliveryEnabled: rest.isDeliveryEnabled !== undefined ? Boolean(rest.isDeliveryEnabled) : true,
+            isWebsiteEnabled: rest.isWebsiteEnabled !== undefined ? Boolean(rest.isWebsiteEnabled) : true,
+            isPickupEnabled: rest.isPickupEnabled !== undefined ? Boolean(rest.isPickupEnabled) : true,
+            minOrderValue: (rest.minOrderValue !== undefined && rest.minOrderValue !== null && rest.minOrderValue !== "")
+                ? parseFloat(rest.minOrderValue)
+                : 0,
+            deliveryFee: (rest.deliveryFee !== undefined && rest.deliveryFee !== null && rest.deliveryFee !== "")
+                ? parseFloat(rest.deliveryFee)
+                : 0,
+            freeDeliveryAbove: (rest.freeDeliveryAbove !== undefined && rest.freeDeliveryAbove !== null && rest.freeDeliveryAbove !== "")
+                ? parseFloat(rest.freeDeliveryAbove)
+                : 0,
+            upiId: rest.upiId || null,
+            purchaseManagerId: rest.purchaseManagerId || null
         };
 
         const location = await (prisma.location as any).create({
@@ -182,10 +231,39 @@ export const createLocation = async (req: Request, res: Response) => {
 
 export const updateLocation = async (req: Request, res: Response) => {
     try {
+        await ensureLocationSchema();
         const id = req.params.id as string;
         const { password, ...rest } = req.body;
 
         const sanitizedData: any = { ...rest };
+
+        if ("isDeliveryEnabled" in rest) {
+            sanitizedData.isDeliveryEnabled = Boolean(rest.isDeliveryEnabled);
+        }
+        if ("isWebsiteEnabled" in rest) {
+            sanitizedData.isWebsiteEnabled = Boolean(rest.isWebsiteEnabled);
+        }
+        if ("isPickupEnabled" in rest) {
+            sanitizedData.isPickupEnabled = Boolean(rest.isPickupEnabled);
+        }
+        if ("isOpen" in rest) {
+            sanitizedData.isOpen = Boolean(rest.isOpen);
+        }
+        if ("minOrderValue" in rest) {
+            sanitizedData.minOrderValue = rest.minOrderValue !== "" && rest.minOrderValue !== null && rest.minOrderValue !== undefined
+                ? parseFloat(rest.minOrderValue)
+                : 0;
+        }
+        if ("deliveryFee" in rest) {
+            sanitizedData.deliveryFee = rest.deliveryFee !== "" && rest.deliveryFee !== null && rest.deliveryFee !== undefined
+                ? parseFloat(rest.deliveryFee)
+                : 0;
+        }
+        if ("freeDeliveryAbove" in rest) {
+            sanitizedData.freeDeliveryAbove = rest.freeDeliveryAbove !== "" && rest.freeDeliveryAbove !== null && rest.freeDeliveryAbove !== undefined
+                ? parseFloat(rest.freeDeliveryAbove)
+                : 0;
+        }
 
         // Safeguard: Never wipe out latitude if it was omitted or empty in partial updates (e.g. POS isOpen toggle)
         if ("latitude" in rest) {

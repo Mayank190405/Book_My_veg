@@ -73,7 +73,13 @@ export default function AppLayout({
                 const storesRes = await (await fetch(`${apiUrl}/locations`)).json();
                 if (!isMounted || !storesRes || storesRes.length === 0) return;
 
-                const defaultStore = storesRes[0];
+                // Only consider stores enabled for website sales
+                const webStores = Array.isArray(storesRes)
+                    ? storesRes.filter((s: any) => s.isWebsiteEnabled !== false)
+                    : [];
+                if (webStores.length === 0) return;
+
+                const defaultStore = webStores[0];
 
                 const applyStoreConnection = (
                     store: any,

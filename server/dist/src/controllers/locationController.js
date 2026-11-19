@@ -32,6 +32,7 @@ const getLocationById = (req, res) => __awaiter(void 0, void 0, void 0, function
         if (!id || id === "null" || id === "undefined") {
             return res.json(null);
         }
+        yield ensureLocationSchema();
         const location = yield prisma_1.default.location.findUnique({
             where: { id },
             select: {
@@ -47,6 +48,12 @@ const getLocationById = (req, res) => __awaiter(void 0, void 0, void 0, function
                 longitude: true,
                 deliveryRadius: true,
                 isOpen: true,
+                isDeliveryEnabled: true,
+                isWebsiteEnabled: true,
+                isPickupEnabled: true,
+                minOrderValue: true,
+                deliveryFee: true,
+                freeDeliveryAbove: true,
                 upiId: true
             }
         });
@@ -66,6 +73,12 @@ const ensureLocationSchema = () => __awaiter(void 0, void 0, void 0, function* (
     try {
         yield prisma_1.default.$executeRawUnsafe(`
             ALTER TABLE "Location" ADD COLUMN IF NOT EXISTS "purchaseManagerId" TEXT;
+            ALTER TABLE "Location" ADD COLUMN IF NOT EXISTS "isDeliveryEnabled" BOOLEAN DEFAULT true;
+            ALTER TABLE "Location" ADD COLUMN IF NOT EXISTS "isWebsiteEnabled" BOOLEAN DEFAULT true;
+            ALTER TABLE "Location" ADD COLUMN IF NOT EXISTS "isPickupEnabled" BOOLEAN DEFAULT true;
+            ALTER TABLE "Location" ADD COLUMN IF NOT EXISTS "minOrderValue" DECIMAL(10, 2) DEFAULT 0;
+            ALTER TABLE "Location" ADD COLUMN IF NOT EXISTS "deliveryFee" DECIMAL(10, 2) DEFAULT 0;
+            ALTER TABLE "Location" ADD COLUMN IF NOT EXISTS "freeDeliveryAbove" DECIMAL(10, 2) DEFAULT 0;
         `);
         locationSchemaEnsured = true;
     }
@@ -92,6 +105,12 @@ const getLocations = (_req, res) => __awaiter(void 0, void 0, void 0, function* 
                     longitude: true,
                     deliveryRadius: true,
                     isOpen: true,
+                    isDeliveryEnabled: true,
+                    isWebsiteEnabled: true,
+                    isPickupEnabled: true,
+                    minOrderValue: true,
+                    deliveryFee: true,
+                    freeDeliveryAbove: true,
                     upiId: true,
                     purchaseManagerId: true,
                     purchaseManager: { select: { id: true, name: true, phone: true, email: true } }
@@ -116,6 +135,12 @@ const getLocations = (_req, res) => __awaiter(void 0, void 0, void 0, function* 
                     longitude: true,
                     deliveryRadius: true,
                     isOpen: true,
+                    isDeliveryEnabled: true,
+                    isWebsiteEnabled: true,
+                    isPickupEnabled: true,
+                    minOrderValue: true,
+                    deliveryFee: true,
+                    freeDeliveryAbove: true,
                     upiId: true
                 }
             });
@@ -131,6 +156,7 @@ exports.getLocations = getLocations;
 const getLocationBySlug = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { slug } = req.params;
+        yield ensureLocationSchema();
         const location = yield prisma_1.default.location.findFirst({
             where: { slug: slug },
             select: {
@@ -144,7 +170,14 @@ const getLocationBySlug = (req, res) => __awaiter(void 0, void 0, void 0, functi
                 receiptFooter: true,
                 latitude: true,
                 longitude: true,
-                deliveryRadius: true
+                deliveryRadius: true,
+                isOpen: true,
+                isDeliveryEnabled: true,
+                isWebsiteEnabled: true,
+                isPickupEnabled: true,
+                minOrderValue: true,
+                deliveryFee: true,
+                freeDeliveryAbove: true
             }
         });
         if (!location)
@@ -173,6 +206,7 @@ const createLocation = (req, res) => __awaiter(void 0, void 0, void 0, function*
             hashedPassword = yield bcryptjs_1.default.hash(password, 10);
         }
         const locationId = req.params.id; // For update logic mostly, but let's focus on create first
+        yield ensureLocationSchema();
         // Data Sanitation & Typal Alignment (Strings to Floats)
         const sanitizedData = {
             address: rest.address || null,
@@ -189,6 +223,21 @@ const createLocation = (req, res) => __awaiter(void 0, void 0, void 0, function*
             deliveryRadius: (rest.deliveryRadius !== undefined && rest.deliveryRadius !== null && rest.deliveryRadius !== "")
                 ? parseFloat(rest.deliveryRadius)
                 : 15.0,
+            isOpen: rest.isOpen !== undefined ? Boolean(rest.isOpen) : true,
+            isDeliveryEnabled: rest.isDeliveryEnabled !== undefined ? Boolean(rest.isDeliveryEnabled) : true,
+            isWebsiteEnabled: rest.isWebsiteEnabled !== undefined ? Boolean(rest.isWebsiteEnabled) : true,
+            isPickupEnabled: rest.isPickupEnabled !== undefined ? Boolean(rest.isPickupEnabled) : true,
+            minOrderValue: (rest.minOrderValue !== undefined && rest.minOrderValue !== null && rest.minOrderValue !== "")
+                ? parseFloat(rest.minOrderValue)
+                : 0,
+            deliveryFee: (rest.deliveryFee !== undefined && rest.deliveryFee !== null && rest.deliveryFee !== "")
+                ? parseFloat(rest.deliveryFee)
+                : 0,
+            freeDeliveryAbove: (rest.freeDeliveryAbove !== undefined && rest.freeDeliveryAbove !== null && rest.freeDeliveryAbove !== "")
+                ? parseFloat(rest.freeDeliveryAbove)
+                : 0,
+            upiId: rest.upiId || null,
+            purchaseManagerId: rest.purchaseManagerId || null
         };
         const location = yield prisma_1.default.location.create({
             data: Object.assign(Object.assign({}, sanitizedData), { name,
@@ -205,9 +254,37 @@ const createLocation = (req, res) => __awaiter(void 0, void 0, void 0, function*
 exports.createLocation = createLocation;
 const updateLocation = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
+        yield ensureLocationSchema();
         const id = req.params.id;
         const _a = req.body, { password } = _a, rest = __rest(_a, ["password"]);
         const sanitizedData = Object.assign({}, rest);
+        if ("isDeliveryEnabled" in rest) {
+            sanitizedData.isDeliveryEnabled = Boolean(rest.isDeliveryEnabled);
+        }
+        if ("isWebsiteEnabled" in rest) {
+            sanitizedData.isWebsiteEnabled = Boolean(rest.isWebsiteEnabled);
+        }
+        if ("isPickupEnabled" in rest) {
+            sanitizedData.isPickupEnabled = Boolean(rest.isPickupEnabled);
+        }
+        if ("isOpen" in rest) {
+            sanitizedData.isOpen = Boolean(rest.isOpen);
+        }
+        if ("minOrderValue" in rest) {
+            sanitizedData.minOrderValue = rest.minOrderValue !== "" && rest.minOrderValue !== null && rest.minOrderValue !== undefined
+                ? parseFloat(rest.minOrderValue)
+                : 0;
+        }
+        if ("deliveryFee" in rest) {
+            sanitizedData.deliveryFee = rest.deliveryFee !== "" && rest.deliveryFee !== null && rest.deliveryFee !== undefined
+                ? parseFloat(rest.deliveryFee)
+                : 0;
+        }
+        if ("freeDeliveryAbove" in rest) {
+            sanitizedData.freeDeliveryAbove = rest.freeDeliveryAbove !== "" && rest.freeDeliveryAbove !== null && rest.freeDeliveryAbove !== undefined
+                ? parseFloat(rest.freeDeliveryAbove)
+                : 0;
+        }
         // Safeguard: Never wipe out latitude if it was omitted or empty in partial updates (e.g. POS isOpen toggle)
         if ("latitude" in rest) {
             if (rest.latitude === "" || rest.latitude === null || rest.latitude === undefined) {

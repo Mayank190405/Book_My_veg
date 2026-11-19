@@ -404,10 +404,15 @@ export default function LocationSelector({ isCompact, variant = "default" }: Loc
             const apiUrl = getBaseURL();
             const storesRes = await (await fetch(`${apiUrl}/locations`)).json();
 
+            // Filter stores that are enabled to sell on website
+            const webStores = Array.isArray(storesRes)
+                ? storesRes.filter((s: any) => s.isWebsiteEnabled !== false)
+                : [];
+
             let nearestStore = null;
-            if (storesRes && storesRes.length > 0) {
+            if (webStores && webStores.length > 0) {
                 let minDistance = Infinity;
-                storesRes.forEach((store: any) => {
+                webStores.forEach((store: any) => {
                     if (store.latitude && store.longitude) {
                         const dist = calculateDistance(lat, lng, store.latitude, store.longitude);
                         if (dist < minDistance) {
@@ -416,6 +421,7 @@ export default function LocationSelector({ isCompact, variant = "default" }: Loc
                         }
                     }
                 });
+                if (!nearestStore) nearestStore = webStores[0];
             }
 
             if (nearestStore) {

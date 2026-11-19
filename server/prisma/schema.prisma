@@ -173,20 +173,26 @@ model ProductVariant {
 }
 
 model Location {
-  id             String         @id @default(uuid())
-  slug           String         @unique
-  name           String
-  password       String?
-  address        String?
-  contactNumber  String?
-  gstNumber      String?
-  receiptFooter  String?
-  receiptHeader  String?
-  latitude       Float?
-  longitude      Float?
-  deliveryRadius Float?         @default(10.0)
-  isOpen         Boolean        @default(true)
-  upiId          String?
+  id                String         @id @default(uuid())
+  slug              String         @unique
+  name              String
+  password          String?
+  address           String?
+  contactNumber     String?
+  gstNumber         String?
+  receiptFooter     String?
+  receiptHeader     String?
+  latitude          Float?
+  longitude         Float?
+  deliveryRadius    Float?         @default(10.0)
+  isOpen            Boolean        @default(true)
+  isDeliveryEnabled Boolean        @default(true)
+  isWebsiteEnabled  Boolean        @default(true)
+  isPickupEnabled   Boolean        @default(true)
+  minOrderValue     Decimal?       @default(0) @db.Decimal(10, 2)
+  deliveryFee       Decimal?       @default(0) @db.Decimal(10, 2)
+  freeDeliveryAbove Decimal?       @default(0) @db.Decimal(10, 2)
+  upiId             String?
   attendance     Attendance[]
   batches        Batch[]
   shifts         CashierShift[]
